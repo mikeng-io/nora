@@ -505,17 +505,6 @@ async def test_a_source_person_exposed_mid_lookup_is_screened_before_the_provide
     assert calls == ["volleyball news"]
 
 
-async def test_file_graph_keeps_opt_outs_when_no_access_backend_is_supplied(example_config):
-    from nora.infra.sql.comprehend import SqlComprehendRecords
-
-    records = SqlComprehendRecords(
-        object(), media_join=object(), rooms_by_unit={}, persons_by_unit={},
-        social_off_ids=frozenset({PERSON}), access=None,
-    )
-    assert await records._social_off((PERSON,)) == {PERSON}
-    assert FOREIGN not in await records._social_off((FOREIGN,))
-
-
 async def test_an_opted_out_retired_identity_still_excludes_the_survivors_social_items():
     """Linking retires the former's Kratos identity; its recorded opt-out
     stays effective on every id the folded person may be recorded under —

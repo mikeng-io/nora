@@ -13,7 +13,7 @@ ROOM_A_LINEAGE = Lineage.of({ROW: (message("signal:room-a"),)})
 CONTENT = EntryContent(
     (("topic", "generated-racing"),),
     "A recurring generated subject.",
-    (("media", "generated-1"),),
+    (("social", "41"),),
     "medium",
     "active",
     "cognition",
@@ -33,10 +33,8 @@ async def store(request):
     if request.param == "fake":
         yield FakeEntryStore(
             lineages={
-                ("media", "generated-1"): ROOM_A_LINEAGE,
-                ("stay", "generated-2"): Lineage.of(
-                    {ROW: (message("signal:room-b"),)}),
                 ("social", "41"): ROOM_A_LINEAGE,
+                ("social", "42"): ROOM_A_LINEAGE,
             }
         )
         return
@@ -44,37 +42,24 @@ async def store(request):
 
     from nora.infra.sql.engine import create_sql_engine
     from nora.infra.sql.entries import SqlEntryStore
-    from nora.infra.sql.schema import MEMORY_NODE, STIMULUS
+    from nora.infra.sql.schema import STIMULUS
 
     engine = create_sql_engine(request.getfixturevalue("_entry_db"))
     async with engine.begin() as conn:
         await conn.execute(sa.text("SET LOCAL session_replication_role = replica"))
         await conn.execute(sa.text("TRUNCATE notebook_entry_revision, notebook_entry CASCADE"))
-        # The rows the contract's citations resolve to: a media node with an
-        # origin room, a stay (Rollup) node carrying its own lineage, and a
-        # social stimulus naming a room — each generated, none a real row.
-        await conn.execute(sa.text(
-            "DELETE FROM memory_node WHERE (kind, source_id) IN "
-            "(('media', 'generated-1'), ('stay', 'generated-2'))"
-        ))
-        await conn.execute(sa.text("DELETE FROM stimulus WHERE id = 41"))
+        # The row the contract's stimulus citation resolves to, generated and
+        # naming a room.
+        await conn.execute(sa.text("DELETE FROM stimulus WHERE id IN (41, 42)"))
         await conn.execute(
-            sa.insert(MEMORY_NODE).values(
-                kind="media", source_id="generated-1", unit="u",
-                origin_room="signal:room-a")
-        )
-        await conn.execute(
-            sa.insert(MEMORY_NODE).values(
-                kind="stay", source_id="generated-2", unit="u",
-                origin_room="signal:room-c",
-                lineage=[["message", None, "signal:room-b"]])
-        )
-        await conn.execute(
-            sa.insert(STIMULUS).values(
-                id=41, unit="u", kind="social", item="generated-item",
-                ref="generated-ref", platform="signal",
-                conversation_id="room-a", at_ms=1,
-            )
+            sa.insert(STIMULUS), [
+                {"id": 41, "unit": "u", "kind": "social", "item": "generated-item",
+                 "ref": "generated-ref", "platform": "signal",
+                 "conversation_id": "room-a", "at_ms": 1},
+                {"id": 42, "unit": "other", "kind": "social", "item": "generated-item-other",
+                 "ref": "generated-ref-other", "platform": "signal",
+                 "conversation_id": "room-a", "at_ms": 1},
+            ]
         )
     try:
         yield SqlEntryStore(engine)
@@ -124,34 +109,6 @@ async def test_topic_citations_record_rollup_only(store: EntryStore, kind: str) 
         await store.create(
             kind="topic", unit="u", content=replace(CONTENT, citations=((kind, "x"),))
         )
-    entry = await store.create(
-        kind="topic", unit="u", content=replace(CONTENT, citations=(("stay", "generated-2"),))
-    )
-    assert entry.head.content.citations == (("stay", "generated-2"),)
-
-
-async def test_a_record_citation_carries_the_cited_row_s_own_room(
-    store: EntryStore,
-) -> None:
-    """A `media` node cites its origin room; the revision rests on it."""
-    entry = await store.create(kind="topic", unit="u", content=CONTENT)
-    assert entry.head.lineage.section("row") == (
-        message("signal:room-a"),
-    )
-
-
-async def test_a_rollup_citation_carries_the_cited_row_s_own_lineage(
-    store: EntryStore,
-) -> None:
-    """A `stay` node brings the lineage the row itself holds (room-b), never a
-    flattened `message:<its origin room>` (room-c) — the row's own entries."""
-    entry = await store.create(
-        kind="topic", unit="u",
-        content=replace(CONTENT, citations=(("stay", "generated-2"),)),
-    )
-    assert entry.head.lineage.section("row") == (
-        message("signal:room-b"),
-    )
 
 
 async def test_a_stimulus_citation_resolves_the_room_it_names(
@@ -210,7 +167,9 @@ async def test_held_returns_the_units_non_retired_entries_by_subject(
     alpha = await store.create(
         kind="topic", unit="u",
         content=replace(CONTENT, about=(("topic", "generated-alpha"),)))
-    await store.create(kind="topic", unit="other", content=CONTENT)
+    await store.create(
+        kind="topic", unit="other",
+        content=replace(CONTENT, citations=(("social", "42"),)))
     assert [e.id for e in await store.held(unit="u")] == [alpha.id, beta.id]
 
 

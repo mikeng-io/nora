@@ -1,12 +1,5 @@
 [
   {
-    "name": "profile-write-receipt-rides-the-write-transaction",
-    "file": "nora/infra/sql/profile.py",
-    "old": "            if receipt is not None:\n                await receipt(conn, {\n                    \"status\": \"ok\", \"revision\": revision,\n                    \"written\": [x.id for x in plan.inserts],\n                })\n            await trans.commit()",
-    "new": "            await trans.commit()",
-    "target": "tests/contract/test_profile_write_receipt.py::test_the_receipt_commits_with_the_write"
-  },
-  {
     "name": "held-relation-premises-carry-through-a-revision",
     "file": "nora/domain/profile.py",
     "old": "            carried_rels = tuple(\n                c[len(\"relation:\"):] for c in carried\n                if op.draws_on is None and c.startswith(\"relation:\"))\n            draws_handles = (\n                op.draws_on\n                if op.draws_on is not None\n                else tuple(h for h, lid in handles.items() if lid in carried)\n            )",

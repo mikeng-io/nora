@@ -261,6 +261,38 @@ async def test_a_pace_verb_that_fails_before_any_write_still_says_it_may_not_hav
 
 
 
+async def test_a_failed_session_leaves_inputs_pending_even_after_a_saved_reading(monkeypatch):
+    """A committed reading is not completion when the session then fails."""
+    from nora.app.cognition_session import CognitionRunResult
+    from tests.unit.cognition_rig import A, B, Script
+    from tests.unit.test_cognition_session_runner import wake_memory
+
+    memory = wake_memory()
+
+    async def behave(by, tools):
+        await by["memory_propose"](statements=[{
+            "type": "reading", "about": [], "what": "They are going",
+            "happened_at": {"source": 101, "expression": None}, "how": "stated",
+            "cite": [{"source": 101, "quote": "we are going"}],
+        }])
+
+    script = Script(behave)
+    original_run = script.run
+
+    async def run(**kwargs):
+        await original_run(**kwargs)
+        return CognitionRunResult(stop_reason="limit_total_tokens", total_tokens=100)
+
+    monkeypatch.setattr(script, "run", run)
+    with pytest.raises(Exception, match="limit_total_tokens"):
+        await _session(behave, rooms=(A, B), runner_kwargs={
+            "memory": memory, "agent_runner": script,
+        })
+    assert memory.records.claims  # positive control: the readings writer committed
+    assert await memory.records.failures("u", 1) == 1
+    assert await memory.records.failures("u", 3) == 1
+
+
 
 # ---------------------------------------------------------------------------
 # the overlay under tool calls that run together

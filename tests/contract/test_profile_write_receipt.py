@@ -1,14 +1,10 @@
-"""`SqlProfileStore.profile_write`'s `receipt=` rides the write's own
-transaction: the result row and the lines commit or roll back together, so a
-crash between them neither loses the receipt nor leaves it behind on a
-refused plan."""
+"""`SqlProfileStore.profile_write`'s receipt rides the write's transaction."""
 from __future__ import annotations
 
 import pytest
 import sqlalchemy as sa
 
 from nora.domain.profile import Account, AddOp, ProfileCitable, Said
-from nora.infra.sql.comprehend import SqlComprehendRecords
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.profile import SqlProfileStore
 from nora.infra.sql.schema import COMPREHEND_RESULT, PROFILE, PROFILE_LINE
@@ -16,12 +12,15 @@ from nora.infra.sql.schema import COMPREHEND_RESULT, PROFILE, PROFILE_LINE
 UNIT = "u1"
 PERSON = "ada"
 ROOM = "room-a"
-ACCOUNT = Account(key=f"{UNIT}#character:{PERSON}", entity_kind="human",
-                  unit=UNIT, subject=PERSON)
+ACCOUNT = Account(
+    key=f"{UNIT}#character:{PERSON}", entity_kind="human", unit=UNIT, subject=PERSON,
+)
 DAY1 = 1_735_600_800_000
 DAY1B = 1_735_615_200_000
 DAY2 = 1_735_790_400_000
 NOW = 1_736_049_600_000
+WORK = "generated-profile-write"
+HASH = "generated-input"
 
 
 @pytest.fixture
@@ -31,13 +30,10 @@ async def store(pg_module_url):
         await conn.execute(sa.delete(PROFILE_LINE))
         await conn.execute(sa.delete(PROFILE))
         await conn.execute(sa.delete(COMPREHEND_RESULT))
-    yield (
-        SqlProfileStore(engine, screen=lambda _t: None),
-        SqlComprehendRecords(
-            engine, media_join=None, rooms_by_unit={}, persons_by_unit={}),
-        engine,
-    )
-    await engine.dispose()
+    try:
+        yield SqlProfileStore(engine, screen=lambda _t: None), engine
+    finally:
+        await engine.dispose()
 
 
 def _write_args() -> dict:
@@ -59,25 +55,41 @@ def _write_args() -> dict:
     }
 
 
+async def _generated_receipt(conn, payload):
+    await conn.execute(sa.insert(COMPREHEND_RESULT).values(
+        work_id=WORK, input_hash=HASH, session_id=9, part="act_result", payload=payload,
+    ))
+
+
+async def _receipt_count(engine) -> int:
+    async with engine.connect() as conn:
+        return int((await conn.execute(
+            sa.select(sa.func.count()).select_from(COMPREHEND_RESULT).where(
+                COMPREHEND_RESULT.c.work_id == WORK,
+            )
+        )).scalar_one())
+
+
 async def test_the_receipt_commits_with_the_write(store) -> None:
-    profile, records, _engine = store
+    profile, engine = store
     result = await profile.profile_write(
-        **_write_args(), expected_revision=0,
-        receipt=lambda conn, payload: records.act_result_on(conn, "k", 9, payload))
+        **_write_args(), expected_revision=0, receipt=_generated_receipt,
+    )
     assert result.status == "ok"
-    assert (await records.act_result("k", 9))["status"] == "ok"
+    assert await _receipt_count(engine) == 1
     assert (await profile.account_state(key=ACCOUNT.key))[0] == 1
     assert len(await profile.account_heads(key=ACCOUNT.key)) == 1
 
 
 async def test_a_failed_receipt_rolls_the_write_back(store) -> None:
-    profile, records, _engine = store
+    profile, engine = store
 
     async def bad_receipt(conn, payload):
+        await _generated_receipt(conn, payload)
         raise RuntimeError("receipt write failed")
 
     with pytest.raises(RuntimeError, match="receipt write failed"):
         await profile.profile_write(**_write_args(), receipt=bad_receipt)
     assert (await profile.account_state(key=ACCOUNT.key))[0] == 0
     assert await profile.account_heads(key=ACCOUNT.key) == ()
-    assert await records.act_result("k", 9) is None
+    assert await _receipt_count(engine) == 0

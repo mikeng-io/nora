@@ -471,17 +471,20 @@ async def test_app_embeds_graph_search_and_stops_projecting_legacy_messages(
     import sqlalchemy as sa
 
     from nora.domain.models import NormalizedMessage
+    from nora.infra.embedder import fingerprint
     from nora.infra.sql.cognitive_graph_schema import GRAPH_SEARCH
     from nora.infra.sql.engine import create_sql_engine
     from nora.infra.sql.schema import MEMORY_NODE
-    from tests.integration.test_memory_vectors import MODEL, MODEL_ID
     from tests.unit.test_embedder import FakeLlamaServer
+
+    model_id = "model-a.gguf@0000"
+    model = fingerprint(model_id)
 
     server = await aiohttp_server(FakeLlamaServer().app())
     url = str(server.make_url("")).rstrip("/")
     cfg = tomllib.loads(env.read_text())
     cfg["memory"]["index"].update(
-        embed=True, embedder_url=url, embedder_model=MODEL_ID, refresh_seconds=0.05,
+        embed=True, embedder_url=url, embedder_model=model_id, refresh_seconds=0.05,
     )
     env.write_text(tomli_w.dumps(cfg))
     policy = env.parent / "policy.toml"
@@ -506,7 +509,7 @@ async def test_app_embeds_graph_search_and_stops_projecting_legacy_messages(
             legacy = await conn.scalar(sa.select(MEMORY_NODE.c.id).where(
                 MEMORY_NODE.c.kind == "message", MEMORY_NODE.c.source_id == str(record_id),
             ))
-        assert len(graph.embedding) == 2048 and graph.embedding_model == MODEL
+        assert len(graph.embedding) == 2048 and graph.embedding_model == model
         assert legacy is None
     finally:
         await engine.dispose()

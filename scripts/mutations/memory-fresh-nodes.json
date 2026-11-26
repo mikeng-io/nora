@@ -105,27 +105,6 @@
     "target": "tests/contract/test_memory_index_contract.py::test_a_fresh_wait_is_counted_apart_and_lexical_reads_every_unembedded_node"
   },
   {
-    "name": "review 2: the wait is measured from owed_since, not projected_at",
-    "file": "nora/infra/sql/memory_index.py",
-    "old": "sa.and_(owed, node.text != \"\", node.owed_since > since)",
-    "new": "sa.and_(owed, node.text != \"\", node.projected_at > since)",
-    "target": "tests/integration/test_memory_vectors.py::test_a_wait_is_owed_from_the_last_input_change_never_from_a_reprojection"
-  },
-  {
-    "name": "review 2: a re-projection of the same input keeps owed_since",
-    "file": "nora/infra/sql/memory_index.py",
-    "old": "(changed, sa.func.clock_timestamp()), else_=node.owed_since,",
-    "new": "(changed, sa.func.clock_timestamp()), else_=sa.func.clock_timestamp(),",
-    "target": "tests/integration/test_memory_vectors.py::test_a_wait_is_owed_from_the_last_input_change_never_from_a_reprojection"
-  },
-  {
-    "name": "review 2: an input change restarts owed_since",
-    "file": "nora/infra/sql/memory_index.py",
-    "old": "(changed, sa.func.clock_timestamp()), else_=node.owed_since,",
-    "new": "(changed, node.owed_since), else_=node.owed_since,",
-    "target": "tests/integration/test_memory_vectors.py::test_a_wait_is_owed_from_the_last_input_change_never_from_a_reprojection"
-  },
-  {
     "name": "review 2: the sandbox carries the source's wait",
     "file": "nora/infra/sql/memory_index.py",
     "old": "            sa.update(MEMORY_NODE).where(node.id.in_(ids)).values(owed_since=value)",

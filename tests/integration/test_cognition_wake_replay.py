@@ -2,6 +2,7 @@
 from datetime import UTC, datetime
 from types import SimpleNamespace
 
+import pytest
 import sqlalchemy as sa
 
 from evals.rebuilt.domain import Case
@@ -9,11 +10,35 @@ from evals.rebuilt.entry import _cognition_replay
 from nora.domain.ticks import due_tick_of_ms
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.schema import COGNITION_WAKE, STIMULUS
-from tests.contract.test_comprehend_records_contract import database  # noqa: F401
+from tests.conftest import _async_url
 from tests.unit.test_cognition_session_runner import NOW, _runner, wake_memory
 
 
-async def test_generated_recorded_wake_replays_own_stimulus_batch(database):  # noqa: F811
+@pytest.fixture(scope="module")
+def database(pg_admin, pg_template):
+    from uuid import uuid4
+
+    import psycopg
+
+    name = "wake_replay_" + uuid4().hex
+    with psycopg.connect(pg_admin.dsn(pg_admin.maintenance_db), autocommit=True) as conn:
+        conn.execute(
+            "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
+            "WHERE datname = %s AND pid <> pg_backend_pid()",
+            (pg_template,),
+        )
+        conn.execute(f'CREATE DATABASE "{name}" TEMPLATE "{pg_template}"')
+    yield _async_url(pg_admin, name)
+    with psycopg.connect(pg_admin.dsn(pg_admin.maintenance_db), autocommit=True) as conn:
+        conn.execute(
+            "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
+            "WHERE datname = %s AND pid <> pg_backend_pid()",
+            (name,),
+        )
+        conn.execute(f'DROP DATABASE "{name}"')
+
+
+async def test_generated_recorded_wake_replays_own_stimulus_batch(database):
     engine = create_sql_engine(database)
     try:
         async with engine.begin() as conn:
@@ -45,7 +70,7 @@ async def test_generated_recorded_wake_replays_own_stimulus_batch(database):  # 
         await engine.dispose()
 
 
-async def test_a_wake_whose_detail_was_written_as_a_string_still_replays(database):  # noqa: F811
+async def test_a_wake_whose_detail_was_written_as_a_string_still_replays(database):
     """Older rows hold `detail` as a jsonb STRING of the JSON; the store reads
     both forms, and so must the replay, or one such wake stops every search."""
     import json
@@ -73,7 +98,7 @@ async def test_a_wake_whose_detail_was_written_as_a_string_still_replays(databas
         await engine.dispose()
 
 
-async def test_a_session_agenda_written_as_a_string_still_selects_its_batch(database):  # noqa: F811
+async def test_a_session_agenda_written_as_a_string_still_selects_its_batch(database):
     """A recorded session's agenda in the string form picks the same batch."""
     import json
 

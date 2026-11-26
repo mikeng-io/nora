@@ -1,25 +1,59 @@
 """Exercise the write-time and rebuilt index with generated PostgreSQL rows."""
 
+import logging
 from dataclasses import replace
 
+import pytest
 import sqlalchemy as sa
+from aiohttp.test_utils import TestServer
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from nora.infra.embedder import LlamaEmbedder, fingerprint, model_file
 from nora.infra.sql import memory_index
 from nora.infra.sql.audit import SqlRecordStore
 from nora.infra.sql.cognitive_graph_schema import CLAIM, ENTITY, GRAPH_SEARCH
 from nora.infra.sql.cognitive_graph_store import SqlCognitiveGraph
+from nora.infra.sql.embed_schedule import EMBED_MAX_ATTEMPTS
 from nora.infra.sql.item_retention import tombstone_items
+from nora.infra.sql.memory_embed import MemoryEmbedWorker
 from nora.infra.sql.schema import MEMORY_NODE, MESSAGES, PRESENCE_FIXES
 from nora.memory.adapters.graph_search import rebuild_graph_search
 from nora.memory.domain.registration import AGGREGATE_FAMILIES, SEARCHABLE_SOURCES
+from nora.obs.metrics import Metrics
 from tests.infra.test_item_registration import _PERSON, _UNIT, _registration, _Writer
 from tests.infra.test_item_registration import engine as graph_test_engine
-from tests.integration.test_memory_vectors import MODEL, worker
-from tests.integration.test_memory_vectors import llama as fake_llama
+from tests.unit.test_embedder import FakeLlamaServer
+
+MODEL_ID = "model-a.gguf@0000"
+MODEL = fingerprint(MODEL_ID)
 
 engine = graph_test_engine
-llama = fake_llama
+
+
+class Clock:
+    def __init__(self) -> None:
+        self.now = 1_800_000_000.0
+
+    def __call__(self) -> float:
+        return self.now
+
+
+@pytest.fixture
+async def llama():
+    fake = FakeLlamaServer()
+    server = TestServer(fake.app())
+    await server.start_server()
+    try:
+        yield fake, str(server.make_url("")).rstrip("/")
+    finally:
+        await server.close()
+
+
+def worker(engine, url, *, metrics=None, clock=None):
+    return MemoryEmbedWorker(
+        engine, LlamaEmbedder(url), model=MODEL, model_file=model_file(MODEL_ID), batch=16,
+        metrics=metrics, clock=clock or Clock(),
+    )
 
 
 async def _message(engine: AsyncEngine, text: str = "Lanternmessage") -> str:
@@ -140,7 +174,7 @@ async def test_worker_embeds_graph_search_without_embedding_the_legacy_index(eng
         ))).one()
     assert graph_before.embedding is None and legacy_before.embedding is None
 
-    assert await worker(engine, url, legacy_index=False).run_once() == 1
+    assert await worker(engine, url).run_once() == 1
 
     async with engine.connect() as conn:
         row = (await conn.execute(sa.select(
@@ -153,3 +187,178 @@ async def test_worker_embeds_graph_search_without_embedding_the_legacy_index(eng
     assert row.embedding_model == MODEL
     assert row.embed_input == "text"
     assert legacy.embedding is None
+
+async def test_an_unavailable_embedder_never_gives_a_node_up(engine, llama):
+    """An outage backs a graph row off, never past the cap; it embeds when the server returns."""
+    fake, url = llama
+    graph_id = await _message(engine)
+    clock = Clock()
+    w = MemoryEmbedWorker(
+        engine, LlamaEmbedder(url), model=MODEL, model_file=model_file(MODEL_ID),
+        batch=16, clock=clock,
+    )
+    assert await w.run_once() == 1
+    async with engine.begin() as conn:
+        await conn.execute(sa.update(GRAPH_SEARCH).where(
+            GRAPH_SEARCH.c.graph_id == graph_id,
+        ).values(embedding=None, embedding_model=None, embed_attempts=0))
+    fake.status, fake.healthy = 503, False
+    for _ in range(EMBED_MAX_ATTEMPTS + 2):
+        clock.now += 7 * 3600
+        assert await w.run_once() == 1, "still picked: never given up"
+    async with engine.connect() as conn:
+        row = (await conn.execute(sa.select(
+            GRAPH_SEARCH.c.embedding, GRAPH_SEARCH.c.embed_attempts,
+        ).where(GRAPH_SEARCH.c.graph_id == graph_id))).one()
+    assert row.embedding is None
+    assert row.embed_attempts < EMBED_MAX_ATTEMPTS
+    fake.status, fake.healthy = 200, True
+    clock.now += 7 * 3600
+    assert await w.run_once() == 1
+    row = await _graph_row(engine, graph_id)
+    assert row["embedding"] is not None
+    assert (row["embed_attempts"], row["embed_error"]) == (0, None)
+
+
+
+async def _graph_row(engine, graph_id):
+    async with engine.connect() as conn:
+        return (await conn.execute(sa.select(GRAPH_SEARCH).where(
+            GRAPH_SEARCH.c.graph_id == graph_id,
+        ))).mappings().one()
+
+
+async def test_the_worker_refuses_a_wrong_model_then_embeds_the_configured_one(engine, llama):
+    fake, url = llama
+    graph_id = await _message(engine)
+    fake.model_path = "/models/some-other-model.gguf"
+    w = worker(engine, url)
+    assert await w.run_once() == 0
+    assert fake.calls == 0
+
+    fake.model_path = "/models/model-a.gguf"
+    assert await w.run_once() == 1
+    row = await _graph_row(engine, graph_id)
+    assert row["embedding"] is not None and row["embedding_model"] == MODEL
+
+
+async def test_a_restart_clears_only_stale_model_vectors_and_reembeds_them(engine, llama):
+    fake, url = llama
+    stale_id = await _message(engine, "embedded by the old model")
+    current_id = await _message(engine, "embedded by the current model")
+    stale_vector = [-0.5] + [0.0] * 2047
+    current_vector = [0.5] + [0.0] * 2047
+    old_model = fingerprint("model-b.gguf@1111")
+    async with engine.begin() as conn:
+        await conn.execute(sa.update(GRAPH_SEARCH).where(
+            GRAPH_SEARCH.c.graph_id == stale_id,
+        ).values(embedding=stale_vector, embedding_model=old_model,
+                 embedded_at=1, embed_input="text"))
+        await conn.execute(sa.update(GRAPH_SEARCH).where(
+            GRAPH_SEARCH.c.graph_id == current_id,
+        ).values(embedding=current_vector, embedding_model=MODEL,
+                 embedded_at=1, embed_input="text"))
+
+    assert await worker(engine, url).run_once() == 1
+
+    stale = await _graph_row(engine, stale_id)
+    current = await _graph_row(engine, current_id)
+    assert fake.calls == 1
+    assert stale["embedding_model"] == MODEL
+    assert list(stale["embedding"]) != stale_vector
+    assert (stale["embed_attempts"], stale["embed_error"]) == (0, None)
+    assert list(current["embedding"]) == current_vector
+    assert current["embedding_model"] == MODEL
+
+
+async def test_an_outage_stops_the_batch_backs_off_immediately_and_a_rejection_continues(
+    engine, llama, caplog,
+):
+    fake, url = llama
+    first = await _message(engine, "a private sentence one")
+    second = await _message(engine, "a private sentence two")
+    metrics, clock = Metrics(), Clock()
+    w = worker(engine, url, metrics=metrics, clock=clock)
+
+    fake.status, fake.healthy = 503, False
+    with caplog.at_level(logging.DEBUG):
+        assert await w.run_once() == 1
+    assert fake.calls == 1
+    rows = [await _graph_row(engine, row_id) for row_id in (first, second)]
+    assert sorted(row["embed_attempts"] for row in rows) == [0, 1]
+    failed = max(rows, key=lambda row: row["embed_attempts"])
+    assert failed["embed_error"].startswith("unavailable:")
+    assert "private" not in caplog.text and "private" not in failed["embed_error"]
+    assert metrics.get("nora_memory_embed_total", outcome="unavailable") == 1
+
+    assert await w.run_once() == 1
+    assert fake.calls == 2
+    assert await w.run_once() == 0
+    assert fake.calls == 2
+
+    fake.status, fake.healthy = 400, True
+    clock.now += 7 * 3600
+    assert await w.run_once() == 2
+    assert metrics.get("nora_memory_embed_total", outcome="rejected") == 2
+
+
+async def test_an_unexpected_failure_is_recorded_and_given_up_after_the_cap(
+    engine, llama, monkeypatch,
+):
+    _fake, url = llama
+    bad = await _message(engine, "a graph row that always breaks")
+    good = await _message(engine, "a graph row that embeds")
+    real = LlamaEmbedder.embed_document
+
+    async def _breaks(self, text: str):
+        if "breaks" in text:
+            raise KeyError("boom")
+        return await real(self, text)
+
+    monkeypatch.setattr(LlamaEmbedder, "embed_document", _breaks)
+    metrics, clock = Metrics(), Clock()
+    w = worker(engine, url, metrics=metrics, clock=clock)
+
+    assert await w.run_once() == 2
+    bad_row = await _graph_row(engine, bad)
+    assert (bad_row["embed_attempts"], bad_row["embed_error"]) == (1, "error:KeyError")
+    assert (await _graph_row(engine, good))["embedding"] is not None
+    assert metrics.get("nora_memory_embed_total", outcome="error") == 1
+
+    for _ in range(EMBED_MAX_ATTEMPTS - 1):
+        clock.now += 7 * 3600
+        assert await w.run_once() == 1
+    assert metrics.get("nora_memory_embed_total", outcome="given_up") == 1
+    clock.now += 7 * 3600
+    assert await w.run_once() == 0
+
+
+async def test_truncation_is_counted_only_when_the_vector_is_stored(
+    engine, llama, monkeypatch,
+):
+    _fake, url = llama
+    long_id = await _message(engine, "x" * 9000)
+    short_id = await _message(engine, "a short message")
+    metrics = Metrics()
+    assert await worker(engine, url, metrics=metrics).run_once() == 2
+    assert (await _graph_row(engine, long_id))["embedding"] is not None
+    assert (await _graph_row(engine, short_id))["embedding"] is not None
+    assert metrics.get("nora_memory_embed_total", outcome="ok") == 2
+    assert metrics.get("nora_memory_embed_truncated_total", kind="graph_search") == 1
+
+    changed_id = await _message(engine, "y" * 9000)
+    real = LlamaEmbedder.embed_document
+
+    async def _changed_meanwhile(self, text: str):
+        out = await real(self, text)
+        async with engine.begin() as conn:
+            await conn.execute(sa.update(GRAPH_SEARCH).where(
+                GRAPH_SEARCH.c.graph_id == changed_id,
+            ).values(text="short now"))
+        return out
+
+    monkeypatch.setattr(LlamaEmbedder, "embed_document", _changed_meanwhile)
+    metrics = Metrics()
+    assert await worker(engine, url, metrics=metrics).run_once() == 1
+    assert (await _graph_row(engine, changed_id))["embedding"] is None
+    assert metrics.get("nora_memory_embed_truncated_total", kind="graph_search") == 0

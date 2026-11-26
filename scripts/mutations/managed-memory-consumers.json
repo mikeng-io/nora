@@ -1,26 +1,5 @@
 [
  {
-  "name": "source admission reads current managed room membership",
-  "file": "nora/infra/sql/comprehend.py",
-  "old": "or await self._persons_in_unit(node[\"persons\"], work.unit)",
-  "new": "or (\n                    node[\"persons\"]\n                    and set(node[\"persons\"]) <= self.persons_by_unit.get(work.unit, set())\n                )",
-  "target": "tests/contract/test_comprehend_records_contract.py::test_managed_source_admission_uses_current_room_membership[sql]"
- },
- {
-  "name": "social preference is read for the source's people at read time",
-  "file": "nora/infra/sql/comprehend.py",
-  "old": "set(node[\"persons\"]) & await self._social_off(node[\"persons\"])",
-  "new": "set(node[\"persons\"]) & self.social_off_ids",
-  "target": "tests/contract/test_comprehend_records_contract.py::test_managed_social_read_checks_the_live_preference_at_read_time[sql]"
- },
- {
-  "name": "a retired alias folds for the permission question only",
-  "file": "nora/infra/sql/comprehend.py",
-  "old": "        return await self.access.canonical_person(person_id) or person_id",
-  "new": "        return person_id",
-  "target": "tests/contract/test_comprehend_records_contract.py::test_managed_admission_folds_a_retired_alias_for_permission[sql]"
- },
- {
   "name": "the memory tool person filter reads managed room membership",
   "file": "nora/memory/adapters/tools/search.py",
   "old": "if target.room.persons is not None:",

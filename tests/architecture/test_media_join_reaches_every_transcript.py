@@ -149,10 +149,6 @@ _NOT_A_RAW_READER = {
     "nora/memory/adapters/subject_claims.py": (
         "the subject portal reads individually authorized citations for a browser display"
     ),
-    "nora/infra/sql/unified_backfill.py": (
-        "enumerates historical event identities; the existing Grounder resolves "
-        "their transcript/media content through MediaJoin before rendering"
-    ),
     "nora/infra/sql/standing_ledger.py": (
         "a store span read; load_transcript and room_read join the returned rows through MediaJoin"
     ),

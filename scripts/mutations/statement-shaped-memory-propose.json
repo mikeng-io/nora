@@ -63,20 +63,6 @@
     "target": "tests/unit/test_orient_kind_table.py::test_a_correction_cannot_cite_a_fabricated_quote"
   },
   {
-    "name": "a retry merges additional distinct claims for the same work",
-    "file": "nora/testing/comprehend.py",
-    "old": "        stored.extend(c for c in claims if c not in stored)\n        return list(stored)",
-    "new": "        return list(stored)",
-    "target": "tests/contract/test_comprehend_records_contract.py::test_a_retry_persists_additional_distinct_claims"
-  },
-  {
-    "name": "the SQL writer merges additional distinct claims on a retry",
-    "file": "nora/infra/sql/comprehend.py",
-    "old": "                new = [c for c in contents if canonical(c) not in stored]",
-    "new": "                new = []",
-    "target": "tests/contract/test_comprehend_records_contract.py::test_a_retry_persists_additional_distinct_claims"
-  },
-  {
     "name": "a malformed statement refuses alone, not the whole call",
     "file": "nora/app/cognition_memory.py",
     "old": "        valid: list[Statement] = []\n        indices: list[int] = []\n        pre_refused: dict[int, dict[str, Any]] = {}\n        for i, raw in enumerate(statements):\n            try:\n                valid.append(_STATEMENT.validate_python(raw))\n                indices.append(i)\n            except ValidationError as error:\n                pre_refused[i] = {\"status\": \"refused\", \"kind\": \"schema\",\n                                  \"reason\": \"schema\",\n                                  \"errors\": _shape_errors(error)}\n        output = Proposal(statements=valid)",

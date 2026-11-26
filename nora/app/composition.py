@@ -1310,11 +1310,9 @@ async def _compose_dependencies(
             MemoryEmbedWorker(
                 engine,
                 LlamaEmbedder(cfg.memory.index.embedder_url),
-                None,
                 model=fingerprint(cfg.memory.index.embedder_model),
                 model_file=model_file(cfg.memory.index.embedder_model),
                 batch=cfg.memory.index.embed_batch,
-                images_per_hour=0,
                 metrics=metrics,
             )
             if cfg.memory.index.embed
