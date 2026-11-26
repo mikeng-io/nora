@@ -4,7 +4,7 @@
     "file": "nora/app/composition_social.py",
     "old": "            metrics=metrics,\n            # ponytail: graph_search keys caption/alt text by (graph_id, unit),\n            # so it holds no per-medium embedding state and cannot settle a frame early;\n            # frames wait for story_media_keep_max_days, which expiry supports and counts.\n",
     "new": "            metrics=metrics,\n            embedded=lambda frames: __import__(\"asyncio\").sleep(0, result=set(frames)),\n",
-    "target": "tests/integration/test_story_media_expiry.py::test_a_caption_embedding_does_not_settle_a_pending_medium",
+    "target": "tests/integration/test_story_media_expiry.py::test_an_absent_graph_row_keeps_the_bytes tests/integration/test_story_media_expiry.py::test_a_queued_graph_row_keeps_the_bytes tests/integration/test_story_media_expiry.py::test_a_caption_embedding_does_not_settle_a_pending_medium",
     "comment": "The mutant restores an embedded= wiring without reintroducing the deleted graph reader; on the probe's rows every embedded answer the wiring could give is the wrong early-settlement one."
   }
 ]
