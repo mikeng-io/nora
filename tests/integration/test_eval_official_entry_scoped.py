@@ -123,7 +123,7 @@ def _configure_generated_deployment(tmp_path, monkeypatch, pg_admin, pg_template
                                     example_config_path: Path) -> tuple[Path, str]:
     """Seed the source and point the eval entry at its generated deployment."""
     from nora.infra.sql.migrations_runner import run_migrations
-    from tests.sandbox_fixtures import Knowledge, Message, seed_source
+    from tests.sandbox_fixtures import Knowledge, Message, embed_graph_source, seed_source
 
     # --- a generated source DB at the candidate's migration head ---
     admin_url = (f"postgresql://{pg_admin.user}:{pg_admin.password}"
@@ -140,6 +140,8 @@ def _configure_generated_deployment(tmp_path, monkeypatch, pg_admin, pg_template
         Knowledge(transcript=(Message(body="hello room", at_ms=BEFORE_MS - 60_000),)),
         template=pg_template,
         room=("signal", REAL_ID), before_ms=BEFORE_MS))
+    embedded = asyncio.run(embed_graph_source(source_url))
+    assert embedded, "positive control: the generated source holds graph vectors"
     # Date the generated rows' history at their own logical ts — the same
     # controlled-recorded_at pattern `test_full_restore_recall` uses, on
     # this test's OWN generated rows only.

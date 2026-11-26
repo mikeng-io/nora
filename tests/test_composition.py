@@ -1883,21 +1883,6 @@ async def test_cognition_builds_graph_memory_tools_with_the_host_shape(
     assert "who_said" in runner._read_only_tools
     assert built & GRAPH_MEMORY_TOOLS and runner._read_only_tools & GRAPH_MEMORY_TOOLS
 
-    off_deps = await build_dependencies(override_config(host_cfg, {
-        **_SESSION_ON,
-        "store.data_dir": tmp_path / "off",
-        "platforms.signal.mode": "direct",
-        "platforms.signal.base_url": "http://127.0.0.1:18080",
-        "platforms.signal.account": "+85290000100",
-        "doctrine.dir": ROOT / "nora" / "doctrine",
-        "dreamer.dir": ROOT / "nora" / "dreamer",
-    }), legacy_replay=True, include_graph_reads=False)
-    off_runner = off_deps.cognition_runner
-    assert off_runner is not None
-    off_unit, off_home = next(iter(off_runner._home_rooms.items()))
-    off_built = {t.tool_name for t in off_runner._read_tools_for(off_unit, [off_home])}
-    assert {"memory_search", "memory_read"}.isdisjoint(off_built)
-    assert "who_said" in off_built, "positive control: the window-attribution read is offered"
 
 
 async def test_markdown_identity_reaches_live_tools_and_cognition_writers(cfg, tmp_path):

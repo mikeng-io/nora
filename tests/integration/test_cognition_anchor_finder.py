@@ -231,7 +231,7 @@ async def _run_confirmation(
 
     cfg = build_config(SubjectSpec(
         database_url=url, workdir=tmp_path / "declared", room=ROOM,
-        overrides=confirmation._overrides(False), policy=POLICY,
+        overrides=confirmation._overrides(), policy=POLICY,
         identity=IDENTITY))
     recording = _recording(cfg)
     confirmed = await confirmation.confirm(

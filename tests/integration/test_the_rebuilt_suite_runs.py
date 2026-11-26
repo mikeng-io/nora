@@ -20,7 +20,6 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
-import sqlalchemy as sa
 from strands_evals import Case
 from strands_evals.types.evaluation import EvaluationData
 
@@ -34,7 +33,7 @@ from evals.backbone import (
     state_of,
 )
 from nora.subject import Knowledge, NoteSeed
-from tests.sandbox_fixtures import ROOM, offline_drive, seed_source
+from tests.sandbox_fixtures import ROOM, embed_graph_source, offline_drive, seed_source
 
 _NO_PROVIDER = {"llm.base_url": "http://127.0.0.1:9/v1"}
 
@@ -72,7 +71,6 @@ def _policy(*, proactive: bool, home_room_here: bool) -> str:
 async def _graded(
     *, entry: str, expect: str, clean_pg_url: str, pg_template: str, tmp_path: Any,
     policy: str = "", input: str = "", metadata: dict[str, Any] | None = None,
-    memory_surface: str | None = None,
 ) -> tuple[Any, dict[str, Any]]:
     source = await seed_source(
         clean_pg_url, tmp_path, _HISTORY, template=pg_template, policy=policy,
@@ -84,7 +82,6 @@ async def _graded(
     spec = Spec(
         source_url=source.url, entry=entry, overrides=_NO_PROVIDER,
         policy=source.policy, identity=source.identity, template=source.template,
-        memory_surface=memory_surface,
     )
     result = await offline_drive(case, spec)
     data = EvaluationData(
@@ -181,22 +178,6 @@ async def test_a_proactive_case_never_grades_on_a_wiring_refusal(
 
 
 @pytest.mark.asyncio
-async def test_the_eval_memory_off_arm_composes_without_memory_reads(
-    clean_pg_url, pg_template, tmp_path, monkeypatch,
-) -> None:
-    """The eval-only control reaches one real draw offline; the harness's
-    admitted-surface check, not a passed flag, proves memory_search/memory_read
-    are absent. An untagged line needs no model, so nothing paid runs."""
-    monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
-    out, state = await _graded(
-        entry="tag", expect="silence", clean_pg_url=clean_pg_url,
-        pg_template=pg_template, tmp_path=tmp_path, input="anyway what time is lunch",
-        memory_surface="off",
-    )
-    assert out.label == PASS, f"off arm: {out.reason} {state}"
-
-
-@pytest.mark.asyncio
 async def test_a_graph_surface_sandbox_is_indexed_from_the_sources_vectors(
     clean_pg_url, pg_template, tmp_path, monkeypatch, capsys,
 ) -> None:
@@ -204,11 +185,6 @@ async def test_a_graph_surface_sandbox_is_indexed_from_the_sources_vectors(
     vectors through the SNAPSHOT path, which renumbers every row: matched on
     the embedded input, the sandbox holds every vector it owes. A source
     holding none refuses the draw: ERROR, never a lexical run graded."""
-    from nora.config import MemoryIndexConfig
-    from nora.infra.embedder import fingerprint
-    from nora.infra.sql import create_sql_engine, graph_search_embed
-    from nora.infra.sql.cognitive_graph_schema import REGISTRY
-    from nora.memory.wire import rebuild_graph_search
     from nora.subject import GraphIndexRefusedError
 
     monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
@@ -224,24 +200,8 @@ async def test_a_graph_surface_sandbox_is_indexed_from_the_sources_vectors(
     with pytest.raises(GraphIndexRefusedError, match="no graph-search vector of"):
         await offline_drive(case, spec)
 
-    engine = create_sql_engine(source.url)
-    try:
-        async with engine.begin() as conn:
-            units = tuple(await conn.scalars(sa.select(REGISTRY.c.unit).distinct()))
-            assert units  # positive control: the snapshot carries a graph
-            for unit in units:
-                await rebuild_graph_search(conn, unit)
-            items = await graph_search_embed.pick(conn, limit=100, now_ms=0)
-            assert items  # positive control: the source owes vectors
-            for n, item in enumerate(items):
-                vec = [0.0] * 2048
-                vec[n] = 1.0
-                await graph_search_embed.store(
-                    conn, item, vector=vec, now_ms=1,
-                    model=fingerprint(MemoryIndexConfig().embedder_model),
-                )
-    finally:
-        await engine.dispose()
+    embedded = await embed_graph_source(source.url)
+    assert embedded, "positive control: the source owes and holds vectors"
     capsys.readouterr()
     result = await offline_drive(case, spec)
     data = EvaluationData(input="", actual_output=result["output"],

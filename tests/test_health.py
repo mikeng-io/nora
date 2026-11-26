@@ -345,7 +345,11 @@ async def test_a_hung_degraded_bridge_does_not_stall_health(aiohttp_client, stor
     from nora.platform.registry import AdapterRegistry
     from nora.testing import FakePlatformAdapter
 
+    upstream = 0
+
     async def hang(request):
+        nonlocal upstream
+        upstream += 1
         await asyncio.Event().wait()
 
     hung = web.Application()
@@ -367,6 +371,8 @@ async def test_a_hung_degraded_bridge_does_not_stall_health(aiohttp_client, stor
         metrics=metrics, started_at=0.0, llm_state=LLMState(),
     )
     client = await aiohttp_client(app)
+    warm = await client.get("/health")
+    assert warm.status == 200
     started = time.monotonic()
     response = await client.get("/health")
     elapsed = time.monotonic() - started
@@ -374,4 +380,5 @@ async def test_a_hung_degraded_bridge_does_not_stall_health(aiohttp_client, stor
     assert elapsed < 1.0, f"/health took {elapsed:.2f}s behind a hung degraded bridge"
     assert response.status == 200
     assert (await response.json())["platforms"]["whatsapp"]["state"] == "degraded"
+    assert upstream == 0, "the degraded latch answered before the bridge transport"
     await bridge.close()

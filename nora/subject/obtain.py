@@ -301,11 +301,6 @@ class SubjectSpec:
     #: unmarked world — every boundary exactly as composed.
     circle: CircleOverlay | None = None
 
-    #: WHETHER THE COGNITIVE GRAPH'S READ TOOLS ARE COMPOSED. Production never
-    #: sets this false; it is the eval-only control arm for measuring memory's
-    #: contribution, not a configuration switch.
-    graph_memory: bool = True
-
     #: WHERE THE CONTROLLED `sendReaction` ENDPOINT IS. `circle.reaction_wire`
     #: binds a draw-owned RPC address per case; `obtain` points the composed
     #: adapter's `SignalReactor` at it, so the REAL reactor meets the
@@ -364,22 +359,6 @@ class Subject:
     async def aclose(self) -> None:
         if self.environment is not None:
             await self.environment.close_subject(self)
-
-
-def surface_tool_names(subject: Subject) -> set[str]:
-    """The memory reads one ordinary tag surface would actually offer."""
-    from nora.agent.room import Room
-
-    deps = subject.deps
-    room = Room(
-        platform=subject.room[0], conversation_id=subject.room[1], roster_source=None,
-        persons=deps.persons, access=deps.access,
-    )
-    surface = deps.engagement._tool_registry.surface(
-        store=deps.audit, conversation_id=subject.room[1], conversation_type="group",
-        persons=deps.persons, deliverer=None, metrics=deps.metrics, room=room,
-    )
-    return set(surface.admitted)
 
 
 def _with(obj: Any, path: str, value: Any) -> Any:
@@ -518,7 +497,6 @@ async def obtain(spec: SubjectSpec, *, legacy_replay: bool = False) -> Subject:
     # Semantic time is controlled; operational leases and deadlines advance.
     deps = await build_dependencies(
         cfg, clock=clock, operational_clock=wall_clock, legacy_replay=legacy_replay,
-        include_graph_reads=spec.graph_memory,
     )
     subject = None
     try:

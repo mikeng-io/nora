@@ -78,8 +78,3 @@ A counterfactual varies an explicitly named input or experimental condition.
 It is reported separately from historical reconstruction and deployment
 acceptance. Missing prerequisites remain unfinished work, never a reason to
 quietly omit a block or an active case.
-
-The memory-control arm is such an experimental condition: evaluation may
-compose the same case with the Cognitive Graph's read tools absent so memory's
-contribution is measurable. This is not a production configuration switch;
-production graph reads are unconditional.

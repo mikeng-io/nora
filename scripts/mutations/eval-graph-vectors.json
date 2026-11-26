@@ -51,8 +51,8 @@
   {
     "name": "the isolated subject retains the production embedding worker",
     "file": "nora/subject/obtain.py",
-    "old": "    deps = await build_dependencies(\n        cfg, clock=clock, operational_clock=wall_clock, legacy_replay=legacy_replay,\n        include_graph_reads=spec.graph_memory,\n    )",
-    "new": "    deps = await build_dependencies(\n        cfg, clock=clock, operational_clock=wall_clock, legacy_replay=legacy_replay,\n        include_graph_reads=spec.graph_memory,\n    )\n    deps = __import__(\"dataclasses\").replace(deps, memory_embed=None)",
+    "old": "    deps = await build_dependencies(\n        cfg, clock=clock, operational_clock=wall_clock, legacy_replay=legacy_replay,\n    )",
+    "new": "    deps = await build_dependencies(\n        cfg, clock=clock, operational_clock=wall_clock, legacy_replay=legacy_replay,\n    )\n    deps = __import__(\"dataclasses\").replace(deps, memory_embed=None)",
     "target": "tests/integration/test_the_subject_is_the_deployed_graph.py::test_actual_production_composition_retains_fire_bridge_and_cognition"
   },
   {

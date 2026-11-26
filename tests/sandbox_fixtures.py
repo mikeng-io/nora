@@ -178,6 +178,39 @@ def dated(
     )
 
 
+async def embed_graph_source(url: str) -> int:
+    """Give a generated eval source the graph-search vectors production's
+    backfill would hold, through the real projection queue. Returns the
+    number of vectors written; zero means the fixture proved nothing."""
+    import sqlalchemy as sa
+
+    from nora.config import MemoryIndexConfig
+    from nora.infra.embedder import fingerprint
+    from nora.infra.sql import create_sql_engine, graph_search_embed
+    from nora.infra.sql.cognitive_graph_schema import REGISTRY
+    from nora.infra.sql.schema import EMBEDDING_DIMENSIONS
+    from nora.memory.wire import rebuild_graph_search
+
+    model = fingerprint(MemoryIndexConfig().embedder_model)
+    engine = create_sql_engine(url)
+    written = 0
+    try:
+        async with engine.begin() as conn:
+            units = tuple(await conn.scalars(sa.select(REGISTRY.c.unit).distinct()))
+            for unit in units:
+                await rebuild_graph_search(conn, unit)
+            items = await graph_search_embed.pick(conn, limit=500, now_ms=0)
+            for n, item in enumerate(items):
+                vector = [0.0] * EMBEDDING_DIMENSIONS
+                vector[n % EMBEDDING_DIMENSIONS] = 1.0
+                written += int(await graph_search_embed.store(
+                    conn, item, vector=vector, now_ms=1, model=model,
+                ))
+    finally:
+        await engine.dispose()
+    return written
+
+
 async def seed_source(
     url: str,
     workdir: Path,
