@@ -25,6 +25,7 @@ the first violation, printing which rule and where the convention is written.
 from __future__ import annotations
 
 import re
+import subprocess
 import sys
 
 # Declared in CONTRIBUTING.md §Commit messages. Keep the two in lockstep.
@@ -65,7 +66,6 @@ TRAILER_RE = re.compile(
 # There is no exemption: a local hook cannot authenticate an author, and release
 # automation and the dependency bot commit on GitHub, where these hooks never run.
 PROVENANCE = ("Environment", "Agent", "Model")
-_TRAILER_LINE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9-]*:[ \t]?.*$")
 
 SUBJECT_RE = re.compile(rf"^({TYPES_RE})(\([^)]+\))?!?: .+")
 
@@ -195,15 +195,16 @@ def check_message(message: str) -> list[str]:
 
 
 def trailers(message: str) -> dict[str, str]:
-    """Git's trailer block: the last paragraph, when every line in it is a trailer."""
-    lines = [x for x in message.splitlines() if not x.startswith("#")]
-    paragraphs = "\n".join(lines).strip().split("\n\n")
-    if len(paragraphs) < 2:
-        return {}
-    block = paragraphs[-1].strip().splitlines()
-    if not block or not all(_TRAILER_LINE.match(x) or x[:1] in " \t" for x in block):
-        return {}
-    return {key: value.strip() for key, _, value in (x.partition(":") for x in block if x[:1] not in " \t")}
+    """The message's trailers exactly as git parses them (`git interpret-trailers --parse`)."""
+    done = subprocess.run(  # noqa: S603 - git, with the message on stdin
+        ["git", "interpret-trailers", "--parse", "--no-divider"],  # noqa: S607
+        input=message, capture_output=True, text=True, check=True,
+    )
+    found = {}
+    for line in done.stdout.splitlines():
+        key, _, value = line.partition(":")
+        found[key.strip()] = value.strip()
+    return found
 
 
 def check_provenance(message: str) -> list[str]:

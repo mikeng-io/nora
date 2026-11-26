@@ -122,6 +122,13 @@ def test_field_lines_in_the_body_are_not_trailers():
     assert len(checker.check_provenance(inline)) == 3
 
 
+def test_git_reads_trailers_past_a_whitespace_line_and_a_folded_value():
+    spaced = f"fix(scope): do a thing\n\n{WHY}\n \nEnvironment: a\nAgent: b\nModel: c\n"
+    folded = f"fix(scope): x\n\n{WHY}\n\nEnvironment: a\nAgent: b\nModel:\n  c (effort high)\n"
+    assert checker.check_provenance(spaced) == []
+    assert checker.check_provenance(folded) == []
+
+
 def test_no_author_is_exempt_not_even_a_bot():
     bot = "chore(deps): bump x\n\nSigned-off-by: dependabot[bot]\n"
     assert len(checker.check_provenance(bot)) == 3

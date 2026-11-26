@@ -137,7 +137,7 @@ def check(path: str, text: str) -> list[str]:
     links = meta.get("links", [])
     if not isinstance(links, list) or not all(
         isinstance(link, dict) and set(link) == {"to", "rel"} and _text(link["to"])
-        and link["rel"] in RELS
+        and isinstance(link["rel"], str) and link["rel"] in RELS
         for link in links
     ):
         found.append("frontmatter-links")
@@ -168,7 +168,8 @@ def tree_rules(files: dict[str, str], exists) -> dict[str, list[str]]:
         if isinstance(meta.get("owns"), list):
             for term in owned(meta):
                 owners.setdefault(term.strip().lower(), []).append(path)
-        for link in meta.get("links") or []:
+        links = meta.get("links")
+        for link in links if isinstance(links, list) else []:
             target = link.get("to") if isinstance(link, dict) else None
             if isinstance(target, str) and not exists(target) and target not in STAGED_TARGETS:
                 result.setdefault(path, []).append("link-unresolved")
@@ -181,10 +182,11 @@ def tree_rules(files: dict[str, str], exists) -> dict[str, list[str]]:
 
 
 def resolves(target: str) -> bool:
-    """A link names a file in the repository, by a relative path inside it."""
+    """A link names a file in the repository, by a relative path that stays inside it."""
     if target.startswith("/") or ".." in Path(target).parts:
         return False
-    return (ROOT / target).is_file()
+    path = (ROOT / target).resolve()
+    return path.is_file() and path.is_relative_to(ROOT.resolve())
 
 
 def documents() -> dict[str, str]:
@@ -203,12 +205,13 @@ def documents() -> dict[str, str]:
     chosen = (
         p for p in out if p and (p.startswith("docs/") or ("/" not in p and p.endswith(".md")))
     )
+    # Every git entry is kept, a dangling symlink included, so the tree rules see it;
+    # only a readable Markdown file contributes text.
     return {
         path: (ROOT / path).read_text(encoding="utf-8", errors="replace")
-        if path.endswith(".md")
+        if path.endswith(".md") and (ROOT / path).is_file()
         else ""
         for path in sorted(set(chosen))
-        if (ROOT / path).is_file()
     }
 
 

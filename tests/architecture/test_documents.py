@@ -209,3 +209,37 @@ def test_documents_match_the_baseline() -> None:
         "documents were fixed; shrink the baseline by these entries "
         f"(python -m scripts.check_documents --write, then check the diff only removes): {gone}"
     )
+
+
+def test_a_malformed_link_is_named_and_never_crashes_the_census(tmp_path, monkeypatch):
+    import subprocess
+
+    import scripts.check_documents as gate
+
+    (tmp_path / "docs/engineering").mkdir(parents=True)
+    bad = {"a.md": "links: [{to: README.md, rel: [uses]}]", "b.md": "links: 7"}
+    for name, links in bad.items():
+        text = f"---\nclass: engineering\nsubject: {name}\nowns: []\n{links}\n---\n"
+        (tmp_path / "docs/engineering" / name).write_text(text, encoding="utf-8")
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    monkeypatch.setattr(gate, "ROOT", tmp_path)
+    found = gate.census()
+    assert all("frontmatter-links" in found[f"docs/engineering/{n}"] for n in bad)
+
+
+def test_a_symlink_never_resolves_outside_and_a_dangling_one_is_seen(tmp_path, monkeypatch):
+    import subprocess
+
+    import scripts.check_documents as gate
+
+    outside = tmp_path / "outside.md"
+    outside.write_text("x\n", encoding="utf-8")
+    repo = tmp_path / "repo"
+    (repo / "docs/design").mkdir(parents=True)
+    (repo / "docs/escape.md").symlink_to(outside)
+    (repo / "docs/design/loose.bin").symlink_to(repo / "missing")
+    subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+    subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
+    monkeypatch.setattr(gate, "ROOT", repo)
+    assert not gate.resolves("docs/escape.md")
+    assert "design-root" in gate.census()["docs/design/loose.bin"]
