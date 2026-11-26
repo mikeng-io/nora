@@ -112,7 +112,9 @@ def check(path: str, text: str) -> list[str]:
         }
     ):
         found.append("design-root")
-    if path.startswith("docs/design/") and len(text.splitlines()) > MAX_LINES:
+    # The budget is a bundle's: decisions.md and the generated map are not bundle files.
+    in_bundle = path.startswith("docs/design/") and path.count("/") > 2
+    if in_bundle and len(text.splitlines()) > MAX_LINES:
         found.append("over-budget")
     if path in GENERATED:
         return found
