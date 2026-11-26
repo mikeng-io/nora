@@ -27,11 +27,10 @@ from nora.domain.media import MediaBlob
 from nora.domain.models import NormalizedMessage
 from nora.infra.embedder import fingerprint
 from nora.infra.sql import memory_index
-from nora.infra.sql.audit import SqlRecordStore
 from nora.infra.sql.engine import create_sql_engine
-from nora.infra.sql.media_objects import SqlMediaObjectStore
 from nora.infra.sql.schema import EMBEDDING_DIMENSIONS, MEMORY_NODE
 from nora.subject.sandbox import sandbox_database
+from tests.fixtures.legacy_projection import ProjectingMediaObjectStore, ProjectingRecordStore
 
 MODEL_ID = "synthetic-embedder.gguf@0000feedbeef"
 MODEL = fingerprint(MODEL_ID)
@@ -54,11 +53,11 @@ def _message(body: str, *, ts: int, blobs: tuple[MediaBlob, ...] = ()) -> Normal
 
 async def _write(engine: Any, rows: list[tuple[str, tuple[MediaBlob, ...]]],
                  readings: dict[str, str]) -> None:
-    record = SqlRecordStore(engine)
+    record = ProjectingRecordStore(engine)
     for n, (body, blobs) in enumerate(rows):
         await record.append(message=_message(body, ts=1000 + n, blobs=blobs), person_id="member-a")
     for sha, reading in readings.items():
-        await SqlMediaObjectStore(engine).comprehend(
+        await ProjectingMediaObjectStore(engine).comprehend(
             sha256=sha, title=reading, description="", content="", model="m",
         )
 

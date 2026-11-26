@@ -12,7 +12,6 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nora.domain.culture import CultureRevision
 from nora.domain.lineage import BODY, own_room_lineage, room_key
-from nora.infra.sql import memory_index
 from nora.infra.sql.schema import CULTURE, CULTURE_REVISION, MESSAGES
 
 __all__ = ["SqlCultureStore"]
@@ -104,9 +103,6 @@ class SqlCultureStore:
                     },
                 )
             )
-            # Room and unit-keyed accounts only: the projector never indexes a
-            # pre-C2b room-keyed person account.
-            await memory_index.project(conn, "character", key)
         return CultureRevision(
             id=revision_id,
             culture_key=key,

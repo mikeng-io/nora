@@ -2,10 +2,10 @@
 22 §9, the operator's rulings): one `social` node per item and one
 `social_media` node per medium, `attached_to` it, both their author's
 (`persons`, no unit, no room), and a `social_location` node for the place
-it is tagged with, `attached_to` it; projected by every write of `social_item`,
-`social_item_state` and `social_perception` in its own transaction, and by a
-reading landing on the bytes; dropped by a gone or hidden state; rebuilt to
-the same nodes; and `story_frame_embedded`, what `StoryMediaExpiry` reads.
+it is tagged with, `attached_to` it; seeded by explicit projection doubles
+for writes of `social_item`, `social_item_state` and `social_perception`, and
+by a reading landing on the bytes; dropped by a gone or hidden state; rebuilt
+to the same nodes; and `story_frame_embedded`, what `StoryMediaExpiry` reads.
 
 Every value here is synthetic. Module-scoped database, truncated between
 tests (`test_memory_projection_record.py`'s pattern)."""
@@ -25,12 +25,11 @@ from nora.domain.media import MediaObject
 from nora.domain.social_stream import MediaItem, SocialItem
 from nora.infra.sql import memory_index
 from nora.infra.sql.engine import create_sql_engine
-from nora.infra.sql.media_objects import SqlMediaObjectStore
 from nora.infra.sql.memory_index import EMBED_MAX_ATTEMPTS, Embeddable
 from nora.infra.sql.migrations_runner import run_migrations
 from nora.infra.sql.schema import EMBEDDING_DIMENSIONS, MEMORY_EDGE, MEMORY_NODE
-from nora.infra.sql.social_stream import SqlSocialStreamStore
 from nora.obs.metrics import Metrics
+from tests.fixtures.legacy_projection import ProjectingMediaObjectStore, ProjectingSocialStreamStore
 
 pytestmark = pytest.mark.asyncio
 
@@ -89,7 +88,7 @@ def _item(item_id: str = "9001", *, kind: str = "post", caption: str | None = "p
 
 
 async def _insert(
-    store: SqlSocialStreamStore, item: SocialItem, shas: tuple[str, ...], *,
+    store: ProjectingSocialStreamStore, item: SocialItem, shas: tuple[str, ...], *,
     location: str | None = LOCATION,
 ) -> None:
     assert await store.insert_item(
@@ -119,7 +118,7 @@ def _media_id(item: str, sha: str) -> str:
 
 async def test_a_carousel_is_one_item_node_and_a_media_node_per_medium(engine):
     metrics = Metrics()
-    store = SqlSocialStreamStore(engine, metrics=metrics)
+    store = ProjectingSocialStreamStore(engine, metrics=metrics)
     await _insert(store, _item(), (A, B))
     sid = "instagram:9001"
 
@@ -151,7 +150,7 @@ async def test_alt_text_tags_and_mentions_are_in_no_node_and_the_place_only_in_i
     handles, so it would carry the place past the presence gate: it enters
     no node. The place is in its own node only, never the item's or a
     medium's text."""
-    store = SqlSocialStreamStore(engine)
+    store = ProjectingSocialStreamStore(engine)
     await _insert(store, _item(kind="story_frame", collab=True), (A,))
     nodes = await _nodes(engine)
     assert any(n.text.startswith("Instagram story, co-authored") for n in nodes.values())
@@ -167,7 +166,7 @@ async def test_a_tagged_place_is_its_own_node_of_the_author_and_goes_with_the_it
     node apart from the item: the author's, no unit and no room, its text the
     place as recorded. An item with no place has none; a hidden item takes
     its place with it."""
-    store = SqlSocialStreamStore(engine)
+    store = ProjectingSocialStreamStore(engine)
     await _insert(store, _item("9001"), (A,), location=f"  {LOCATION} ")
     await _insert(store, _item("9002"), (B,), location=None)
     await _insert(store, _item("9003"), (C,), location="   ")
@@ -190,8 +189,8 @@ async def test_a_reading_landing_reprojects_the_item_and_its_medium(engine):
     """Custody's row, then perception's reading (`comprehend`, which
     reprojects the bytes), then the perception row: the item's text carries
     the reading in its media's order, and the medium's text is its reading."""
-    store = SqlSocialStreamStore(engine)
-    objects = SqlMediaObjectStore(engine)
+    store = ProjectingSocialStreamStore(engine)
+    objects = ProjectingMediaObjectStore(engine)
     await _insert(store, _item(), (A, B))
     sid = "instagram:9001"
     for sha in (A, B):
@@ -221,7 +220,7 @@ async def test_a_reading_landing_reprojects_the_item_and_its_medium(engine):
 
 
 async def test_a_perception_row_projects_an_item_whose_projection_was_lost(engine):
-    store = SqlSocialStreamStore(engine)
+    store = ProjectingSocialStreamStore(engine)
     await _insert(store, _item(), (A,))
     async with engine.begin() as conn:
         await conn.execute(sa.delete(MEMORY_NODE))
@@ -235,7 +234,7 @@ async def test_a_perception_row_projects_an_item_whose_projection_was_lost(engin
 
 @pytest.mark.parametrize("state", ["gone", "hidden"])
 async def test_a_gone_or_hidden_item_drops_its_nodes_and_edges(engine, state):
-    store = SqlSocialStreamStore(engine)
+    store = ProjectingSocialStreamStore(engine)
     await _insert(store, _item(), (A, B))
     await _insert(store, _item("9002"), (C,))
     await store.record_state(network="instagram", item_id="9001", state=state, reason="test")
@@ -255,7 +254,7 @@ async def test_a_gone_or_hidden_item_drops_its_nodes_and_edges(engine, state):
 
 
 async def test_reprojecting_an_unchanged_item_keeps_its_vectors(engine):
-    store = SqlSocialStreamStore(engine)
+    store = ProjectingSocialStreamStore(engine)
     await _insert(store, _item(), (A,))
     sid = "instagram:9001"
     async with engine.begin() as conn:
@@ -297,7 +296,7 @@ async def _embedded(engine: Any, *frames: str, model: str = "m") -> set[tuple[st
 
 
 async def test_a_frame_is_embedded_when_every_medium_is_embedded_or_terminal(engine):
-    store = SqlSocialStreamStore(engine)
+    store = ProjectingSocialStreamStore(engine)
     await _insert(store, _item("f1", kind="story_frame"), (A, B))
     await _insert(store, _item("f2", kind="story_frame"), (C,))
     await _insert(store, _item("f3", kind="story_frame"), ())
@@ -321,7 +320,7 @@ async def test_a_frame_is_embedded_when_every_medium_is_embedded_or_terminal(eng
 
 
 async def test_a_rebuild_projects_social_items_like_live_and_is_idempotent(engine):
-    store = SqlSocialStreamStore(engine)
+    store = ProjectingSocialStreamStore(engine)
     await _insert(store, _item("9001"), (A, B))
     await _insert(store, _item("9002", kind="reel"), (C,))
     await _insert(store, _item("9003"), (A,))
@@ -350,7 +349,7 @@ async def test_a_rebuild_projects_social_items_like_live_and_is_idempotent(engin
 async def test_a_social_medium_is_typed_by_its_custody_row(engine):
     """The embedding worker's `media_types`: a social medium has no message,
     so an image is known from `media_objects`."""
-    objects = SqlMediaObjectStore(engine)
+    objects = ProjectingMediaObjectStore(engine)
     await objects.save(obj=MediaObject(
         sha256=A, media_type="image/png", size=1, source="social", description="",
         created_at_ms=1,
@@ -367,7 +366,7 @@ async def test_a_place_change_reprojects_the_tagged_place_and_a_removal_drops_it
     and clears its vector (the worker re-embeds it); one that removes the
     tag drops the node and its edge and leaves the item; a later tag brings
     it back. A rebuild projects the same."""
-    store = SqlSocialStreamStore(engine)
+    store = ProjectingSocialStreamStore(engine)
     await _insert(store, _item(), (A,), location=None)
     sid, key = "instagram:9001", ("social_location", "instagram:9001")
     assert key not in await _nodes(engine), "recorded with no place"

@@ -21,7 +21,6 @@ import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nora.domain.lessons import Lesson, LessonConflictError, LessonRevision
-from nora.infra.sql import memory_index
 from nora.infra.sql.schema import LESSON, LESSON_REVISION
 
 __all__ = ["SqlLessonStore"]
@@ -120,7 +119,6 @@ class SqlLessonStore:
                     instruction_sha256=instruction_sha256, model=model,
                 ).returning(*LESSON_REVISION.c)
             )).one()
-            await memory_index.project(conn, "lesson", str(lesson_id))
         return Lesson(id=lesson_id, unit=unit, created_at=written_at, head=_revision(row))
 
     async def append(
@@ -173,5 +171,4 @@ class SqlLessonStore:
                 ).returning(*LESSON_REVISION.c)
             )).one()
             # A retirement is a revision too (`state='retired'`).
-            await memory_index.project(conn, "lesson", lesson_id)
         return _revision(row)

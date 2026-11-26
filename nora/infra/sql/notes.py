@@ -106,7 +106,6 @@ from nora.domain.reminders import (
     PROACTIVE_KIND,
     ReminderState,
 )
-from nora.infra.sql import memory_index
 from nora.infra.sql.event_evidence import rollup_lineage
 from nora.infra.sql.schema import (
     MESSAGES,
@@ -480,7 +479,6 @@ class SqlNoteStore:
             citations=list(revision.citations),
             **derived,
         ))
-        await memory_index.project(conn, "note", note.id)
 
     async def standing(self, *, unit: str) -> tuple[Note, ...]:
         """Every note that has not been retired — the read the injected index
@@ -746,7 +744,6 @@ class SqlNoteStore:
             citations=list(revision.citations),
             **derived,
         ))
-        await memory_index.project(conn, "note", note_id)
 
     async def search(
         self, *, unit: str, query: str, limit: int,
@@ -963,8 +960,6 @@ class SqlNoteStore:
         )
         async with self._engine.begin() as conn:
             result = await conn.execute(stmt)
-            if result.rowcount:
-                await memory_index.project(conn, "note", target)
         return int(result.rowcount)
 
     async def merge_into(
@@ -1151,10 +1146,6 @@ class SqlNoteStore:
                 duplicate_head=duplicate_head, revision_id=revision.id,
                 now_ms=now_ms, on_reminder_outcome=on_reminder_outcome,
             )
-            # The survivor's new head, and the duplicate retired into it (its
-            # `supersedes` edge from the survivor).
-            await memory_index.project(conn, "note", survivor_id)
-            await memory_index.project(conn, "note", duplicate_id)
         return revision
 
     @staticmethod

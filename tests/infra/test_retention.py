@@ -49,6 +49,7 @@ from nora.memory.domain.conditions import decode_condition
 from nora.memory.domain.registration import ITEM_SOURCES, PROTECTED_ITEM_SOURCES
 from nora.memory.wire import condition_matcher
 from nora.obs.metrics import Metrics
+from tests.fixtures.legacy_projection import ProjectingRecordStore
 from tests.infra.rollup_fixtures import RollupFixture
 from tests.infra.test_absence import _END, _SIX_HOURS, _START, _silent_span
 from tests.infra.test_act_envelope import PASS
@@ -126,7 +127,7 @@ async def _registry(engine, graph_id, unit=_UNIT):
 
 async def test_configured_horizon_tombstones_only_old_rows_and_keeps_citation(engine):
     await _health(engine, "signal", "up")
-    store = SqlRecordStore(
+    store = ProjectingRecordStore(
         engine, registration=_registration(), max_per_conversation=None, horizons={"messages": 1},
     )
     writer = _Writer(engine, _registration())
@@ -379,7 +380,7 @@ async def test_expiry_covers_both_people_on_an_observation(engine):
 
 async def test_retention_rolls_back_if_the_memory_index_cannot_drop_a_message(engine):
     writer = _Writer(engine, _registration())
-    store = SqlRecordStore(engine, registration=writer.registration, max_per_conversation=0)
+    store = ProjectingRecordStore(engine, registration=writer.registration, max_per_conversation=0)
     message_id = await store.append(message=writer._message(), person_id=_PERSON)
     row = (await _rows(engine, MESSAGES))[message_id]
     async with engine.begin() as conn:

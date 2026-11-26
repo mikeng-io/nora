@@ -37,7 +37,6 @@ from nora.domain.gatherings import (
     normalise_gathering,
 )
 from nora.domain.lineage import Lineage
-from nora.infra.sql import memory_index
 from nora.infra.sql.event_evidence import apply_evidence
 from nora.infra.sql.schema import EVENT_REVISION, EVENT_RSVPS, EVENTS
 
@@ -335,7 +334,6 @@ class SqlGatheringStore:
             await conn.execute(
                 sa.update(EVENTS).where(EVENTS.c.id == row.id).values(**values),
             )
-            await memory_index.project(conn, "event", str(row.id))
             row_with_head = _replace(row, head_revision_id=revision.id)
             if receipt is not None:
                 await receipt(conn, row_with_head)

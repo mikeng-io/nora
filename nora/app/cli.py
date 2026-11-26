@@ -691,7 +691,6 @@ async def cmd_memory_backfill_places(args: argparse.Namespace) -> int:
     found = reverse_geocoder(cfg, cfg.credentials, cache_store=None)
     geocoder = found if isinstance(found, CachingBilingualGeocoder) else None
     engine = create_sql_engine(_database_url(cfg))
-    engine.update_execution_options(legacy_memory_projection=False)
     try:
         result = await backfill_places(
             events=SqlGatheringStore(engine), cache=SqlGeocodeCacheStore(engine),

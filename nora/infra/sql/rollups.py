@@ -62,7 +62,6 @@ from nora.domain.rollup import (
     stay_from_json,
     unquoted_follows,
 )
-from nora.infra.sql import memory_index
 from nora.infra.sql.aggregate_writes import AggregateWrites
 from nora.infra.sql.cognitive_graph_store import SqlCognitiveGraph
 from nora.infra.sql.graph_stimuli import SqlGraphStimuli
@@ -74,7 +73,6 @@ from nora.infra.sql.rollup_writes import (
     colocation_values,
     daybook_values,
     diff_apply,
-    outing_key,
     outing_values,
     plain,
     response_values,
@@ -232,7 +230,6 @@ class SqlRollupStore:
                 .where(ROLLUP_BUILD.c.id == build_id)
                 .values(status="current", switched_at=now)
             )
-            await memory_index.reproject_episodes(conn, metrics=self._metrics)
 
     async def abandon_build(self, *, build_id: int) -> None:
         async with self._engine.begin() as conn:
@@ -627,7 +624,6 @@ class SqlRollupStore:
         key: an unchanged row is not written. Returns how many rows of each
         kind were inserted, updated or deleted."""
         changes: dict[str, int] = {}
-        touched: list[dict[str, Any]] = []
         async with self._engine.begin() as conn:
             for table, key, rows in (
                 (
@@ -652,17 +648,7 @@ class SqlRollupStore:
                     unit=unit,
                     key=key,
                     rows=rows,
-                    touched=touched if table is ROLLUP_OUTING else None,
                 )
-            # Every outing this diff inserted, updated or deleted, by its key
-            # before and after: a key the build no longer holds is dropped.
-            await memory_index.project_episodes(
-                conn,
-                build_id,
-                "outing",
-                [outing_key(r) for r in touched],
-                metrics=self._metrics,
-            )
         return changes
 
     async def rows(self, *, table: sa.Table, build_id: int) -> list[dict[str, Any]]:

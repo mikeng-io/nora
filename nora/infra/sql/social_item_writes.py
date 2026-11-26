@@ -22,9 +22,7 @@ from nora.domain.social_stream import (
     SocialItem,
     counts_changed,
 )
-from nora.infra.sql import memory_index
 from nora.infra.sql.item_registration import SqlItemRegistration
-from nora.infra.sql.memory_index import social_source_id
 from nora.infra.sql.schema import SOCIAL_ITEM, SOCIAL_ITEM_COUNT, SOCIAL_ITEM_STATE, SOCIAL_POLL
 
 
@@ -72,11 +70,6 @@ class SocialItemWrites:
                         occurred_at=item.taken_at, cues=graph_item_cues(item.caption),
                     )
                     wrote |= inserted is not None
-            if wrote:
-                await memory_index.project(
-                    conn, "social", social_source_id(item.network, item.item_id),
-                    metrics=self._metrics,
-                )
         return wrote
 
     async def record_poll(
@@ -154,9 +147,6 @@ class SocialItemWrites:
             await self._append_item_state(
                 conn, network, item_id, {"source_state": state, "reason": reason},
             )
-            await memory_index.project(
-                conn, "social", social_source_id(network, item_id), metrics=self._metrics,
-            )
 
     async def record_place(self, *, network: str, item_id: str, place: str | None) -> None:
         """Append that an item's tagged place is now `place` (None: the tag
@@ -165,9 +155,6 @@ class SocialItemWrites:
         async with self._engine.begin() as conn:
             await self._append_item_state(
                 conn, network, item_id, {"source_state": PLACE_STATE, "place": place},
-            )
-            await memory_index.project(
-                conn, "social", social_source_id(network, item_id), metrics=self._metrics,
             )
 
     async def record_counts(

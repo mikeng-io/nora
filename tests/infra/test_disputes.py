@@ -9,13 +9,14 @@ import pytest
 import sqlalchemy as sa
 
 from nora.domain.fetched_page import FetchedPage
+from nora.infra.sql import memory_index
 from nora.infra.sql.audit import SqlRecordStore
 from nora.infra.sql.cognitive_graph_schema import CLAIM, EDGE, FORGET_REQUEST, NORA_ACT, REGISTRY
 from nora.infra.sql.cognitive_graph_store import SqlCognitiveGraph, visible_to_reads
 from nora.infra.sql.fetched_pages import SqlFetchedPageStore
 from nora.infra.sql.graph_stimuli import SqlGraphStimuli
 from nora.infra.sql.item_retention import tombstone_items
-from nora.infra.sql.schema import BRIDGE_ACTION, FETCHED_PAGES, MESSAGE_EDIT, MESSAGES
+from nora.infra.sql.schema import BRIDGE_ACTION, FETCHED_PAGES, MEMORY_NODE, MESSAGE_EDIT, MESSAGES
 from nora.memory.wire import memory_intake
 from tests.infra.test_cognitive_graph_admission import _rows
 from tests.infra.test_item_registration import (
@@ -160,6 +161,12 @@ async def test_delete_now_keeps_blocked_targets_hidden_and_tombstones_the_others
             account_key="generated-account", owner_kind="live_invocation", owner_id="fixture",
             op="send", request={}, request_hash="fixture", message_id=blocked["id"],
         ))
+    async with engine.begin() as conn:
+        await memory_index.project(conn, "message", removable["id"])
+    async with engine.connect() as conn:
+        assert await conn.scalar(sa.select(sa.exists().where(
+            MEMORY_NODE.c.kind == "message", MEMORY_NODE.c.source_id == str(removable["id"]),
+        )))
     result = await memory_intake(engine, _registration()).forget(
         unit=_UNIT, author=_PERSON, targets=[blocked["graph_id"], removable["graph_id"]],
         at=_AT, delete_now=True,
@@ -169,6 +176,10 @@ async def test_delete_now_keeps_blocked_targets_hidden_and_tombstones_the_others
         (blocked["graph_id"], "bridge_action"),
     ]
     assert set(await _rows(engine, MESSAGES)) == {blocked["id"]}
+    async with engine.connect() as conn:
+        assert not await conn.scalar(sa.select(sa.exists().where(
+            MEMORY_NODE.c.kind == "message", MEMORY_NODE.c.source_id == str(removable["id"]),
+        )))
     registry = await _rows(engine, REGISTRY)
     assert registry[blocked["graph_id"]]["state"] == "live"
     assert registry[edit["graph_id"]]["state"] == "live"

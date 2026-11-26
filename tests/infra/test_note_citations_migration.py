@@ -13,13 +13,13 @@ from alembic import command
 
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.migrations_runner import alembic_config, sync_url_for
-from nora.infra.sql.notes import SqlNoteStore
+from tests.fixtures.legacy_projection import ProjectingNoteStore
 
 
 async def _two_notes(url: str) -> tuple[str, str, str]:
     engine = create_sql_engine(url)
     try:
-        store = SqlNoteStore(engine)
+        store = ProjectingNoteStore(engine)
         note = await store.create(
             unit="unit-a", title="Friday dinner", description="where to eat",
             uncertainty="the place", closing_condition="someone books",
@@ -50,7 +50,7 @@ def test_the_backfill_stores_each_revision_s_citations_and_queues_every_note(cle
         with engine.begin() as conn:
             conn.execute(sa.text("DELETE FROM memory_projection_queue"))
             cites = "SELECT count(*) FROM memory_edge WHERE src_kind = 'note' AND rel = 'cites'"
-            # Positive control at head: the live projection drew them.
+            # Positive control at head: explicit projection drew them.
             assert conn.execute(sa.text(cites)).scalar_one() > 0
         command.downgrade(cfg, "0115_watermark_bigint")
         with engine.connect() as conn:

@@ -8,15 +8,15 @@ import sqlalchemy as sa
 from nora.domain.gatherings import RSVP, Gathering, normalise_gathering
 from nora.infra.sql import memory_index
 from nora.infra.sql.gatherings import (
-    SqlGatheringStore,
     _event_values,
     _revision_of,
     _revision_values,
 )
 from nora.infra.sql.schema import EVENT_REVISION, EVENT_RSVPS, EVENTS
+from tests.fixtures.legacy_projection import ProjectingGatheringStore
 
 
-class SeededGatheringStore(SqlGatheringStore):
+class SeededGatheringStore(ProjectingGatheringStore):
     async def create(self, event: Gathering) -> Gathering:
         event = normalise_gathering(event)
         revision = _revision_of(event, parent_revision_id=None)

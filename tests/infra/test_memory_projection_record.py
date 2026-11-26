@@ -1,5 +1,5 @@
-"""The Record's projection into the memory index: every message write keeps its
-node, its attachments' nodes and their edges, in the store's own transaction; a
+"""The Record's projection into the memory index: explicit projection
+doubles seed every message's node, its attachments' nodes and their edges; a
 projection failure queues and never costs the message.
 
 Module-scoped database per `test_withdrawal.py`'s pattern (one migrated
@@ -18,9 +18,7 @@ import sqlalchemy as sa
 from nora.domain.media import MediaBlob
 from nora.domain.models import DeliveryStatus, NormalizedMessage
 from nora.infra.sql import memory_index
-from nora.infra.sql.audit import SqlRecordStore
 from nora.infra.sql.engine import create_sql_engine
-from nora.infra.sql.media_objects import SqlMediaObjectStore
 from nora.infra.sql.migrations_runner import run_migrations
 from nora.infra.sql.schema import (
     MEMORY_EDGE,
@@ -30,6 +28,7 @@ from nora.infra.sql.schema import (
     ROLLUP_BUILD,
 )
 from nora.obs.metrics import Metrics
+from tests.fixtures.legacy_projection import ProjectingMediaObjectStore, ProjectingRecordStore
 
 pytestmark = pytest.mark.asyncio
 
@@ -106,7 +105,7 @@ async def _edges(engine: Any) -> set[tuple[str, str, str, str, str]]:
 
 async def test_an_ingested_message_has_its_node_and_edges(engine):
     metrics = Metrics()
-    store = SqlRecordStore(engine, metrics=metrics)
+    store = ProjectingRecordStore(engine, metrics=metrics)
     mid = await store.append(message=_message(), person_id="member-a")
     sid = str(mid)
 
@@ -131,7 +130,7 @@ async def test_attribution_and_the_platform_timestamp_reproject(engine):
     person; a corrected platform timestamp moves the node's time, and a
     status-only close projects nothing."""
     metrics = Metrics()
-    store = SqlRecordStore(engine, metrics=metrics)
+    store = ProjectingRecordStore(engine, metrics=metrics)
     mid = await store.append(message=_message())
     sid = str(mid)
     assert ("message", sid, "authored_by", "person", "member-a") not in await _edges(engine)
@@ -148,13 +147,13 @@ async def test_attribution_and_the_platform_timestamp_reproject(engine):
 
 
 async def test_her_own_message_is_authored_by_nora(engine):
-    store = SqlRecordStore(engine)
+    store = ProjectingRecordStore(engine)
     mid = await store.append(message=_message(), is_nora=True)
     assert ("message", str(mid), "authored_by", "nora", "nora") in await _edges(engine)
 
 
 async def test_an_edit_replaces_the_nodes_text(engine):
-    store = SqlRecordStore(engine)
+    store = ProjectingRecordStore(engine)
     mid = await store.append(message=_message(), person_id="member-a")
     await store.append_edit(
         message_id=mid, message=_message(ts=2000, body="the lantern festival plan, moved"),
@@ -165,7 +164,7 @@ async def test_an_edit_replaces_the_nodes_text(engine):
 
 
 async def test_a_hidden_message_leaves_with_its_attachments(engine):
-    store = SqlRecordStore(engine)
+    store = ProjectingRecordStore(engine)
     blob = MediaBlob(sha256=_SHA, media_type="image/jpeg", size=10)
     mid = await store.append(message=_message(blobs=(blob,)), person_id="member-a")
     keep = await store.append(message=_message(ts=1100), person_id="member-a")
@@ -198,7 +197,7 @@ async def test_a_hidden_message_leaves_with_its_attachments(engine):
 
 
 async def test_a_pruned_message_leaves_the_index(engine):
-    store = SqlRecordStore(engine, max_per_conversation=1)
+    store = ProjectingRecordStore(engine, max_per_conversation=1)
     old = await store.append(message=_message(ts=1000), person_id="member-a")
     new = await store.append(message=_message(ts=2000), person_id="member-a")
 
@@ -211,8 +210,8 @@ async def test_a_pruned_message_leaves_the_index(engine):
 
 
 async def test_a_reading_landing_after_ingest_reaches_the_attachment(engine):
-    store = SqlRecordStore(engine)
-    media = SqlMediaObjectStore(engine)
+    store = ProjectingRecordStore(engine)
+    media = ProjectingMediaObjectStore(engine)
     blob = MediaBlob(sha256=_SHA, media_type="image/jpeg", size=10)
     mid = await store.append(message=_message(blobs=(blob,)), person_id="member-a")
     att = f"{mid}:{_SHA}"
@@ -232,12 +231,12 @@ async def test_a_reading_landing_after_ingest_reaches_the_attachment(engine):
 
 
 async def test_a_reading_landing_before_ingest_is_copied_in(engine):
-    media = SqlMediaObjectStore(engine)
+    media = ProjectingMediaObjectStore(engine)
     assert await media.comprehend(
         sha256=_SHA, title="Lantern", description="A red lantern.",
         content="FESTIVAL", model="m",
     ) is True
-    store = SqlRecordStore(engine)
+    store = ProjectingRecordStore(engine)
     blob = MediaBlob(sha256=_SHA, media_type="image/jpeg", size=10)
     mid = await store.append(message=_message(blobs=(blob,)), person_id="member-a")
 
@@ -251,7 +250,7 @@ async def test_a_failed_projection_queues_and_keeps_the_message(engine, monkeypa
 
     monkeypatch.setitem(memory_index._PROJECTORS, "message", _broken)
     metrics = Metrics()
-    store = SqlRecordStore(engine, metrics=metrics)
+    store = ProjectingRecordStore(engine, metrics=metrics)
 
     mid = await store.append(message=_message(), person_id="member-a")
 
@@ -283,13 +282,13 @@ async def _queue_rows(engine: Any) -> list[tuple[Any, ...]]:
     return [tuple(r) for r in rows]
 
 
-async def test_a_failure_inside_postgres_queues_and_the_transaction_survives(
+async def test_a_failure_inside_postgres_queues_and_the_projection_transaction_survives(
     engine, monkeypatch,
 ):
     """The failure a real projector meets: Postgres refuses a statement (here
-    a CHECK), which aborts the transaction unless the savepoint contains it.
-    The message still commits, the queue row is written after the refusal on
-    the same connection, and the store keeps working."""
+    a CHECK), which aborts the projection transaction unless the savepoint
+    contains it. The source row stands, the queue row is written after the
+    refusal on the same connection, and the store keeps working."""
     async def _refused(conn: Any, source_id: str) -> None:
         await conn.execute(sa.insert(MEMORY_NODE).values(
             kind="not-a-kind", source_id=source_id, origin_room=_ROOM,
@@ -297,7 +296,7 @@ async def test_a_failure_inside_postgres_queues_and_the_transaction_survives(
 
     monkeypatch.setitem(memory_index._PROJECTORS, "message", _refused)
     metrics = Metrics()
-    store = SqlRecordStore(engine, metrics=metrics)
+    store = ProjectingRecordStore(engine, metrics=metrics)
 
     mid = await store.append(message=_message(), person_id="member-a")
 
@@ -319,7 +318,7 @@ async def test_a_projection_that_lands_clears_its_queue_row(engine, monkeypatch)
         raise RuntimeError("projector down")
 
     monkeypatch.setitem(memory_index._PROJECTORS, "message", _broken)
-    store = SqlRecordStore(engine)
+    store = ProjectingRecordStore(engine)
     mid = await store.append(message=_message())
     await store.set_person_id(row_id=mid, person_id="member-a")
     assert await _queue_rows(engine) == [("message", str(mid), 2, "RuntimeError")], (
@@ -370,7 +369,7 @@ async def test_a_drain_reprojects_what_was_queued_and_is_idempotent(engine, monk
         raise RuntimeError("projector down")
 
     monkeypatch.setitem(memory_index._PROJECTORS, "message", _broken)
-    store = SqlRecordStore(engine)
+    store = ProjectingRecordStore(engine)
     mid = await store.append(message=_message(), person_id="member-a")
     assert await _drain(engine) == 1
     assert await _queue_rows(engine) == [("message", str(mid), 2, "RuntimeError")]
@@ -427,7 +426,7 @@ async def test_rows_that_keep_failing_never_starve_a_newer_one(engine, monkeypat
         raise RuntimeError("projector down")
 
     monkeypatch.setitem(memory_index._PROJECTORS, "message", _broken)
-    mid = await SqlRecordStore(engine).append(message=_message(), person_id="member-a")
+    mid = await ProjectingRecordStore(engine).append(message=_message(), person_id="member-a")
     monkeypatch.undo()
 
     async with engine.begin() as conn:

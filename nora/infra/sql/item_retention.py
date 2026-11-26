@@ -162,15 +162,6 @@ async def tombstone_items(
                         conn, "social", [source_id], metrics=metrics, strict=True,
                     )
                 await conn.execute(sa.delete(table).where(_key_match(primary_key, [row])))
-                if table.name == "message_edit":
-                    await memory_index.project(
-                        conn, "message", row["message_id"], metrics=metrics, strict=True,
-                    )
-                elif table.name == "social_item_state":
-                    source_id = memory_index.social_source_id(row["network"], row["item_id"])
-                    await memory_index.project(
-                        conn, "social", source_id, metrics=metrics, strict=True,
-                    )
         except sa.exc.IntegrityError as exc:
             if not skip_blocked or getattr(exc.orig, "sqlstate", None) != "23503":
                 raise

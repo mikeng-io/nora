@@ -1,10 +1,10 @@
 """`nora memory backfill-places` (`nora.app.place_backfill`) on Postgres: the
 venues and cached geocodes resolved before 0118 are given their areas through
-the stores' own write paths. One unguarded path is the positive control that
-the pinned legacy projection still writes its memory edges; the production
-command's guarded engine is measured separately below. A dry run asks and
-writes nothing, and a second run finds nothing left to ask. The geocoders are
-fakes that count what they are asked."""
+the stores' own write paths. The explicit projection double is the positive
+control that the retained legacy projector still writes its memory edges; a
+production write no longer does. A dry run asks and writes nothing, and a
+second run finds nothing left to ask. The geocoders are fakes that count what
+they are asked."""
 
 from __future__ import annotations
 
@@ -129,12 +129,13 @@ async def test_a_cached_geocodes_area_is_screened_before_it_is_written(clean_pg_
     await engine.dispose()
 
 
-async def test_the_cli_engine_projection_guard_leaves_legacy_edges_unwritten(
+
+async def test_the_cli_backfill_write_leaves_legacy_edges_unwritten(
     clean_pg_url, example_config, monkeypatch,
 ):
-    """The production command's engine carries `legacy_memory_projection=False`;
-    the venue write still lands, and the legacy memory index is neither read
-    nor reprojected. The unguarded test above is the positive control."""
+    """The production command's venue write still lands, and the legacy memory
+    index is neither read nor reprojected. The explicit projection double above
+    is the positive control."""
     run_migrations(clean_pg_url)
     seed_engine = create_sql_engine(clean_pg_url)
     events = SeededGatheringStore(seed_engine)

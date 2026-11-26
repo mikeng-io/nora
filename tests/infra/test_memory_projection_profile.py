@@ -30,12 +30,11 @@ from nora.domain.profile import (
     Said,
 )
 from nora.infra.sql import memory_index
-from nora.infra.sql.audit import SqlRecordStore
-from nora.infra.sql.culture import SqlCultureStore
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.migrations_runner import run_migrations
 from nora.infra.sql.profile import SqlProfileStore
 from nora.infra.sql.schema import MEMORY_EDGE, MEMORY_NODE, PROFILE_LINE
+from tests.fixtures.legacy_projection import ProjectingCultureStore, ProjectingRecordStore
 
 pytestmark = pytest.mark.asyncio
 
@@ -100,7 +99,7 @@ def _store(engine: Any, *, index: bool = True) -> SqlProfileStore:
 
 
 async def _said(engine: Any, body: str = "i cycle to work") -> str:
-    mid = await SqlRecordStore(engine).append(
+    mid = await ProjectingRecordStore(engine).append(
         message=NormalizedMessage(
             "signal", "g1", "group", "+10000000002", "Member B", 1000, body, {},
         ),
@@ -113,7 +112,7 @@ async def _unit_proven(engine: Any) -> None:
     """`_project_profile_line` indexes a person account only when the Record
     and the stores PROVE its owner is a unit (`_is_a_unit`); the unit's own
     culture account is that proof."""
-    await SqlCultureStore(engine).append(
+    await ProjectingCultureStore(engine).append(
         key=unit_culture_key(_UNIT), body="the unit", written_at=10,
         established_by="dreamer",
     )

@@ -35,7 +35,7 @@ def projection_context(
     metrics: Any = None,
     produce: bool = True,
 ) -> ProjectionContext:
-    """One authored identity/room-name mapping for live writes and backfill."""
+    """One authored identity/room-name mapping for explicit backfill and replay."""
 
     def members() -> dict[str, frozenset[str] | None]:
         result: dict[str, frozenset[str] | None] = {}

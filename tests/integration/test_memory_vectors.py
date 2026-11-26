@@ -31,13 +31,12 @@ from nora.domain.memory_index import HUB_KINDS
 from nora.domain.models import NormalizedMessage
 from nora.infra.embedder import LlamaEmbedder, fingerprint, model_file
 from nora.infra.sql import memory_index
-from nora.infra.sql.audit import SqlRecordStore
 from nora.infra.sql.engine import create_sql_engine
-from nora.infra.sql.media_objects import SqlMediaObjectStore
 from nora.infra.sql.memory_embed import MemoryEmbedWorker
 from nora.infra.sql.schema import MEMORY_NODE
 from nora.obs.metrics import Metrics
 from nora.testing.fakes import FakeBlobStore
+from tests.fixtures.legacy_projection import ProjectingMediaObjectStore, ProjectingRecordStore
 from tests.unit.test_embedder import FakeLlamaServer, png_bytes
 
 pytestmark = pytest.mark.asyncio
@@ -101,7 +100,7 @@ async def _nodes(engine: Any) -> dict[tuple[str, str], Any]:
 
 async def test_an_edit_clears_the_vector_and_an_unchanged_reprojection_keeps_it(engine, llama):
     _fake, url = llama
-    store = SqlRecordStore(engine)
+    store = ProjectingRecordStore(engine)
     metrics = Metrics()
     mid = await store.append(message=_message("the lantern festival plan"))
     key = ("message", str(mid))
@@ -138,7 +137,7 @@ async def test_a_wait_is_owed_from_the_last_input_change_never_from_a_reprojecti
     changes. A re-projection of the same text (a later write to the row)
     keeps the wait, so a node waiting since long ago never reads as fresh
     again; an edit owes a new vector from now."""
-    store = SqlRecordStore(engine)
+    store = ProjectingRecordStore(engine)
     mid = await store.append(message=_message("the lantern festival plan"))
     key = ("message", str(mid))
     where = (MEMORY_NODE.c.kind == "message", MEMORY_NODE.c.source_id == str(mid))
@@ -176,8 +175,8 @@ async def test_an_image_keeps_its_vector_when_its_reading_lands_and_a_video_does
     blobs = FakeBlobStore()
     image = await blobs.put(data=png_bytes())
     video = await blobs.put(data=b"\x00\x00\x00\x18ftypmp42")
-    store = SqlRecordStore(engine)
-    media = SqlMediaObjectStore(engine)
+    store = ProjectingRecordStore(engine)
+    media = ProjectingMediaObjectStore(engine)
     mid = await store.append(message=_message("look", blobs=(
         MediaBlob(sha256=image, media_type="image/png", size=10),
         MediaBlob(sha256=video, media_type="video/mp4", size=10),
@@ -219,7 +218,7 @@ async def test_an_embedder_error_leaves_the_node_null_counted_and_backed_off(
     engine, llama, caplog,
 ):
     fake, url = llama
-    store = SqlRecordStore(engine)
+    store = ProjectingRecordStore(engine)
     first = await store.append(message=_message("a private sentence one", ts=1000))
     await store.append(message=_message("a private sentence two", ts=1100))
     metrics, clock = Metrics(), Clock()
@@ -260,7 +259,7 @@ async def test_a_node_of_another_model_reads_as_unembedded_and_is_re_embedded(en
     """The worker's first tick clears every other model's vector, so the
     ordinary pick re-embeds it, images included."""
     fake, url = llama
-    store = SqlRecordStore(engine)
+    store = ProjectingRecordStore(engine)
     mid = await store.append(message=_message("the lantern festival plan"))
     fake.model_path = "/models/model-b.gguf"
     await worker(engine, url, model_id="model-b.gguf@1111").run_once()
@@ -282,7 +281,7 @@ async def test_the_image_throttle_leaves_images_for_later_and_never_holds_up_a_t
 ):
     fake, url = llama
     blobs = FakeBlobStore()
-    store = SqlRecordStore(engine)
+    store = ProjectingRecordStore(engine)
     shas = [await blobs.put(data=png_bytes((i * 40, 0, 0))) for i in range(3)]
     for i, sha in enumerate(shas):
         await store.append(message=_message(
@@ -313,7 +312,7 @@ async def test_the_image_throttle_leaves_images_for_later_and_never_holds_up_a_t
 
 async def test_a_rebuild_keeps_a_vector_whose_input_is_unchanged(engine, llama):
     _fake, url = llama
-    store = SqlRecordStore(engine)
+    store = ProjectingRecordStore(engine)
     mid = await store.append(message=_message("the lantern festival plan"))
     await worker(engine, url).run_once()
 
@@ -324,7 +323,7 @@ async def test_a_rebuild_keeps_a_vector_whose_input_is_unchanged(engine, llama):
 
 async def test_clearing_takes_every_vector_or_only_another_models(engine, llama):
     _fake, url = llama
-    store = SqlRecordStore(engine)
+    store = ProjectingRecordStore(engine)
     for i in range(3):
         await store.append(message=_message(f"plan number {i}", ts=1000 + i))
     await worker(engine, url).run_once()
@@ -348,7 +347,7 @@ async def test_clearing_takes_every_vector_or_only_another_models(engine, llama)
 
 async def test_the_planner_can_use_the_hnsw_index_and_the_pick_index(engine, llama):
     _fake, url = llama
-    store = SqlRecordStore(engine)
+    store = ProjectingRecordStore(engine)
     for i in range(20):
         await store.append(message=_message(f"plan number {i}", ts=1000 + i))
     await worker(engine, url, batch=10).run_once()
@@ -384,8 +383,8 @@ async def test_an_image_embedded_from_its_reading_loses_the_vector_when_the_read
     blobs = FakeBlobStore()
     held = await blobs.put(data=png_bytes())
     gone = "ef" * 32  # in media_json, never in the blob store
-    store = SqlRecordStore(engine)
-    media = SqlMediaObjectStore(engine)
+    store = ProjectingRecordStore(engine)
+    media = ProjectingMediaObjectStore(engine)
     for sha in (held, gone):
         assert await media.comprehend(
             sha256=sha, title="Lantern", description="A red lantern.", content="", model="m",
@@ -416,7 +415,7 @@ async def test_an_unexpected_failure_is_recorded_and_a_node_is_given_up_after_th
     the tick, and after `EMBED_MAX_ATTEMPTS` the node is not picked again,
     counted `given_up`."""
     _fake, url = llama
-    store = SqlRecordStore(engine)
+    store = ProjectingRecordStore(engine)
     bad = await store.append(message=_message("a node that always breaks", ts=1000))
     good = await store.append(message=_message("a node that embeds", ts=1100))
     real = LlamaEmbedder.embed_document
@@ -458,7 +457,7 @@ async def test_a_poisoned_image_is_one_nodes_rejection_not_a_wedge(engine, llama
     fake, url = llama
     blobs = FakeBlobStore()
     poison = await blobs.put(data=b"GIF89a\x01\x00\x01\x00\x80\x00\x00garbage")
-    store = SqlRecordStore(engine)
+    store = ProjectingRecordStore(engine)
     mid = await store.append(message=_message("look", blobs=(
         MediaBlob(sha256=poison, media_type="image/gif", size=10),
     )))
@@ -472,7 +471,7 @@ async def test_a_poisoned_image_is_one_nodes_rejection_not_a_wedge(engine, llama
 
 async def test_the_worker_embeds_nothing_while_the_server_serves_another_model(engine, llama):
     fake, url = llama
-    store = SqlRecordStore(engine)
+    store = ProjectingRecordStore(engine)
     await store.append(message=_message("the lantern festival plan"))
     fake.model_path = "/models/some-other-model.gguf"
     w = worker(engine, url)
@@ -486,7 +485,7 @@ async def test_a_text_cut_to_fit_is_stored_and_counted_by_kind(engine, llama):
     """No chunking yet; a text embedded from its head only is counted,
     in addition to `ok`, so the counter says when chunking starts to matter."""
     _fake, url = llama
-    store = SqlRecordStore(engine)
+    store = ProjectingRecordStore(engine)
     long_id = await store.append(message=_message("x" * 9000, ts=1000))
     await store.append(message=_message("a short message", ts=1100))
     metrics = Metrics()
@@ -501,7 +500,7 @@ async def test_an_unavailable_embedder_never_gives_a_node_up(engine, llama):
     outage backs the node off, never past the cap, so it is embedded when
     the server is back."""
     fake, url = llama
-    store = SqlRecordStore(engine)
+    store = ProjectingRecordStore(engine)
     mid = await store.append(message=_message("a message during an outage", ts=1000))
     metrics, clock = Metrics(), Clock()
     w = worker(engine, url, metrics=metrics, clock=clock)
@@ -527,7 +526,7 @@ async def test_a_cut_text_whose_vector_was_not_stored_is_not_counted(
     while it was embedded is not stored (it is embedded again, and counted
     then if it is still cut)."""
     _fake, url = llama
-    store = SqlRecordStore(engine)
+    store = ProjectingRecordStore(engine)
     long_id = await store.append(message=_message("x" * 9000, ts=1000))
     real = LlamaEmbedder.embed_document
 
@@ -554,10 +553,10 @@ async def test_a_social_item_holding_only_its_label_is_empty_until_a_reading_lan
 
     from nora.domain.media import MediaObject
     from nora.domain.social_stream import MediaItem, SocialItem
-    from nora.infra.sql.social_stream import SqlSocialStreamStore
+    from tests.fixtures.legacy_projection import ProjectingSocialStreamStore
 
     _fake, url = llama
-    store = SqlSocialStreamStore(engine)
+    store = ProjectingSocialStreamStore(engine)
     t0 = datetime(2026, 10, 5, 9, 0, tzinfo=UTC)
     sha = "d4" * 32
     for item_id, caption in (("bare", None), ("said", "picnic plans")):
@@ -575,7 +574,7 @@ async def test_a_social_item_holding_only_its_label_is_empty_until_a_reading_lan
     assert (bare.embedding, bare.embed_error) == (None, "empty")
     assert said.embedding is not None and said.embedding_model == MODEL
 
-    objects = SqlMediaObjectStore(engine)
+    objects = ProjectingMediaObjectStore(engine)
     await objects.save(obj=MediaObject(
         sha256=sha, media_type="video/mp4", size=1, source="social", description="",
         created_at_ms=1,

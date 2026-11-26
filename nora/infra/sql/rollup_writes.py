@@ -7,7 +7,7 @@ from typing import Any
 
 import sqlalchemy as sa
 
-from nora.domain.rollup import Colocation, Daybook, Outing, Response, Tie, episode_key, lineage_json
+from nora.domain.rollup import Colocation, Daybook, Outing, Response, Tie, lineage_json
 from nora.infra.sql.aggregate_writes import AggregateWrites, rollup_key
 
 
@@ -80,13 +80,6 @@ def _key_of(row: dict[str, Any], key: Sequence[str]) -> tuple[Any, ...]:
     return tuple(tuple(row[k]) if isinstance(row[k], list) else row[k] for k in key)
 
 
-def outing_key(row: dict[str, Any]) -> str:
-    """An outing row's memory-index key: its citation, `unit|persons` and its
-    interval (`rollup_read`'s subject for it)."""
-    subject = f"{row['unit']}|{','.join(row['persons'])}"
-    return episode_key(subject, row["valid_from_ms"], row["valid_to_ms"])
-
-
 async def diff_apply(
     conn: Any,
     table: sa.Table,
@@ -96,7 +89,6 @@ async def diff_apply(
     unit: str,
     key: Sequence[str],
     rows: Sequence[dict[str, Any]],
-    touched: list[dict[str, Any]] | None = None,
 ) -> int:
     key = (*key, *[name for name in ("valid_from_ms", "valid_to_ms") if name not in key])
     stored = {
@@ -116,8 +108,6 @@ async def diff_apply(
     wanted = {_key_of(r, key): r for r in rows}
     doomed = [row for k, row in stored.items() if k not in wanted]
     await computed.retire(conn, table, doomed)
-    if touched is not None:
-        touched.extend(doomed)
     changed = len(doomed)
     for k, row in wanted.items():
         prior = stored.get(k)
@@ -140,9 +130,5 @@ async def diff_apply(
             await conn.execute(sa.insert(table).values(build_id=build_id, **values))
         else:
             await conn.execute(sa.update(table).where(table.c.id == prior["id"]).values(**values))
-            if touched is not None:
-                touched.append(prior)
         changed += 1
-        if touched is not None:
-            touched.append(values)
     return changed

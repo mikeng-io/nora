@@ -18,7 +18,6 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nora.domain.media import MediaBlob
-from nora.infra.sql import memory_index
 from nora.infra.sql.schema import MEDIA_OBJECTS, STICKER_INDEX
 
 log = logging.getLogger("nora.infra.sql.media_descriptions")
@@ -156,10 +155,6 @@ class SqlMediaDescriptionStore:
                     )
                     await conn.execute(index_stmt)
                 await conn.execute(desc_stmt)
-                # The description is an attachment's reading.
-                await memory_index.reproject_media(
-                    conn, blob.sha256, metrics=self._metrics,
-                )
         except Exception:
             # The caller already has a usable description and nothing to do
             # differently. Losing the cache row costs one re-description on the
