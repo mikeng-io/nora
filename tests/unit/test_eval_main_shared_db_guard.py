@@ -387,18 +387,9 @@ def test_context_experiment_requires_a_prefill_receipt_for_each_draw(monkeypatch
                       context_receipts=receipts)
 
 
-@pytest.mark.parametrize(("deployed", "flag", "graph", "header"), [
-    (False, False, False, "memory surface: off"),
-    (False, True, True, "memory surface: graph (--memory-index"),
-    # The live config already runs the graph surface: a run without the flag
-    # must measure it, not an index-disabled case filter (DEC-316).
-    (True, False, True, "memory surface: graph ([memory.index] read = true"),
-])
-def test_main_resolves_the_memory_surface_from_the_generated_config(
-    monkeypatch, capsys, tmp_path, deployed, flag, graph, header,
-):
+def test_main_names_the_unconditional_memory_graph_surface(monkeypatch, capsys, tmp_path):
     generated = tmp_path / "config.evaluation.toml"
-    generated.write_text(f"[memory.index]\nread = {'true' if deployed else 'false'}\n")
+    generated.write_text("[memory.index]\nread = false\n")
     monkeypatch.setattr(m, "source_url_for", lambda *a, **k: "URL")
     monkeypatch.setattr(m, "refuse_if_source_diverges_from_head", lambda url: None)
     _stub_leaked_blank_sweep(monkeypatch)
@@ -415,17 +406,14 @@ def test_main_resolves_the_memory_surface_from_the_generated_config(
         m, "graph_surface_lines", lambda url, model: checked.append(model) or ["checked"],
     )
     seen: list[bool] = []
-    monkeypatch.setattr(
-        m, "_run_one", lambda *a, **k: seen.append(k["memory_index"]) or True,
-    )
+    monkeypatch.setattr(m, "_run_one", lambda *a, **k: seen.append(True) or True)
     # `--allow-long`: the whole corpus is over the run budget, which is not
     # what this pins (`test_eval_main_budget`).
-    _set_argv(monkeypatch, "tool_selection", "--allow-long",
-              *(["--memory-index"] if flag else []))
+    _set_argv(monkeypatch, "tool_selection", "--allow-long")
     assert m.main() == 0
-    assert seen == [graph]
+    assert seen == [True]
     out = capsys.readouterr().out
-    assert header in out
+    assert "memory surface: graph" in out and "unconditional" in out
     assert checked == []  # External preflight belongs inside the case boundary.
     assert "checked" not in out
 
@@ -453,6 +441,6 @@ def test_graph_preflight_cannot_dispatch_outside_the_case(monkeypatch, tmp_path)
     monkeypatch.setattr(m, "graph_surface_lines", _refuse)
     ran: list[bool] = []
     monkeypatch.setattr(m, "_run_one", lambda *a, **k: ran.append(True) or True)
-    _set_argv(monkeypatch, "tool_selection", "--memory-index", "--allow-long")
+    _set_argv(monkeypatch, "tool_selection", "--allow-long")
     assert m.main() == 0
     assert ran == [True]

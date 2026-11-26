@@ -109,6 +109,11 @@ def eval_parser() -> argparse.ArgumentParser:
              "gets chosen by budget instead of by the question.",
     )
     ap.add_argument(
+        "--memory-surface", choices=("graph", "off"), default="graph",
+        help="eval-only subject-composition arm: graph memory reads, or the "
+             "same cases with memory_search/memory_read absent",
+    )
+    ap.add_argument(
         "--print-input", metavar="CASE",
         help="render CASE's model input (the standing fold's system and user "
              "prompt) and print it, calling no model — run on each arm and "
@@ -174,12 +179,6 @@ def eval_parser() -> argparse.ArgumentParser:
             "process is not a reading of it; the default of 1 is a cheap "
             "smoke run and says so"
         ),
-    )
-    ap.add_argument(
-        "--memory-index", action="store_true",
-        help="enable [memory.index] read in the eval subject and select the "
-             "index-enabled routing cases. Requires the loopback embedder "
-             "and a source with its model's vectors (make eval-source).",
     )
     ap.add_argument(
         "--allow-long", action="store_true",

@@ -1,12 +1,5 @@
 [
  {
-  "name": "CLI initializes the existing trace exporter",
-  "file": "nora/app/cli.py",
-  "old": "        _profile_tracing(cfg)\n        deps = await build_dependencies(cfg, legacy_replay=True)\n        engine = create_sql_engine(_database_url(cfg))",
-  "new": "        deps = await build_dependencies(cfg, legacy_replay=True)\n        engine = create_sql_engine(_database_url(cfg))",
-  "target": "tests/unit/test_backfill_limits_and_traces.py::test_cli_root_contains_session_and_generation_spans"
- },
- {
   "name": "one backfill root parents the sessions",
   "file": "nora/app/unified_backfill.py",
   "old": "    with span(\"memory:unified-backfill\", **{\n        TRACE_KIND: \"generation\", \"nora.backfill.max_batches\": bounds.max_batches,\n        \"nora.backfill.max_tokens\": bounds.max_tokens,\n        \"nora.backfill.max_seconds\": bounds.max_seconds,\n        \"nora.backfill.from_ms\": kwargs.get(\"from_ms\"),\n        \"nora.backfill.until_ms\": kwargs.get(\"until_ms\"),\n        \"nora.backfill.units\": \",\".join(kwargs.get(\"units\", ())),\n    }):",

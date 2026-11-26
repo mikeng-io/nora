@@ -300,6 +300,8 @@ async def drop(
 ) -> None:
     """Remove `kind`'s nodes for `ids` and the edges they own (`_delete`); a
     message takes its attachments with it."""
+    # ponytail: deletion custody follows the rows while the legacy tables hold
+    # them; the tables layer removes this last deliberate legacy consumer.
     sids = [str(i) for i in ids]
     if not sids:
         return

@@ -8,7 +8,7 @@ from functools import wraps
 from typing import Any
 
 from nora.agent.catalog.entries import NATIVE_TOOLS
-from nora.agent.catalog.groups import GRAPH_MEMORY_TOOLS, OFF_GRAPH_ONLY_TOOLS
+from nora.agent.catalog.groups import GRAPH_MEMORY_TOOLS
 from nora.agent.link_owners import LinkInput
 from nora.agent.link_owners import owner_of as _owner_of
 from nora.agent.link_owners import redirect as _link_redirect
@@ -20,12 +20,9 @@ _AUDIT_TASKS: set[asyncio.Future[None]] = set()
 
 def on_memory_surface(name: str, *, graph: bool, everything: bool = False) -> bool:
     """Whether `name` is on the memory surface `graph` selects (DEC-316):
-    an off-graph-only tool only off the graph, the graph's only on it, every
-    other tool always."""
+    the graph reads only on it; `who_said` and every other tool always."""
     if everything:
         return True
-    if name in OFF_GRAPH_ONLY_TOOLS:
-        return not graph
     if name in GRAPH_MEMORY_TOOLS:
         return graph
     return True

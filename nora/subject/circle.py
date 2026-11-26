@@ -40,26 +40,19 @@ class CircleOverlay:
     @property
     def overrides(self) -> dict[str, object]:
         return ({'subagent.enabled': True, 'documents.enabled': True} if self.job else {}) | (
-            {'memory.index.read': True, 'memory.index.embed': False} if self.memory else {}
+            {'memory.index.embed': False} if self.memory else {}
         )
 
 
 @contextlib.contextmanager
 def external_boundaries(
-    overlay: CircleOverlay | None, *, signal_url: str = "", memory: CircleMemory | None = None,
+    overlay: CircleOverlay | None, *, signal_url: str = "",
 ) -> Iterator[None]:
     """Composition-time external absence, with the real handlers/guards intact."""
     if overlay is None:
         yield
         return
     with contextlib.ExitStack() as stack:
-        if memory is not None:
-            from nora.app import composition
-            from nora.infra.sql import memory_graph
-            stack.enter_context(patch.object(composition, 'SqlMemoryIndex',
-                lambda _engine: memory.index))
-            stack.enter_context(patch.object(memory_graph, 'SqlMemoryGraph',
-                lambda _engine, **_kwargs: memory.graph))
         if signal_url:
             from nora.platform.signal import adapter
             from nora.platform.signal.react import SignalReactor

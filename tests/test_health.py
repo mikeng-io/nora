@@ -286,31 +286,10 @@ def _fake_health_app(**kw):
     )
 
 
-async def test_health_reports_the_memory_index_state(aiohttp_client):
-    from nora.domain.memory_index import IndexState
-
-    async def index_state():
-        return IndexState(status="complete", queue=3)
-
-    c = await aiohttp_client(_fake_health_app(index_state=index_state))
-    resp = await c.get("/health")
-    assert resp.status == 200
-    assert (await resp.json())["index"] == {"status": "complete", "queue": 3}
-
-
-async def test_an_index_read_failure_is_unavailable_and_not_unhealthy(aiohttp_client):
-    """R-27: a failed read says `unavailable`, never a guessed status; and a
-    rebuilding or unreadable index must not flap the container healthcheck."""
-    async def index_state():
-        raise RuntimeError("database gone")
-
-    c = await aiohttp_client(_fake_health_app(index_state=index_state))
-    resp = await c.get("/health")
-    assert resp.status == 200
-    assert (await resp.json())["index"] == {"status": "unavailable"}
-
-
-async def test_health_omits_the_index_block_when_unwired(aiohttp_client):
+async def test_health_has_no_legacy_index_block(aiohttp_client):
+    """`design/cognition/storage.md` makes `graph_search` derived and
+    rebuildable and defines no projection queue or index-state counterpart;
+    `/health` therefore carries no index block rather than a legacy one."""
     c = await aiohttp_client(_fake_health_app())
     assert "index" not in await (await c.get("/health")).json()
 
@@ -366,7 +345,11 @@ async def test_a_hung_degraded_bridge_does_not_stall_health(aiohttp_client, stor
     from nora.platform.registry import AdapterRegistry
     from nora.testing import FakePlatformAdapter
 
+    upstream = 0
+
     async def hang(request):
+        nonlocal upstream
+        upstream += 1
         await asyncio.Event().wait()
 
     hung = web.Application()
@@ -388,6 +371,8 @@ async def test_a_hung_degraded_bridge_does_not_stall_health(aiohttp_client, stor
         metrics=metrics, started_at=0.0, llm_state=LLMState(),
     )
     client = await aiohttp_client(app)
+    warm = await client.get("/health")
+    assert warm.status == 200
     started = time.monotonic()
     response = await client.get("/health")
     elapsed = time.monotonic() - started
@@ -395,4 +380,5 @@ async def test_a_hung_degraded_bridge_does_not_stall_health(aiohttp_client, stor
     assert elapsed < 1.0, f"/health took {elapsed:.2f}s behind a hung degraded bridge"
     assert response.status == 200
     assert (await response.json())["platforms"]["whatsapp"]["state"] == "degraded"
+    assert upstream == 0, "the degraded latch answered before the bridge transport"
     await bridge.close()

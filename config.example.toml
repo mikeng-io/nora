@@ -139,9 +139,6 @@ quote_margin = 10
 quote_window_multiplier = 3
 # prune_enabled = false
 
-[memory.graph]
-enabled = false
-
 [memory.retention]
 # Set horizon_days.<source> to a positive number of days to expire that source.
 # horizon_days.messages = 365
@@ -149,12 +146,10 @@ enabled = false
 
 [memory.index]
 refresh_seconds = 60.0
-read = false
 embed = false
 embedder_url = "http://embedder:8080"
 embedder_model = "Qwen3-VL-Embedding-2B.Q4_K_M.gguf@7812c91cd1e0"
 embed_batch = 64
-embed_images_per_hour = 120
 
 [memory.profile]
 write = false
@@ -169,18 +164,6 @@ update_every_room_profile_changes = 5
 
 [memory.profile.nora]
 update_every_replies = 100
-
-[memory.graph.comprehend]
-enabled = false
-turns = 8
-total_tokens = 120000
-output_tokens = 12000
-timeout_seconds = 240
-live_concurrency = 1
-historical_concurrency = 1
-preview_tokens = 1500
-web_searches = 3
-page_fetches = 3
 
 [lineage]
 mode = "off"

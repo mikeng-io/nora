@@ -1,8 +1,10 @@
-"""One memory surface per deployment (DEC-316).
+"""Memory reads under the graph switch (DEC-316).
 
-`[memory.index] read` (the registry holding a `MemorySearch`) selects the
-graph's surface, `memory_search`; off (the shipped default) it is `who_said`
-and no `memory_search`. Both offer `load_transcript` to read the room's rows.
+Production wires the graph reads `memory_search` and `memory_read`
+unconditionally; evaluation may omit them only as an explicit experimental
+arm. The transcript-window attribution read `who_said` remains available
+either way where granted. Both surfaces offer `load_transcript`
+to read the room's rows.
 
 Pinned at every place tools are assembled, each through its own production
 builder: a tag, a fire turn, the Cognition session, each Dreamer adaptor that
@@ -16,7 +18,7 @@ from typing import Any
 
 import pytest
 
-from nora.agent.catalog.groups import GRAPH_MEMORY_TOOLS, OFF_GRAPH_ONLY_TOOLS
+from nora.agent.catalog.groups import GRAPH_MEMORY_TOOLS
 from nora.agent.dreamer import (
     HomeRoom,
     RegistryToolSource,
@@ -33,41 +35,40 @@ from nora.testing import FakeRosterSource
 from tests.fakes import SinkSender
 from tests.test_room_tools import GROUP, IDENTITY, MILES, NORA, TYLER, _NullStore
 
-#: Every verb either surface could carry, so a set below is what one place
-#: offers of them. A literal, not built from `OFF_GRAPH_ONLY_TOOLS`: a tool
-#: dropped from that constant must still be seen here, or the graph test
-#: would pass by no longer looking for it.
+#: Every memory verb either graph state could carry, so a set below is what
+#: one place offers of them. A literal: a tool dropped from the catalogue
+#: constants must still be seen here, or a test could pass by not looking for it.
 MEMORY_VERBS = frozenset({
     "who_said", "remember", "memory_search", "memory_read", "load_transcript",
     "profile_dispute",
 })
 
 
-def test_memory_verbs_cover_both_surfaces() -> None:
-    assert OFF_GRAPH_ONLY_TOOLS | GRAPH_MEMORY_TOOLS <= MEMORY_VERBS
+def test_memory_verbs_cover_the_graph_reads_and_who_said() -> None:
+    assert {"who_said"} | GRAPH_MEMORY_TOOLS <= MEMORY_VERBS
 
-#: What each assembly point offers of `MEMORY_VERBS`, per surface. The graph
-#: column swaps `who_said` for `memory_search` where permitted. The
+#: What each assembly point offers of `MEMORY_VERBS`, per graph state. The
+#: graph reads join `who_said` where permitted; they never replace it. The
 #: worker holds no `memory_search`: it reads the unit's other rooms, and the
 #: worker's reach is its one room (`NOT_LOOKUPS`).
 EXPECTED: dict[str, dict[bool, frozenset[str]]] = {
     "tag": {
         False: frozenset({"who_said", "load_transcript"}),
-        True: frozenset({"memory_search", "memory_read", "profile_dispute",
+        True: frozenset({"who_said", "memory_search", "memory_read", "profile_dispute",
                          "load_transcript"}),
     },
     "fire": {
         False: frozenset({"who_said", "load_transcript"}),
-        True: frozenset({"memory_search", "memory_read", "profile_dispute",
+        True: frozenset({"who_said", "memory_search", "memory_read", "profile_dispute",
                          "load_transcript"}),
     },
     "cognition": {
         False: frozenset({"who_said", "load_transcript"}),
-        True: frozenset({"memory_search", "memory_read", "load_transcript"}),
+        True: frozenset({"who_said", "memory_search", "memory_read", "load_transcript"}),
     },
     "subagent": {
         False: frozenset({"who_said", "load_transcript"}),
-        True: frozenset({"load_transcript"}),
+        True: frozenset({"who_said", "load_transcript"}),
     },
 }
 
@@ -146,20 +147,20 @@ async def _built(where: str, graph: bool, persons: Any) -> set[str]:
 async def test_the_off_graph_surface_has_no_memory_search(
     persons: Any, where: str,
 ) -> None:
-    """`[memory.index]` off: the memory verbs each place offers, never the graph's."""
+    """Without the retrieval service: the memory verbs each place offers."""
     offered = await _built(where, False, persons) & MEMORY_VERBS
     assert offered == EXPECTED[where][False]
     assert not offered & GRAPH_MEMORY_TOOLS
 
 
 @pytest.mark.parametrize("where", sorted(EXPECTED))
-async def test_the_graph_surface_offers_memory_search_and_no_off_graph_tool(
+async def test_the_graph_surface_offers_memory_search_and_keeps_who_said(
     persons: Any, where: str,
 ) -> None:
-    """`[memory.index]` on: `memory_search`, and no `who_said`."""
+    """With the retrieval service: the graph reads join, never replace, `who_said`."""
     offered = await _built(where, True, persons) & MEMORY_VERBS
     assert offered == EXPECTED[where][True]
-    assert not offered & OFF_GRAPH_ONLY_TOOLS
+    assert "who_said" in offered
 
 
 @pytest.mark.parametrize("graph", [False, True])
@@ -178,27 +179,28 @@ def test_cognition_takes_the_memory_surface_from_the_registry() -> None:
     """One source (DEC-316): Cognition's `wired` set is what the
     registry it builds through withholds, never a flag re-derived from
     config beside it. `read_surface` cannot be called without it."""
-    read_only = frozenset(OFF_GRAPH_ONLY_TOOLS | GRAPH_MEMORY_TOOLS)
+    read_only = frozenset({"who_said"} | GRAPH_MEMORY_TOOLS)
     off = read_surface(read_only=read_only, enabled_flags=(),
                        registry_withheld=_registry(False).withheld_tools())
     on = read_surface(read_only=read_only, enabled_flags=(),
                       registry_withheld=_registry(True).withheld_tools())
     assert "memory_search" in off.withheld and "memory_search" not in off.wired
     assert "memory_search" in on.wired
-    assert not on.wired & OFF_GRAPH_ONLY_TOOLS
-    assert on.withheld >= OFF_GRAPH_ONLY_TOOLS
-    assert off.wired >= OFF_GRAPH_ONLY_TOOLS
+    assert "who_said" in on.wired
+    assert "who_said" not in on.withheld
+    assert "who_said" in off.wired
     with pytest.raises(TypeError):
         read_surface(read_only=read_only, enabled_flags=())  # type: ignore[call-arg]
 
 
 @pytest.mark.parametrize("graph", [False, True])
-def test_the_digest_lists_one_memory_surface(graph: bool) -> None:
+def test_the_digest_lists_the_wired_memory_reads(graph: bool) -> None:
     """The capability digest (the relevance gate's view of what she can
-    answer) names the surface the registry offers, never the other one."""
+    answer) names `who_said` either way, plus the graph reads only when wired."""
     digest = _registry(graph).capability_digest()
     named = {line.split(" — ")[0][2:] for line in digest.splitlines()}
+    assert "who_said" in named
     if graph:
-        assert "memory_search" in named and not named & OFF_GRAPH_ONLY_TOOLS
+        assert "memory_search" in named
     else:
-        assert "memory_search" not in named and "who_said" in named
+        assert "memory_search" not in named

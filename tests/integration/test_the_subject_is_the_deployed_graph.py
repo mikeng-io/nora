@@ -143,7 +143,9 @@ async def test_obtain_returns_the_production_graph(spec, clean_pg_url, cognition
     }
     assert added | {"access", "managed_services", "managed_session"} <= fields
     assert retired.isdisjoint(fields), retired & fields
-    assert len(fields) == 78, "Dependency shape changed; reconcile the production subject."
+    assert len(fields) == 77, (
+        "index_state removed for the legacy memory wiring; reconcile the production subject."
+    )
     if cognition:
         assert isinstance(subject.deps.wake_poller, WakePoller)
         assert subject.deps.wake_poller._review is not None

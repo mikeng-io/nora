@@ -18,7 +18,7 @@ from __future__ import annotations
 import functools
 import importlib
 import logging
-from collections.abc import Awaitable, Callable, Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -121,7 +121,6 @@ from nora.doctrine.loader import Doctrine, DoctrineStore
 from nora.domain.computer_exports import ComputerExportStore
 from nora.domain.documents import DocumentStore, RoomKey
 from nora.domain.media_join import MediaJoin
-from nora.domain.memory_index import IndexState
 from nora.domain.ports import (
     BlobStore,
     ContextAssembler,
@@ -136,7 +135,6 @@ from nora.infra.computer.probe import ComputerdProbe
 from nora.infra.embedder import LlamaEmbedder, fingerprint, model_file
 from nora.infra.sql.audit import SqlRecordStore
 from nora.infra.sql.memory_embed import MemoryEmbedWorker
-from nora.infra.sql.memory_read import SqlMemoryIndex
 from nora.infra.sql.mobility import SqlMobilityStore
 from nora.infra.sql.presence import PresenceStore
 from nora.infra.sql.revisions import SqlRevisionStore
@@ -224,9 +222,6 @@ class Dependencies:
     profile_portal: SubjectClaims | None
     profile_screen: Callable[[str], str | None]
     profile_scopes_of: Callable[[str], tuple[tuple[str, str], ...]] | None
-    # /health's `index` block: the memory index's state and queue length
-    # (`SqlMemoryIndex.index_state`, no model fingerprint).
-    index_state: Callable[[], Awaitable[IndexState]]
     # Documents (ADR 0020): the store the portal reads, the service that publishes into
     # it (the `document_publish` tool's collaborator), and person_id -> the rooms whose
     # `persons` name them, from the CURRENT policy, for the same reason as
@@ -432,6 +427,7 @@ async def build_dependencies(
     clock: Callable[[], datetime] = wall_clock,
     operational_clock: Callable[[], datetime] | None = None,
     legacy_replay: bool = False,
+    include_graph_reads: bool = True,
 ) -> Dependencies:
     """Build the process graph from cfg and return its runtime Dependencies.
 
@@ -450,13 +446,14 @@ async def build_dependencies(
     """
     return await StartupOwner.run(
         _compose_dependencies, cfg,
-        clock=clock, operational_clock=operational_clock, legacy_replay=legacy_replay)
+        clock=clock, operational_clock=operational_clock, legacy_replay=legacy_replay,
+        include_graph_reads=include_graph_reads)
 
 
 async def _compose_dependencies(
     cfg: Config, *, clock: Callable[[], datetime],
     operational_clock: Callable[[], datetime] | None,
-    legacy_replay: bool,
+    legacy_replay: bool, include_graph_reads: bool,
     owner: StartupOwner,
 ) -> Dependencies:
     op_clock = operational_clock or clock
@@ -845,7 +842,10 @@ async def _compose_dependencies(
     engagement_graph = EngagementGraph(
         access, _memory_wire.message_graph_ids(engine), graph_profiles,
     )
-    graph_reads = _memory_wire.configured_graph_reads(cfg, engine, access, lineage)
+    graph_reads = (
+        _memory_wire.configured_graph_reads(cfg, engine, access, lineage)
+        if include_graph_reads else None
+    )
     _agent_registry = build_registry(
         allowlist=allowlist, blobs=blobs,
         browser=browser, browser_manager=browser_manager,
@@ -867,9 +867,7 @@ async def _compose_dependencies(
         media_objects=media_objects,
         memo_store=memo_store,
         graph_retrieval=graph_reads,
-        engagement_graph_retrieval=(
-            graph_reads or _memory_wire.graph_read_tools(engine, access, lineage, None, None)
-        ),
+        engagement_graph_retrieval=graph_reads,
         intention_admission=graph_debrief.admission,
         metrics=metrics,
         mobility=mobility,
@@ -1138,14 +1136,6 @@ async def _compose_dependencies(
         room_command=room_commands.is_command,
     )
     bridge_runtime = _bridge_runtime.bridge_runtime
-    cognition_memory = None
-    if legacy_replay:
-        cognition_memory = _memory_wire.graph(
-            allowlist=allowlist, cfg=cfg, content_checks=content_checks, engine=engine,
-            media_join=media_join, metrics=metrics, persons=persons_view,
-            presence_circles=presence_circles, registry=registry, rosters=rosters,
-            route_model=route_model, tier=tier, unit_scopes=unit_scopes, access=access,
-        ).cognition_memory
     _dreamer_enabled = await enabled(
         legacy_replay=legacy_replay,
         allowlist=allowlist,
@@ -1153,7 +1143,6 @@ async def _compose_dependencies(
         cfg=cfg,
         clock=clock,
         cognition_context_screen=cognition_context_screen,
-        cognition_memory=cognition_memory,
         content_checks=content_checks,
         doctrine_store=doctrine_store,
         document_service=document_service,
@@ -1244,7 +1233,6 @@ async def _compose_dependencies(
         profile_scopes_of=(
             functools.partial(profile_scopes_of_person, allowlist) if profile_read else None
         ),
-        index_state=SqlMemoryIndex(engine).index_state,
         documents=documents_store,
         document_service=document_service,
         rooms_of=functools.partial(rooms_named, allowlist),

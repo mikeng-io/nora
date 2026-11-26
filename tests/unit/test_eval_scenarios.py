@@ -566,39 +566,35 @@ def test_the_judge_is_handed_the_lesson_and_the_cases_behaviour():
     assert varied_lessons({"lessons": ["say less"]}) == ()
 
 
-def test_memory_index_composes_the_graph_surface_and_only_when_asked(monkeypatch):
-    """Only the declared memory-surface variable changes; service URLs are bound separately."""
+def test_memory_arms_are_explicit_and_draw_the_same_cases(monkeypatch):
+    """The eval-only control arm is selected without a production config switch;
+    both arms draw the same eligible cases."""
     from evals import scenarios
 
     captured: list = []
     monkeypatch.setattr(scenarios, "nora_task", lambda spec: captured.append(spec))
-    scenarios.experiment_for("tool_selection", source_url="x", memory_index=True)
-    scenarios.experiment_for("tool_selection", source_url="x")
-    assert captured[0].overrides == {
-        "memory.index.read": True,
-    }
-    assert captured[1].overrides is None
+    on, _ = scenarios.experiment_for("tool_selection", source_url="x", memory_surface="graph")
+    off, _ = scenarios.experiment_for("tool_selection", source_url="x", memory_surface="off")
+    assert [spec.memory_surface for spec in captured] == ["graph", "off"]
+    assert all(spec.overrides is None for spec in captured)
+    assert {case.name for case in on.cases} == {case.name for case in off.cases}
+    with pytest.raises(ValueError, match="memory surface"):
+        scenarios.experiment_for("tool_selection", source_url="x", memory_surface="legacy")
 
 
-def test_indexed_memory_cases_run_only_on_the_graph_surface():
-    """A `memory_surface: graph` case runs only under `--memory-index`; a case
-    stating neither runs with or without it. Naming an indexed case without
-    the index is refused, not skipped in silence."""
+def test_indexed_memory_cases_run_on_the_graph_surface():
+    """A `memory_surface: graph` case is part of every draw because the graph
+    read surface is unconditional."""
     from evals.scenarios import load_corpus
 
     cases = {c.name: c.metadata.get("memory_surface") for c in load_corpus("tool_selection")}
     graph = {n for n, s in cases.items() if s == "graph"}
     assert graph, "positive control: the corpus marks the graph surface"
     assert "honcho" not in set(cases.values())
-    on, _ = experiment_for("tool_selection", source_url="x", memory_index=True)
-    off, _ = experiment_for("tool_selection", source_url="x")
-    on_names = {c.name for c in on.cases}
-    off_names = {c.name for c in off.cases}
-    assert graph <= on_names
-    assert not graph & off_names
-    assert on_names - graph == off_names
-    with pytest.raises(ValueError, match="pass --memory-index"):
-        experiment_for("tool_selection", source_url="x", only=frozenset(graph))
+    on, _ = experiment_for("tool_selection", source_url="x")
+    plain, _ = experiment_for("tool_selection", source_url="x")
+    assert graph <= {c.name for c in on.cases}
+    assert {c.name for c in on.cases} == {c.name for c in plain.cases}
 
 
 def test_an_unknown_memory_surface_is_refused(tmp_path, monkeypatch):
@@ -615,42 +611,13 @@ def test_an_unknown_memory_surface_is_refused(tmp_path, monkeypatch):
         scenarios.load_all("tool_selection")
 
 
-@pytest.mark.parametrize(("config", "flag", "graph", "says"), [
-    ("[memory.index]\nread = false\n", False, False, "need --memory-index"),
-    ("[memory.index]\nread = false\n", True, True, "--memory-index"),
-    # The live config has the index on: a run without the flag measures
-    # the graph surface, and says why.
-    ("[memory.index]\nread = true\n", False, True, "deployment's config"),
-    ("", False, False, "need --memory-index"),
-])
-def test_the_arm_is_resolved_from_the_generated_config_or_the_flag(
-    config: str, flag: bool, graph: bool, says: str,
-) -> None:
-    from evals.__main__ import memory_index_enabled, memory_surface_line
+def test_the_run_header_names_the_unconditional_graph_surface() -> None:
+    from evals.__main__ import memory_surface_line
 
-    deployed = memory_index_enabled(config)
-    assert (deployed or flag) is graph
-    line = memory_surface_line(deployed, flag)
-    assert line.startswith("graph" if graph else "off") and says in line
-
-
-def test_the_spec_carries_the_arm_and_a_disagreeing_subject_is_refused(monkeypatch):
-    from evals import scenarios
-    from evals.backbone import refuse_a_memory_surface_mismatch
-
-    captured: list = []
-    monkeypatch.setattr(scenarios, "nora_task", lambda spec: captured.append(spec))
-    scenarios.experiment_for("tool_selection", source_url="x", memory_index=True)
-    scenarios.experiment_for("tool_selection", source_url="x")
-    assert [s.memory_surface for s in captured] == ["graph", "off"]
-    refuse_a_memory_surface_mismatch("graph", True)
-    refuse_a_memory_surface_mismatch("off", False)
-    refuse_a_memory_surface_mismatch(None, True)
-    refuse_a_memory_surface_mismatch(None, False)
-    with pytest.raises(ValueError, match="disagree"):
-        refuse_a_memory_surface_mismatch("off", True)
-    with pytest.raises(ValueError, match="disagree"):
-        refuse_a_memory_surface_mismatch("graph", False)
+    line = memory_surface_line()
+    assert line.startswith("graph") and "unconditional" in line
+    off = memory_surface_line("off")
+    assert off.startswith("off") and "eval-only" in off and "unconditional" in off
 
 
 def test_exchanges_are_written_privately_only_when_asked(tmp_path, monkeypatch):

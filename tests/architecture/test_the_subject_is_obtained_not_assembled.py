@@ -56,6 +56,11 @@ ROOT = Path(__file__).resolve().parents[2]
 #: composed adapter's REAL `SignalReactor` meets the controlled outage rather
 #: than a stub of itself. An address the world answers at, not part of her.
 #:
+#: `graph_memory`: WHETHER THE CONTROLLED EXPERIMENT ADMITS MEMORY READS —
+#: an eval-only counterfactual measuring memory's contribution, argued in
+#: design/evaluation/subject.md. Production never varies it; it is the
+#: experimental condition, not a collaborator.
+#:
 #: `config`: WHICH CONFIGURATION WAS IN FORCE — the recorded `config.toml`
 #: at the case's instant, or the deployment's eval rebuild (`None`). Same
 #: class as `policy`/`identity`: the settings in force at a moment are part
@@ -76,6 +81,9 @@ _SEAMS = frozenset({
     # `config` states which settings were in force at the case's instant
     # (argued above): input, not a collaborator.
     "config",
+    # `graph_memory` states the eval-only memory-control arm (argued above):
+    # experimental input, never production configuration.
+    "graph_memory",
 })
 
 

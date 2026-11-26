@@ -8,8 +8,8 @@ from typing import Any
 
 #: The config switches a Cognition read or write depends on.
 GATES = (
-    "memory.index.read", "memory.profile.read", "memory.profile.write",
-    "memory.graph.enabled", "lessons.enabled", "culture.enabled",
+    "memory.profile.read", "memory.profile.write",
+    "lessons.enabled", "culture.enabled",
     "documents.enabled", "notes.enabled", "standing.enabled",
     "social.enabled", "social.poll.enabled", "social.instagram.enabled",
     "presence.enabled", "search.enabled", "online.enabled",

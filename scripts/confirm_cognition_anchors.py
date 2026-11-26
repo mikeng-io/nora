@@ -139,23 +139,21 @@ async def judge(bound, llm: dict, scenario: str, moment: dict) -> str:
     return "match" if parsed["match"] else "no_match"
 
 
-def _overrides(memory_index: bool) -> dict[str, object]:
+def _overrides() -> dict[str, object]:
     """The corpus's own subject overrides, as `evals.scenarios.experiment_for`
     composes them for `cognition_session` — the deployment's own workspace,
     never a shared eval one."""
-    from evals.scenarios import COGNITION_SESSION_OVERRIDES, MEMORY_INDEX_OVERRIDES
+    from evals.scenarios import COGNITION_SESSION_OVERRIDES
     from evals.subject_config import FULL_RESTORE_OVERRIDES
 
     return {
         **COGNITION_SESSION_OVERRIDES,
         **FULL_RESTORE_OVERRIDES,
-        **(dict(MEMORY_INDEX_OVERRIDES) if memory_index else {}),
     }
 
 
 async def wake_input(sandbox_url: str, at_ms: int, view, room: str,
-                     config_dir: Path, subject_config: Path, memory_index: bool,
-                     environment) -> tuple[dict, Config]:
+                     config_dir: Path, subject_config: Path, environment) -> tuple[dict, Config]:
     """The session's model input for this room inside the restored sandbox,
     and the bound config a judge routes through. The subject is obtained
     inside the case-owned environment: its configuration, identity, policy
@@ -176,7 +174,7 @@ async def wake_input(sandbox_url: str, at_ms: int, view, room: str,
         subject = await obtain(SubjectSpec(
             database_url=sandbox_url, workdir=Path(directory), room=(platform, room),
             config=subject_config,
-            overrides=_overrides(memory_index), now=now,
+            overrides=_overrides(), now=now,
             identity=(config_dir / "identity.toml").read_text(),
             policy=(config_dir / "policy.toml").read_text(),
             environment=environment), legacy_replay=True)
@@ -248,7 +246,6 @@ async def confirm(source_url: str, config: Path, inputs: list[dict[str, object]]
             deployment=config, target=generated)
         cfg = await asyncio.to_thread(load, config, require_secrets=False)
         llm = cfg.llm.model_dump()
-        memory_index = bool(cfg.memory.index.read)
         descriptions = scenarios()
         rooms = {alias: real for real, alias in aliases.items()}
         # One restore per wake: every candidate on the same wake shares its
@@ -304,7 +301,7 @@ async def confirm(source_url: str, config: Path, inputs: list[dict[str, object]]
                                                 sandbox_url, at_ms, view,
                                                 rooms[str(item["room"])],
                                                 config.parent, generated,
-                                                memory_index, environment)
+                                                environment)
                                             bound = Judge(
                                                 base_url="", model="",
                                                 timeout_seconds=float(

@@ -1048,22 +1048,24 @@ class OnlineConfig(BaseModel):
 class MemoryIndexConfig(BaseModel):
     """Search and embedding settings for graph retrieval.
 
-    `read` enables the graph tools on surfaces that use the configured
-    memory catalogue. `embed` enables text vectors in `graph_search`, up to
-    `embed_batch` per `refresh_seconds` tick. The embedder must report the
-    configured model file before the worker stamps vectors with its fingerprint.
-    `embed_images_per_hour` is retained for existing configurations.
+    `embed` enables text vectors in `graph_search`, up to `embed_batch` per
+    `refresh_seconds` tick. The embedder must report the configured model file
+    before the worker stamps vectors with its fingerprint.
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     refresh_seconds: float = Field(default=60.0, gt=0)
-    read: bool = False
+    # ponytail: accepted for one release, ignored; graph reads are part of the
+    # Cognitive Graph and are no longer switched by the retired legacy key.
+    read: bool = Field(default=False, exclude=True)
     embed: bool = False
     embedder_url: str = "http://embedder:8080"
     embedder_model: str = "Qwen3-VL-Embedding-2B.Q4_K_M.gguf@7812c91cd1e0"
     embed_batch: int = Field(default=64, ge=1, le=1000)
-    embed_images_per_hour: int = Field(default=120, ge=0)
+    # ponytail: accepted for one release, ignored; production supplies no blob
+    # reader or image budget and graph_search rows are text-only.
+    embed_images_per_hour: int = Field(default=120, ge=0, exclude=True)
 
 
 class AnalyticsConfig(BaseModel):
@@ -2496,28 +2498,6 @@ class ProfileConfig(BaseModel):
     nora: NoraProfileConfig = NoraProfileConfig()
 
 
-class ComprehendConfig(BaseModel):
-    """Cognition evidence processing, enabled only with the graph switch."""
-    model_config = ConfigDict(extra="forbid", frozen=True)
-    enabled: bool = False
-    turns: int = Field(default=8, ge=1)
-    total_tokens: int = Field(default=120_000, ge=1)
-    output_tokens: int = Field(default=12_000, ge=1)
-    timeout_seconds: float = Field(default=240, gt=0)
-    live_concurrency: int = Field(default=1, ge=1)
-    historical_concurrency: int = Field(default=1, ge=1)
-    preview_tokens: int = Field(default=1500, ge=32)
-    web_searches: int = Field(default=3, ge=0, le=3)
-    page_fetches: int = Field(default=3, ge=0, le=3)
-
-
-class GraphConfig(BaseModel):
-    """Graph admission switch; storage and arrival producers are phase one's."""
-    model_config = ConfigDict(extra="forbid", frozen=True)
-    enabled: bool = False
-    comprehend: ComprehendConfig = ComprehendConfig()
-
-
 class RetentionConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     horizon_days: dict[str, Annotated[int, Field(strict=True, ge=1)]] = Field(default_factory=dict)
@@ -2537,7 +2517,10 @@ class MemoryConfig(BaseModel):
     """Nora's memory graph, index and Profile settings."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
-    graph: GraphConfig = GraphConfig()
+    # ponytail: accept the host's retired [memory.graph] and
+    # [memory.graph.comprehend] sections for one release, ignored; the legacy
+    # memory construction they switched has left.
+    graph: dict[str, object] | None = Field(default=None, exclude=True)
     index: MemoryIndexConfig = MemoryIndexConfig()
     profile: ProfileConfig = ProfileConfig()
     retention: RetentionConfig = RetentionConfig()

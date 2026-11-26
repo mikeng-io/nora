@@ -56,7 +56,7 @@ def test_a_journey_world_plan_constructs_the_declared_finite_world(tmp_path):
         "policy": "[rooms]\nallow = []",
         "room": ["signal", "grp"],
         "identity": "[self]\nhandle = 'nora'",
-        "overrides": {"memory.index.read": False},
+        "overrides": {"cognition.enabled": False},
         "judges": ["alpha", "beta"]}}}}
     path = tmp_path / "services.json"
     path.write_text(json.dumps(data))
@@ -64,7 +64,7 @@ def test_a_journey_world_plan_constructs_the_declared_finite_world(tmp_path):
     assert plan.policy == "[rooms]\nallow = []"
     assert plan.room == ("signal", "grp")
     assert plan.identity == "[self]\nhandle = 'nora'"
-    assert plan.overrides()["memory.index.read"] is False
+    assert plan.overrides()["cognition.enabled"] is False
     assert plan.judge_models == ("alpha", "beta")
     # No declaration means NO live endpoint — the generated world, never
     # a default upstream.

@@ -106,6 +106,34 @@ def test_positions_prints_each_draws_written_position_and_its_length(capsys):
     assert "[ERROR] residue-x#2  (none)" in out
 
 
+def test_print_input_composes_the_graph_surface(monkeypatch, capsys):
+    """The render probe is not a memory-arm escape hatch: its default Spec
+    carries `graph`, which is what activates sandbox indexing in the draw."""
+    from types import SimpleNamespace
+
+    from strands_evals import Case
+
+    import evals.__main__ as main
+
+    seen = []
+
+    def fake_task(spec):
+        seen.append(spec)
+
+        def run(case):
+            return {"environment_state": [
+                SimpleNamespace(name=main.NORA_SHOWN, state="rendered input"),
+            ]}
+
+        return run
+
+    monkeypatch.setattr(main, "load_corpus", lambda name: [Case(name="case", input="x")])
+    monkeypatch.setattr(main, "nora_task", fake_task)
+    assert main._print_input("standing", "case", source_url="postgresql://u@h/generated") == 0
+    assert [spec.memory_surface for spec in seen] == ["graph"]
+    assert capsys.readouterr().out.strip() == "rendered input"
+
+
 def test_the_estimate_counts_draws_and_bounds_their_cost():
     """Per corpus, cases x samples x that corpus's measured per-draw cost."""
     from evals.__main__ import JUDGED_DRAW_SECONDS, UNJUDGED_DRAW_SECONDS, estimate
@@ -129,7 +157,7 @@ def test_the_run_that_held_the_lock_all_night_is_refused_unless_allowed():
     from evals.__main__ import BUDGET_MINUTES, estimate, over_budget
     from evals.scenarios import selected_cases
 
-    cases = len(selected_cases("tool_selection", memory_index=True))
+    cases = len(selected_cases("tool_selection"))
     full = estimate([(cases, False)], 3)
     assert full.minutes > BUDGET_MINUTES
     why = over_budget(full, allow_long=False)
@@ -278,8 +306,8 @@ def _journey_inputs(tmp_path):
     return argparse.Namespace(
         journey_cohort=cohort_path, services=services_path,
         service_inputs=load_services(services_path), run_budget="10",
-        sample=1, memory_index=False, subject_overrides=None, judge=None,
-        measure="protocol")
+        sample=1, subject_overrides=None, judge=None,
+        measure="protocol", memory_surface="graph")
 
 
 def test_the_journey_corpus_is_selectable_by_name_never_by_class_or_all():
@@ -306,9 +334,9 @@ def test_a_journey_selection_binds_the_declared_inputs(tmp_path):
     pytest.param({"services": None}, id="no-services"),
     pytest.param({"run_budget": None}, id="no-budget"),
     pytest.param({"sample": 2}, id="sampled"),
-    pytest.param({"memory_index": True}, id="subject-arm"),
     pytest.param({"subject_overrides": "x.json"}, id="subject-overrides"),
     pytest.param({"judge": "some-judge"}, id="eval-judge-on-journey-only"),
+    pytest.param({"memory_surface": "off"}, id="memory-off-arm-not-composable"),
 ])
 def test_a_journey_selection_refuses_an_absent_or_promoting_input(tmp_path, damage):
     """Every clause refuses BEFORE composition or model dispatch, and no

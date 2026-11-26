@@ -1,12 +1,5 @@
 [
  {
-  "name": "graph boot: no synchronous global preference read under managed",
-  "file": "nora/memory/wire.py",
-  "old": "            social_off_ids=persons.social_off_ids() if access is None else frozenset(),",
-  "new": "            social_off_ids=persons.social_off_ids(),",
-  "target": "tests/unit/test_managed_memory_scope.py::test_graph_composition_wires_and_starts_under_the_managed_backend"
- },
- {
   "name": "source admission reads current managed room membership",
   "file": "nora/infra/sql/comprehend.py",
   "old": "or await self._persons_in_unit(node[\"persons\"], work.unit)",
@@ -33,13 +26,6 @@
   "old": "if target.room.persons is not None:",
   "new": "if target.room.persons is not None and self._access.access.is_file_backend:",
   "target": "tests/infra/test_graph_read_tools.py::test_memory_search_does_not_treat_the_roster_as_room_membership"
- },
- {
-  "name": "file graph keeps its opt-outs without a selected access facade",
-  "file": "nora/memory/wire.py",
-  "old": "            social_off_ids=persons.social_off_ids() if access is None else frozenset(),",
-  "new": "            social_off_ids=frozenset(),",
-  "target": "tests/unit/test_managed_memory_scope.py::test_file_graph_keeps_opt_outs_when_no_access_backend_is_supplied"
  },
  {
   "name": "managed external reads screen the actual source names before egress",

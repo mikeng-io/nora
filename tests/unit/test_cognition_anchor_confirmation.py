@@ -27,7 +27,7 @@ import httpx
 import pytest
 from openai import AsyncOpenAI
 
-from evals.scenarios import COGNITION_SESSION_OVERRIDES, MEMORY_INDEX_OVERRIDES
+from evals.scenarios import COGNITION_SESSION_OVERRIDES
 from evals.subject_config import FULL_RESTORE_OVERRIDES
 from nora.subject.obtain import SubjectSpec
 from nora.subject.recorded_services import RecordedServices
@@ -222,7 +222,7 @@ async def test_wake_input_composes_the_production_spec(
     subject_config = tmp_path / "private" / "config.evaluation.toml"
     moment, cfg = await confirm.wake_input(
         "postgresql:///generated_sandbox", 90_000, view,
-        "generated-room", cfg_dir, subject_config, True, environment)
+        "generated-room", cfg_dir, subject_config, environment)
     assert cfg == "generated-cfg"
     spec = seen["spec"]
     assert spec.database_url == "postgresql:///generated_sandbox"
@@ -234,10 +234,8 @@ async def test_wake_input_composes_the_production_spec(
     assert spec.policy == 'default = "deny"'
     assert spec.identity == 'name = "generated"'
     assert spec.now == datetime.fromtimestamp(90, UTC)
-    assert spec.overrides == {**COGNITION_SESSION_OVERRIDES, **FULL_RESTORE_OVERRIDES,
-                              **MEMORY_INDEX_OVERRIDES}
+    assert spec.overrides == {**COGNITION_SESSION_OVERRIDES, **FULL_RESTORE_OVERRIDES}
     assert spec.overrides["cognition.enabled"] is True
-    assert spec.overrides["memory.index.read"] is True
     assert moment == {"at_ms": 90_000, "room": "generated-room",
                       "platform": "signal", "system": "generated-system",
                       "agenda": "generated-agenda",
@@ -333,7 +331,6 @@ async def test_confirm_restores_once_per_wake(
 
     async def wake_input(sandbox_url: Any, at_ms: Any, view: Any, room: Any,
                          config_dir: Any, subject_config: Any,
-                         memory_index: Any,
                          environment: Any) -> tuple[dict, Any]:
         assert environment in {"generated-environment-9",
                                "generated-environment-10"}
@@ -381,7 +378,6 @@ async def test_per_item_errors_are_unavailable_never_negative(
 
     async def wake_input(sandbox_url: Any, at_ms: Any, view: Any, room: Any,
                          config_dir: Any, subject_config: Any,
-                         memory_index: Any,
                          environment: Any) -> tuple[dict, Any]:
         if calls:
             raise RuntimeError("generated inspection failure")

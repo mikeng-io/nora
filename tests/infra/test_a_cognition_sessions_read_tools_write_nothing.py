@@ -35,7 +35,7 @@ import pytest
 import sqlalchemy as sa
 
 from nora.access import IdentityAccess
-from nora.agent.catalog.groups import GRAPH_MEMORY_TOOLS, OFF_GRAPH_ONLY_TOOLS
+from nora.agent.catalog.groups import GRAPH_MEMORY_TOOLS
 from nora.agent.dreamer import HomeRoom, RegistryToolSource, cognition_grant
 from nora.agent.lineage import LineagePolicy
 from nora.agent.registry import ToolRegistry
@@ -415,8 +415,8 @@ async def test_the_call_table_covers_every_wired_tool(world):
     """The audit is only as good as what it ran: a wired tool with no call here
     would be «checked» by not being called."""
     assert set(world.surface.wired) <= set(CALLS)
-    # what the table holds beyond this surface is the OTHER memory surface's
-    assert set(CALLS) - set(world.surface.wired) <= OFF_GRAPH_ONLY_TOOLS | GRAPH_MEMORY_TOOLS
+    # what the table holds beyond this surface is what this graph state does not wire
+    assert set(CALLS) - set(world.surface.wired) <= GRAPH_MEMORY_TOOLS
 
 
 async def test_every_read_tool_the_session_holds_writes_nothing_live(engine, world):
@@ -474,9 +474,10 @@ async def test_every_read_tool_the_session_holds_writes_nothing_live(engine, wor
             assert set(results[name]) == {"unavailable"}, (name, results[name])
     # the derived-presence reads reached their SQL (a current build exists)
     assert not {"unavailable"} & set(results["where_been"] + results["routine_read"]), results
+    # The window-attribution rung is wired in either graph state (DEC-316).
+    assert "who_said" in world.surface.wired
     if "memory_search" in world.surface.wired:
-        # The graph surface: the index answered, and no off-graph tool sits on it (DEC-316).
-        assert not OFF_GRAPH_ONLY_TOOLS & set(world.surface.wired)
+        # The graph surface: the index answered, beside `who_said`.
         assert "unavailable" not in results["memory_search"], results["memory_search"]
         assert results["memory_read"] == ["ok"]
 

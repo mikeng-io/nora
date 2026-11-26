@@ -39,7 +39,6 @@ from nora.agent.catalog.groups import (
     HOT_TOOLS,
     LOADER_TOOL,
     NATIVE_TOOL_BUDGETS,
-    OFF_GRAPH_ONLY_TOOLS,
     SUBAGENT_TOOLS,
     VIDEO_TOOLS,
     hot_tools,
@@ -410,8 +409,6 @@ class ToolRegistry:
             | (frozenset() if video is not None else VIDEO_TOOLS)
             | ({"profile_dispute"} if memory_intake is None else set())
             | ({"memory_search", "memory_read"} if graph_retrieval is None else set())
-            | (OFF_GRAPH_ONLY_TOOLS
-               if graph_retrieval is not None else set())
             | GRAPH_PASS_TOOLS
         )
         self._subagent = subagent

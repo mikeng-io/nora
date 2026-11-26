@@ -8,9 +8,6 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from nora.access import IdentityAccess
 from nora.agent.egress import LeakGuard
 from nora.agent.lineage import LineagePolicy
-from nora.agent.room import Room
-from nora.app.cognition_grounding import place_release
-from nora.domain.live import LiveMapping
 from nora.domain.memory_index import QueryEmbedder
 from nora.domain.ports import SearchProvider
 from nora.infra.embedder import QUERY_TIMEOUT_SECONDS, LlamaEmbedder, fingerprint, model_file
@@ -161,104 +158,6 @@ def notes(cfg, engine) -> NotesWiring:
         memo_store=memo_store, note_store=note_store, entry_store=entry_store)
 
 
-@dataclass(frozen=True)
-class GraphWiring:
-    cognition_memory: Any
-
-
-def _private_names(persons: Any, access: Any) -> tuple[str, ...]:
-    """File names/handles; managed source names resolve before each screened read."""
-    if access is not None and not access.is_file_backend:
-        return ()
-    return tuple(
-        {
-            name
-            for p in persons.by_person.values()
-            for name in (p.person_id, p.name, p.first_name, p.last_name, *p.aliases)
-            if name
-        }
-        | {value for (_, value) in persons.index}
-        | set(persons._instagram_handles.values())
-        | set(persons._instagram_usernames)
-    )
-
-
-def graph(
-    allowlist,
-    cfg,
-    content_checks,
-    engine,
-    media_join,
-    metrics,
-    persons,
-    presence_circles,
-    registry,
-    rosters,
-    route_model,
-    tier,
-    unit_scopes,
-    access=None,
-) -> GraphWiring:
-    cognition_memory = None
-    if cfg.memory.graph.enabled and cfg.memory.graph.comprehend.enabled:
-        from nora.infra.sql.memory_graph import SqlMemoryGraph
-
-        memory_graph = SqlMemoryGraph(engine, metrics=metrics)
-        from nora.app.cognition_memory import WakeMemory
-        from nora.infra.sql.comprehend import SqlComprehendRecords
-
-        rooms_by_unit = LiveMapping(
-            lambda: {
-                u: [
-                    (c.platform, c.primary_id)
-                    for c in allowlist.rooms()
-                    if c.unit == u and c.primary_id
-                ]
-                for u in unit_scopes()
-            }
-        )
-        graph_records = SqlComprehendRecords(
-            engine,
-            media_join=media_join,
-            model_id=route_model("tag", tier.model),
-            rooms_by_unit=rooms_by_unit,
-            persons_by_unit=LiveMapping(
-                lambda: {
-                    u: {p for c in allowlist.rooms() if c.unit == u for p in (c.persons or ())}
-                    for u in unit_scopes()
-                }
-            ),
-            access=access,
-            social_off_ids=persons.social_off_ids() if access is None else frozenset(),
-            can_release_place=place_release(
-                rooms_of=lambda u: [
-                    (c.platform, c.primary_id, c.location)
-                    for c in allowlist.rooms()
-                    if c.unit == u and c.primary_id
-                ],
-                room_view=lambda platform, conversation_id: Room(
-                    platform=platform,
-                    conversation_id=conversation_id,
-                    roster_source=rosters.get(platform),
-                    persons=persons,
-                    access=access,
-                    self_ids=registry.self_aliases(),
-                ).members(),
-                circles=presence_circles,
-                content_checks=content_checks,
-            ),
-        )
-        cognition_memory = WakeMemory(
-            graph=memory_graph,
-            records=graph_records,
-            metrics=metrics,
-            content_checks=content_checks,
-            private_names=_private_names(persons, access),
-        )
-    return GraphWiring(cognition_memory=cognition_memory)
-
-
-
 def admission(
     engine: AsyncEngine, persons: Persons | None, policy: Policy, leak_guard: LeakGuard, *,
     content_checks: bool, room_slots: RoomSlots,
@@ -325,9 +224,7 @@ def retrieval(
     return RetrievalService(SqlRetrieval(engine, access, lineage, embedding_model), embedder)
 
 
-def configured_graph_reads(cfg, engine, access, lineage) -> GraphReadTools | None:
-    if not cfg.memory.index.read:
-        return None
+def configured_graph_reads(cfg, engine, access, lineage) -> GraphReadTools:
     index = cfg.memory.index
     embedder = LlamaEmbedder(
         index.embedder_url, timeout_seconds=QUERY_TIMEOUT_SECONDS,

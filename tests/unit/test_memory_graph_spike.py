@@ -29,23 +29,23 @@ def restore_logging_suppression():
         logging.disable(previous)
 
 
-@pytest.mark.parametrize("read,embed", [(True, True), (False, True), (True, False)])
+@pytest.mark.parametrize("embed", [True, False])
 async def test_replay_embedder_check_uses_effective_subject_config(
-    tmp_path, monkeypatch, read, embed,
+    tmp_path, monkeypatch, embed,
 ):
     from nora.subject.obtain import build_config
     from tests.unit.test_subject_obtain import _spec
 
     source = build_config(_spec(tmp_path / "source", overrides={
-        "memory.index.read": not read, "memory.index.embed": not embed,
+        "memory.index.embed": not embed,
         "memory.index.embedder_model": "generated-source.gguf@0000feedbeef",
     }))
     effective = build_config(_spec(tmp_path / "subject", overrides={
-        "memory.index.read": read, "memory.index.embed": embed,
+        "memory.index.embed": embed,
         "memory.index.embedder_url": "http://127.0.0.1:8092",
         "memory.index.embedder_model": "generated-subject.gguf@0000feedbeef",
     }))
-    assert source.memory.index.read != effective.memory.index.read
+    assert source.memory.index.embed != effective.memory.index.embed
     checked, indexed, legacy = AsyncMock(), AsyncMock(), AsyncMock()
     monkeypatch.setattr(spike, "check_served_model", checked)
     monkeypatch.setattr(spike, "index_sandbox", indexed)
@@ -54,7 +54,7 @@ async def test_replay_embedder_check_uses_effective_subject_config(
         SimpleNamespace(database_url="generated-sandbox", cfg=effective),
         source_url="generated-source",
     )
-    if read and embed:
+    if embed:
         checked.assert_awaited_once_with(
             effective.memory.index.embedder_url, "generated-subject.gguf@0000feedbeef")
     else:
@@ -62,7 +62,7 @@ async def test_replay_embedder_check_uses_effective_subject_config(
     legacy.assert_awaited_once()
     indexed.assert_awaited_once_with(
         "generated-sandbox", source_url="generated-source",
-        model_id="generated-subject.gguf@0000feedbeef", require_vectors=read)
+        model_id="generated-subject.gguf@0000feedbeef", require_vectors=embed)
 
 
 async def test_replay_sandbox_projects_the_legacy_substrate_with_the_subjects_graph_context(
@@ -75,8 +75,7 @@ async def test_replay_sandbox_projects_the_legacy_substrate_with_the_subjects_gr
     from tests.unit.test_subject_obtain import _spec
 
     cfg = build_config(_spec(tmp_path / "subject", overrides={
-        "memory.graph.enabled": True,
-        "memory.index.read": False, "memory.index.embed": False,
+        "memory.index.embed": False,
         "memory.index.embedder_model": "generated-subject.gguf@0000feedbeef",
     }))
     made, indexed = object(), AsyncMock()
@@ -126,7 +125,7 @@ async def test_effective_embedder_refusal_prevents_index_preparation(tmp_path, m
     from tests.unit.test_subject_obtain import _spec
 
     effective = build_config(_spec(tmp_path, overrides={
-        "memory.index.read": True, "memory.index.embed": True,
+        "memory.index.embed": True,
     }))
     indexed, legacy = AsyncMock(), AsyncMock()
     monkeypatch.setattr(spike, "index_sandbox", indexed)

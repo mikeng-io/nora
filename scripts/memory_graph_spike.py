@@ -660,14 +660,13 @@ async def _legacy_replay_substrate(subject: Any, *, source_url: str) -> None:
     index = subject.cfg.memory.index
     model = embedder_fingerprint(index.embedder_model)
     target = create_sql_engine(subject.database_url)
-    if subject.cfg.memory.graph.enabled:
-        from nora.app.graph_project import projection_context
+    from nora.app.graph_project import projection_context
 
-        reload = subject.deps.config_reload
-        target.update_execution_options(memory_graph=projection_context(
-            reload.policy, reload.persons,
-            nora_name=subject.cfg.doctrine.display_name, produce=False,
-        ))
+    reload = subject.deps.config_reload
+    target.update_execution_options(memory_graph=projection_context(
+        reload.policy, reload.persons,
+        nora_name=subject.cfg.doctrine.display_name, produce=False,
+    ))
     source = create_readonly_sql_engine(source_url)
     try:
         await memory_index.rebuild(target)
@@ -688,14 +687,14 @@ async def index_replay_sandbox(subject: Any, *, source_url: str) -> SandboxIndex
     source in both substrates — never generated with a model call.
     """
     index = subject.cfg.memory.index
-    if index.read and index.embed:
+    if index.embed:
         await check_served_model(index.embedder_url, index.embedder_model)
     await _legacy_replay_substrate(subject, source_url=source_url)
     return await index_sandbox(
         subject.database_url,
         source_url=source_url,
         model_id=subject.cfg.memory.index.embedder_model,
-        require_vectors=index.read,
+        require_vectors=index.embed,
     )
 
 

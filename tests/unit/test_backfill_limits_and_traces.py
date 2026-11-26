@@ -1,7 +1,6 @@
 """Production backfill regressions, through CLI + real SDK with generated HTTP replies."""
 from __future__ import annotations
 
-import argparse
 import asyncio
 import json
 from types import SimpleNamespace
@@ -155,32 +154,14 @@ async def test_unknown_usage_stops_before_another_call(monkeypatch):
 
 
 
-async def test_cli_root_contains_session_and_generation_spans(
+async def test_backfill_root_contains_session_and_generation_spans(
         monkeypatch, exported, example_config):
-    import nora.app.composition as composition
-    from nora.app import composition_social
     cfg = example_config.model_copy(update={"obs": example_config.obs.model_copy(update={
         "tracing": example_config.obs.tracing.model_copy(update={"enabled": True,
             "exporter": "otlp_http", "endpoint": "http://generated.invalid/traces"})})})
-    monkeypatch.setattr(cli, "_config", lambda args: cfg)
-    policy = SimpleNamespace(home_rooms=lambda: {}, rooms=lambda: [])
-    monkeypatch.setattr(cli, "_policy", lambda cfg: policy)
-    monkeypatch.setattr(composition_social, "social_person_rooms", lambda p: {})
+    cli._profile_tracing(cfg)
     runner, calls, client = model_runner(monkeypatch)
-    deps = SimpleNamespace(client=client, model_clients=[],
-        registry=SimpleNamespace(self_aliases=lambda: ()))
-
-    async def build(cfg, *, legacy_replay=False):
-        return deps
-
-    async def dispose():
-        pass
-
-    monkeypatch.setattr(composition, "build_dependencies", build)
     engine = _FakeEngine(object())
-    engine.dispose = dispose
-    monkeypatch.setattr(cli, "create_sql_engine", lambda url: engine)
-    monkeypatch.setattr(cli, "_database_url", lambda cfg: "generated")
     receipts = set()
     _patch_sql(monkeypatch, stimuli=[_s(1, 100)], pairs=receipts)
     lane = _Runner()
@@ -191,17 +172,14 @@ async def test_cli_root_contains_session_and_generation_spans(
         receipts.add(("stimuli:1", "h"))
 
     monkeypatch.setattr(lane, "replay", replay)
-
-    async def apply(engine, **kwargs):
-        kw = _run_kwargs()
-        kw["bounds"] = kwargs["bounds"]
-        return await ub.run_units(engine, runner=lane, metered=metered,
-            from_ms=10, until_ms=200, **kw)
-
-    monkeypatch.setattr(ub, "apply", apply)
-    args = argparse.Namespace(unit=["u1"], from_ms=10, until_ms=200, apply=True,
-        max_batches=1, max_tokens=200, max_seconds=30, batch_stimuli=1)
-    assert await cli.cmd_unified_backfill(args) == 0
+    kw = _run_kwargs()
+    kw["bounds"] = ub.Bounds(max_batches=1, max_tokens=200, max_seconds=30)
+    try:
+        result = await ub.run_units(engine, runner=lane, metered=metered,
+            batch_stimuli=1, from_ms=10, until_ms=200, **kw)
+    finally:
+        await client.close()
+    assert result["tokens"] == 130
     spans = exported.get_finished_spans()
     roots = [s for s in spans if s.parent is None]
     assert len(roots) == 1

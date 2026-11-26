@@ -178,19 +178,6 @@ def test_card_facts_are_current_ranked_and_bounded():
 
 
 
-def test_config_is_default_off_and_budgets_come_from_template(example_config):
-    graph = example_config.memory.graph
-    config = graph.comprehend
-    assert not graph.enabled and not config.enabled
-    assert (config.turns, config.total_tokens, config.output_tokens, config.timeout_seconds) == (
-        8,
-        120000,
-        12000,
-        240,
-    )
-    assert (config.live_concurrency, config.historical_concurrency) == (1, 1)
-    assert (config.web_searches, config.page_fetches) == (3, 3)
-
 
 
 

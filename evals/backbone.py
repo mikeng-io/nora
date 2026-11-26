@@ -95,7 +95,7 @@ from nora.subject import (
 )
 from nora.subject.effect_capture import subject_effects
 from nora.subject.eval_evidence import EvidenceError
-from nora.subject.obtain import RoomNotInPolicyError
+from nora.subject.obtain import RoomNotInPolicyError, surface_tool_names
 from nora.subject.recorded_services import RecordedServices
 from nora.subject.transport import held_states
 
@@ -1087,25 +1087,11 @@ class Spec:
     deployment_config: str | None = None
     #: Full SQL restoration or snapshot seeding, retaining the same functional config.
     full_restore: bool = False
-    #: The case selector's index setting. A subject with a different setting
-    #: is refused before grading.
+    #: The memory surface this draw composes. The graph surface is unconditional;
+    #: the field remains on the spec so the draw and its metadata say so.
     memory_surface: str | None = None
     #: The measurement claim bound before dispatch — stamped on every draw.
     measurement: Measurement = PROTOCOL
-
-
-def refuse_a_memory_surface_mismatch(selected: str | None, enabled: bool) -> None:
-    """Raise when the cases were selected for one memory surface and the
-    subject composed the other (DEC-316): the case filter and the config
-    would be measuring two different Noras, and a case graded so is an
-    ERROR, never a reading. `selected` None: the caller selected none."""
-    if selected is not None and enabled != (selected == "graph"):
-        raise ValueError(
-            f"the cases were selected for the {selected} memory surface, and the "
-            f"subject composed [memory.index] read = {enabled}: the case filter "
-            "and the config disagree (DEC-316). Resolve the arm from the "
-            "generated config, or pass --memory-index."
-        )
 
 
 #: Where the deployment's policy and roster live. Copied verbatim into each
@@ -1684,9 +1670,18 @@ async def _drive_draw(case: Case, spec: Spec, *, recording: RecordedServices) ->
                 environment=environment, overrides=spec.overrides,
                 identity=spec.identity if spec.identity is not None else _deployment_identity(),
                 policy=spec.policy if spec.policy is not None else _deployment_policy(), now=now,
+                graph_memory=spec.memory_surface != "off",
             )
             subject = (await obtain(drawn_subject, legacy_replay=True) if port.legacy_replay
                        else await obtain(drawn_subject))
+            memory_checked = spec.memory_surface in {"graph", "off"}
+            if memory_checked:
+                names = surface_tool_names(subject)
+                expected = {"memory_search", "memory_read"}
+                if spec.memory_surface == "off" and not expected.isdisjoint(names):
+                    raise ValueError("memory-off arm composed graph memory read tools")
+                if spec.memory_surface == "graph" and not expected <= names:
+                    raise ValueError("graph arm did not compose its memory read tools")
             if spec.judge is not None:
                 spec = dataclasses.replace(spec, judge=spec.judge.bind(subject.cfg))
             from nora.subject.eval_evidence import current, fingerprint
@@ -1710,10 +1705,6 @@ async def _drive_draw(case: Case, spec: Spec, *, recording: RecordedServices) ->
                         f"in a {platform} room, but the declared subject composes no "
                         f"{platform} adapter"
                     )
-            if spec.memory_surface is not None and not (overlay and overlay.memory):
-                refuse_a_memory_surface_mismatch(
-                    spec.memory_surface, subject.cfg.memory.index.read,
-                )
             transport = None
             if spec.full_restore:
                 # Already seeded, every store, before `obtain()`: this reads
