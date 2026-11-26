@@ -2547,7 +2547,7 @@
  },
  "tests/test_config.py": {
   "comment_blocks": 7,
-  "file_lines": 2168,
+  "file_lines": 2217,
   "internal_docstrings": 6
  },
  "tests/test_discord_adapter.py": {
