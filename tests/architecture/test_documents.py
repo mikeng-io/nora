@@ -136,6 +136,11 @@ def test_a_link_must_name_a_repository_file():
     assert not resolves("/") and not resolves("docs") and not resolves("../outside.md")
 
 
+def test_the_decision_index_is_not_held_to_the_bundle_budget():
+    long = _front("class: decision\nsubject: what holds\nowns: []") + "x\n" * (MAX_LINES + 50)
+    assert "over-budget" not in check("docs/design/decisions.md", long)
+
+
 def test_a_bundle_readme_may_use_the_full_300_line_budget():
     assert check("docs/design/x/README.md", GOOD_DESIGN + "x\n" * (MAX_LINES - 10)) == []
 
