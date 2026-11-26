@@ -1,4 +1,4 @@
-# signal-bridge — the durable Signal boundary (docs/design/platform-bridges).
+# signal-bridge — the durable Signal boundary (design/platform-bridges).
 #
 # The signal-cli inside is the SAME verified distribution deploy/signal-cli
 # builds: signed upstream tarball, signature re-verified in this build, Java 25
