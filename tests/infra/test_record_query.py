@@ -476,6 +476,21 @@ async def test_by_refs_never_returns_a_message_the_withdrawal_cascade_hid(engine
     assert [h.row_id for h in hits] == [said["a_camp"]]
 
 
+async def test_by_refs_at_an_as_of_cut_still_never_returns_a_current_withdrawal(engine, said):
+    """A row hidden after the evidence instant stays absent at that instant;
+    the control row at the same instant still reads."""
+    from nora.infra.sql.audit import SqlRecordStore
+
+    hidden = said["a_hotel"]
+    control = said["a_camp"]
+    assert await SqlRecordStore(engine).hide_message(message_id=hidden, now_ms=T0 + 8_000)
+    hits = await SqlRecordQuery(engine).by_refs(
+        [("messages", hidden), ("messages", control)],
+        [("signal", "ROOM-A")], as_of_ms=T0 + 2_500,
+    )
+    assert [h.row_id for h in hits] == [control]
+
+
 async def test_by_refs_resolves_a_reaction_and_a_delete_row_to_their_message(engine, said):
     async with engine.connect() as conn:
         reaction_id = (await conn.execute(sa.text(

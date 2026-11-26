@@ -1,6 +1,7 @@
 """Real fault, plan and source-write proofs for the graph store."""
 
 import json
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -17,7 +18,7 @@ from nora.infra.sql.schema import (
     LEGACY_RELATION,
 )
 from nora.obs.metrics import Metrics
-from tests.contract.test_memory_graph_contract import PERSON, load
+from tests.contract.test_memory_graph_contract import PERSON, REL, load
 from tests.contract.test_memory_graph_contract import _graph_db as _graph_db
 from tests.fixtures.legacy_projection import (
     ProjectingMediaObjectStore,
@@ -88,6 +89,23 @@ async def test_walk_plan_uses_both_relation_endpoint_indexes(sql):
     assert "Index Scan" in rendered or "Bitmap Index Scan" in rendered
     result = await sql.walk((("event", "5000"),), Walk("u1", frozenset()))
     assert result.nodes and result.relations
+
+
+async def test_walk_omits_assertions_after_the_known_at_cut(sql):
+    """A later assertion stays out at `known_at` and appears at a later bound."""
+    now = datetime(2026, 1, 1, tzinfo=UTC)
+    future = replace(REL, id="r2", asserted_at=now + timedelta(hours=1))
+    await load(sql, REL)
+    await load(sql, future)
+
+    at_t = await sql.walk((PERSON.key,), Walk("u1", frozenset({"p1"}), valid_at=now, known_at=now))
+    rels = {edge.relation.id for edge in at_t.relations}
+    assert "r1" in rels
+    assert "r2" not in rels
+    later = await sql.walk(
+        (PERSON.key,), Walk("u1", frozenset({"p1"}), valid_at=now + timedelta(hours=2)),
+    )
+    assert "r2" in {edge.relation.id for edge in later.relations}
 
 
 async def test_projection_toggle_batching_pointer_identity_and_backfill(sql):

@@ -18,6 +18,7 @@ from nora.infra.sql.memory_embed import MemoryEmbedWorker
 from nora.infra.sql.schema import MEMORY_NODE, MESSAGES, PRESENCE_FIXES
 from nora.memory.adapters.graph_search import rebuild_graph_search
 from nora.memory.domain.registration import AGGREGATE_FAMILIES, SEARCHABLE_SOURCES
+from nora.obs.metrics import Metrics
 from tests.infra.test_item_registration import _PERSON, _UNIT, _registration, _Writer
 from tests.infra.test_item_registration import engine as graph_test_engine
 from tests.unit.test_embedder import FakeLlamaServer
@@ -47,9 +48,10 @@ async def llama():
         await server.close()
 
 
-def worker(engine, url):
+def worker(engine, url, *, metrics=None, clock=None):
     return MemoryEmbedWorker(
         engine, LlamaEmbedder(url), model=MODEL, model_file=model_file(MODEL_ID), batch=16,
+        metrics=metrics, clock=clock or Clock(),
     )
 
 
@@ -218,3 +220,110 @@ async def test_an_unavailable_embedder_never_gives_a_node_up(engine, llama):
         ))
     assert embedded is not None
 
+
+
+async def _graph_row(engine, graph_id):
+    async with engine.connect() as conn:
+        return (await conn.execute(sa.select(GRAPH_SEARCH).where(
+            GRAPH_SEARCH.c.graph_id == graph_id,
+        ))).mappings().one()
+
+
+async def test_the_worker_refuses_a_wrong_model_then_embeds_the_configured_one(engine, llama):
+    fake, url = llama
+    graph_id = await _message(engine)
+    fake.model_path = "/models/some-other-model.gguf"
+    w = worker(engine, url)
+    assert await w.run_once() == 0
+    assert fake.calls == 0
+
+    fake.model_path = "/models/model-a.gguf"
+    assert await w.run_once() == 1
+    row = await _graph_row(engine, graph_id)
+    assert row["embedding"] is not None and row["embedding_model"] == MODEL
+
+
+async def test_an_outage_stops_the_batch_backs_off_immediately_and_a_rejection_continues(
+    engine, llama,
+):
+    fake, url = llama
+    first = await _message(engine, "generated outage one")
+    second = await _message(engine, "generated outage two")
+    metrics, clock = Metrics(), Clock()
+    w = worker(engine, url, metrics=metrics, clock=clock)
+
+    fake.status, fake.healthy = 503, False
+    assert await w.run_once() == 1
+    assert fake.calls == 1
+    rows = [await _graph_row(engine, row_id) for row_id in (first, second)]
+    assert sorted(row["embed_attempts"] for row in rows) == [0, 1]
+    assert metrics.get("nora_memory_embed_total", outcome="unavailable") == 1
+
+    assert await w.run_once() == 1
+    assert fake.calls == 2
+    assert await w.run_once() == 0
+    assert fake.calls == 2
+
+    fake.status, fake.healthy = 400, True
+    clock.now += 7 * 3600
+    assert await w.run_once() == 2
+    assert metrics.get("nora_memory_embed_total", outcome="rejected") == 2
+
+
+async def test_an_unexpected_failure_is_recorded_and_given_up_after_the_cap(
+    engine, llama, monkeypatch,
+):
+    _fake, url = llama
+    bad = await _message(engine, "a graph row that always breaks")
+    good = await _message(engine, "a graph row that embeds")
+    real = LlamaEmbedder.embed_document
+
+    async def _breaks(self, text: str):
+        if "breaks" in text:
+            raise KeyError("boom")
+        return await real(self, text)
+
+    monkeypatch.setattr(LlamaEmbedder, "embed_document", _breaks)
+    metrics, clock = Metrics(), Clock()
+    w = worker(engine, url, metrics=metrics, clock=clock)
+
+    assert await w.run_once() == 2
+    bad_row = await _graph_row(engine, bad)
+    assert (bad_row["embed_attempts"], bad_row["embed_error"]) == (1, "error:KeyError")
+    assert (await _graph_row(engine, good))["embedding"] is not None
+    assert metrics.get("nora_memory_embed_total", outcome="error") == 1
+
+    for _ in range(EMBED_MAX_ATTEMPTS - 1):
+        clock.now += 7 * 3600
+        assert await w.run_once() == 1
+    assert metrics.get("nora_memory_embed_total", outcome="given_up") == 1
+    clock.now += 7 * 3600
+    assert await w.run_once() == 0
+
+
+async def test_truncation_is_counted_only_when_the_vector_is_stored(
+    engine, llama, monkeypatch,
+):
+    _fake, url = llama
+    long_id = await _message(engine, "x" * 9000)
+    metrics = Metrics()
+    assert await worker(engine, url, metrics=metrics).run_once() == 1
+    assert (await _graph_row(engine, long_id))["embedding"] is not None
+    assert metrics.get("nora_memory_embed_truncated_total", kind="graph_search") == 1
+
+    changed_id = await _message(engine, "y" * 9000)
+    real = LlamaEmbedder.embed_document
+
+    async def _changed_meanwhile(self, text: str):
+        out = await real(self, text)
+        async with engine.begin() as conn:
+            await conn.execute(sa.update(GRAPH_SEARCH).where(
+                GRAPH_SEARCH.c.graph_id == changed_id,
+            ).values(text="short now"))
+        return out
+
+    monkeypatch.setattr(LlamaEmbedder, "embed_document", _changed_meanwhile)
+    metrics = Metrics()
+    assert await worker(engine, url, metrics=metrics).run_once() == 1
+    assert (await _graph_row(engine, changed_id))["embedding"] is None
+    assert metrics.get("nora_memory_embed_truncated_total", kind="graph_search") == 0
