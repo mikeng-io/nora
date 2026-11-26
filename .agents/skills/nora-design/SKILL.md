@@ -13,9 +13,17 @@ progress. `nora-work` owns continuation after design within the authorized task.
 ## 1. Is this an architecture change?
 
 First compare the relevant bundle promises with current entry points, wiring
-and existing evidence. Include connected bundles sharing the changed invariant;
-do not census every design. Use `nora-review`'s acceptance-audit mode if an
+and existing evidence. Use `nora-review`'s acceptance-audit mode if an
 independent comparison is required. A missing proof is not missing code.
+
+**`design/` is one design, not a shelf of bundles.** A subject is owned by
+exactly one file in the whole tree: before writing, `git grep -n '<subject
+words>' -- design` and read every hit, not only the bundle you came for. Two
+files describing one subject is the defect, whichever is newer — resolve it by
+deleting the one that is not the owner, never by editing both. A bundle whose
+subject the anchor now owns is abandoned design: **delete it** (§4.3), because a
+bundle left in the tree will be read and derived from, and a reader cannot tell
+which of two present-tense descriptions is live.
 
 Ask: **would a reader of the bundle see a difference?** It is architecture when
 the change alters

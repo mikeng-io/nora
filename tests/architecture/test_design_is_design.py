@@ -19,6 +19,11 @@ def test_detector_sees_each_violation() -> None:
     assert check("design/a/x.md", "> **DEPRECATED** in part\n") == ["history-marker"]
     assert check("design/a/x.md", "---\nsupersedes: other\n---\n") == ["history-marker"]
     assert check("design/a/x.md", "Decided 2026-09-07.\n") == ["date"]
+    assert check("design/a/x.md", "**Status:** building\n") == ["status-marker"]
+    assert check("design/a/x.md", "Status: proposed\n") == ["status-marker"]
+    assert check(
+        "design/a/x.md", "[Open issues](https://github.com/o/r/issues?q=is%3Aopen+x)\n",
+    ) == ["issue-search-link"]
 
 
 def test_design_matches_the_baseline() -> None:

@@ -39,6 +39,7 @@
  "design/10-identity-and-policy-schema.md": [
   "numbered-or-dated-name",
   "date",
+  "status-marker",
   "over-budget"
  ],
  "design/10-preview-identity.toml": [
@@ -62,7 +63,8 @@
  ],
  "design/13-trace-content-and-redaction.md": [
   "numbered-or-dated-name",
-  "date"
+  "date",
+  "status-marker"
  ],
  "design/17-prompt-substrate.md": [
   "numbered-or-dated-name",
@@ -132,6 +134,14 @@
   "not-a-design-file",
   "date"
  ],
+ "design/artifact/README.md": [
+  "status-marker",
+  "issue-search-link"
+ ],
+ "design/browser-runtime/README.md": [
+  "status-marker",
+  "issue-search-link"
+ ],
  "design/capability-drop/00-overview.md": [
   "numbered-or-dated-name",
   "date"
@@ -152,30 +162,45 @@
   "not-a-design-file",
   "date"
  ],
+ "design/cognition-loop/README.md": [
+  "status-marker",
+  "issue-search-link"
+ ],
+ "design/cognition-loop/threads.md": [
+  "status-marker"
+ ],
  "design/computer-unit-scope/00-contract.md": [
   "numbered-or-dated-name",
-  "date"
+  "date",
+  "status-marker"
  ],
  "design/computer-unit-scope/01-migration.md": [
   "numbered-or-dated-name",
   "not-a-design-file",
   "date",
+  "status-marker",
   "over-budget"
  ],
  "design/computer-unit-scope/_index.yaml": [
   "not-a-design-file",
   "date"
  ],
+ "design/context-assembly/README.md": [
+  "status-marker",
+  "issue-search-link"
+ ],
  "design/conversational-recall/00-intent.md": [
   "numbered-or-dated-name",
-  "date"
+  "date",
+  "status-marker"
  ],
  "design/conversational-recall/10-findings.md": [
   "numbered-or-dated-name",
   "date"
  ],
  "design/conversational-recall/20-orchestration.md": [
-  "numbered-or-dated-name"
+  "numbered-or-dated-name",
+  "status-marker"
  ],
  "design/conversational-recall/30-measurement.md": [
   "numbered-or-dated-name"
@@ -203,6 +228,10 @@
  "design/discord-integration/_index.yaml": [
   "not-a-design-file",
   "date"
+ ],
+ "design/evaluation/README.md": [
+  "status-marker",
+  "issue-search-link"
  ],
  "design/event-abstraction/00-overview.md": [
   "numbered-or-dated-name",
@@ -255,6 +284,14 @@
   "not-a-design-file",
   "date"
  ],
+ "design/instagram-adoption/README.md": [
+  "status-marker",
+  "issue-search-link"
+ ],
+ "design/media-read-lane/README.md": [
+  "status-marker",
+  "issue-search-link"
+ ],
  "design/message-edits/00-overview.md": [
   "numbered-or-dated-name",
   "date"
@@ -277,7 +314,8 @@
  ],
  "design/nora-world/00-overview.md": [
   "numbered-or-dated-name",
-  "date"
+  "date",
+  "status-marker"
  ],
  "design/nora-world/10-world-as-a-view.md": [
   "numbered-or-dated-name",
@@ -343,6 +381,10 @@
   "not-a-design-file",
   "date"
  ],
+ "design/personalisation/README.md": [
+  "status-marker",
+  "issue-search-link"
+ ],
  "design/platform-bridges/00-contract.md": [
   "numbered-or-dated-name",
   "date"
@@ -367,8 +409,20 @@
   "not-a-design-file",
   "date"
  ],
+ "design/platform-observations/README.md": [
+  "status-marker",
+  "issue-search-link"
+ ],
+ "design/policy-reload/README.md": [
+  "status-marker",
+  "issue-search-link"
+ ],
  "design/private-dm.md": [
   "date"
+ ],
+ "design/private-dm/README.md": [
+  "status-marker",
+  "issue-search-link"
  ],
  "design/room-topology/00-intent.md": [
   "numbered-or-dated-name",
@@ -398,6 +452,26 @@
  "design/room-topology/_index.yaml": [
   "not-a-design-file",
   "date"
+ ],
+ "design/sandbox-runtime/README.md": [
+  "status-marker",
+  "issue-search-link"
+ ],
+ "design/self-awareness/README.md": [
+  "status-marker",
+  "issue-search-link"
+ ],
+ "design/self-growth/README.md": [
+  "status-marker",
+  "issue-search-link"
+ ],
+ "design/self-reference/README.md": [
+  "status-marker",
+  "issue-search-link"
+ ],
+ "design/social-per-network/README.md": [
+  "status-marker",
+  "issue-search-link"
  ],
  "design/standing-ledger/00-intent.md": [
   "numbered-or-dated-name",
@@ -483,6 +557,14 @@
   "date",
   "over-budget"
  ],
+ "design/system/README.md": [
+  "status-marker",
+  "issue-search-link"
+ ],
+ "design/test-selection/README.md": [
+  "status-marker",
+  "issue-search-link"
+ ],
  "design/threads-adoption/00-intent.md": [
   "numbered-or-dated-name",
   "date"
@@ -500,5 +582,32 @@
  "design/threads-adoption/_index.yaml": [
   "not-a-design-file",
   "date"
+ ],
+ "design/tool-catalogue/README.md": [
+  "status-marker",
+  "issue-search-link"
+ ],
+ "design/tool-catalogue/deferral.md": [
+  "status-marker"
+ ],
+ "design/tool-concurrency/README.md": [
+  "status-marker",
+  "issue-search-link"
+ ],
+ "design/unified-memory/README.md": [
+  "status-marker",
+  "issue-search-link"
+ ],
+ "design/video-generation/README.md": [
+  "status-marker",
+  "issue-search-link"
+ ],
+ "design/voice-channel/README.md": [
+  "status-marker",
+  "issue-search-link"
+ ],
+ "design/whatsapp-adoption/README.md": [
+  "status-marker",
+  "issue-search-link"
  ]
 }

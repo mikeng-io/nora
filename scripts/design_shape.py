@@ -25,6 +25,12 @@ NOT_DESIGN = {"decision", "decisions", "review", "reviews", "roadmap", "items", 
 _NAME = re.compile(r"^\d|\d{4}-\d\d-\d\d")
 _DATE = re.compile(r"(?<![\w/#-])20\d\d-\d\d-\d\d(?![\w-])")
 _BANNER = re.compile(r"\b(?:DEPRECATED|SUPERSEDED|REVERSED)\b|^supersedes:", re.M)
+#: A bundle carrying its own build state competes with the tracker that owns
+#: progress, and a stale `building` reads as the more current of two bundles.
+_STATUS = re.compile(r"^\**Status:\**", re.M)
+#: An open-issue search is execution, and it rots into a link that answers a
+#: question nobody asked.
+_ISSUE_SEARCH = re.compile(r"issues\?q=")
 
 
 def check(path: str, text: str) -> list[str]:
@@ -41,6 +47,10 @@ def check(path: str, text: str) -> list[str]:
         found.append("date")
     if _BANNER.search(text):
         found.append("history-marker")
+    if _STATUS.search(text):
+        found.append("status-marker")
+    if _ISSUE_SEARCH.search(text):
+        found.append("issue-search-link")
     limit = MAX_README_LINES if name == "README.md" else MAX_FILE_LINES
     if len(text.splitlines()) > limit:
         found.append("over-budget")

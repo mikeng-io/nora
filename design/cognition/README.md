@@ -16,6 +16,12 @@ The goal is **emergence**: recommendation, personalisation, follow-through and
 learning arise from the generic loops working the graph, never from a
 capability's own code, store, prompt or loop.
 
+**This bundle is the architecture anchor.** It owns how Nora holds and works
+what she knows; every other bundle uses its vocabulary and describes a
+capability expressed in its kinds and stages. A bundle that introduces its own
+memory, store, loop or engine for one capability contradicts this one, and this
+one wins. Nora's memory is the Cognitive Graph and nothing else.
+
 ## What Nora is
 
 | part | is | defined in |
