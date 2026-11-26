@@ -510,6 +510,18 @@ def selected_cases(
     return cases
 
 
+def validate_memory_surface(name: str, memory_surface: str) -> None:
+    """Fail closed when a selection cannot compose its requested memory arm."""
+    if memory_surface not in {"graph", "off"}:
+        raise ValueError(f"unknown eval memory surface {memory_surface!r}")
+    if memory_surface == "off" and name in JOURNEY_CORPORA:
+        raise ValueError(
+            f"{name}: --memory-surface off cannot be honoured for a "
+            "live-clock journey; refusing rather than labelling a "
+            "graph-enabled run memory-off"
+        )
+
+
 def experiment_for(
     name: str, *, source_url: str, judge: Any = None, sample: int = 1,
     only: frozenset[str] | None = None, memory_surface: str = "graph",
@@ -552,6 +564,7 @@ def experiment_for(
     from evals.measurement import PROTOCOL
     from evals.reading import sampled
 
+    validate_memory_surface(name, memory_surface)
     if measurement is None:
         measurement = PROTOCOL
     if measurement.behavioral and name not in JOURNEY_CORPORA:
@@ -579,8 +592,6 @@ def experiment_for(
         )
         return Experiment(cases=cases, evaluators=[JourneyGrader()]), nora_task(spec)
 
-    if memory_surface not in {"graph", "off"}:
-        raise ValueError(f"unknown eval memory surface {memory_surface!r}")
     cases = selected_cases(name, only=only)
     if contract is not None:
         cases = [contract.bind_case(name, case) for case in cases]

@@ -117,6 +117,19 @@ def test_a_cohort_refuses_malformed_legacy_and_undeclared_input(tmp_path, damage
                     corpus="autonomous_journey")
 
 
+def test_experiment_for_the_journey_corpus_refuses_the_memory_off_arm(tmp_path):
+    """The live-clock path cannot compose the ordinary eval memory-off arm;
+    it refuses before dispatch rather than labelling a graph-enabled run off."""
+    from evals.journey_cohort import load_cohort
+
+    cohort = load_cohort(_cohort_file(tmp_path), corpus="autonomous_journey")
+    with pytest.raises(ValueError, match="memory-surface off cannot be honoured"):
+        experiment_for(
+            "autonomous_journey", source_url="postgresql://u@h/eval",
+            cohort=cohort, services={"the_outing": _journey_services()},
+            memory_surface="off")
+
+
 def test_experiment_for_the_journey_corpus_constructs_the_live_clock_pair(tmp_path):
     """The native pair: `Experiment` graded by `JourneyGrader`, cases drawn
     from the cohort, `Spec.services` holding each case's declared finite

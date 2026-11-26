@@ -185,7 +185,7 @@ def bound_selection(
     declares its own live model gateway.
     """
     from evals.measurement import for_measure
-    from evals.scenarios import JOURNEY_CORPORA, selected_cases
+    from evals.scenarios import JOURNEY_CORPORA, selected_cases, validate_memory_surface
 
     measurement = args.bound_measurement = for_measure(
         getattr(args, "measure", "protocol"))
@@ -198,6 +198,8 @@ def bound_selection(
                 f"--measure behavioral binds {sorted(JOURNEY_CORPORA)} "
                 "only; no journey corpus is selected")
         return None
+    for name in journey:
+        validate_memory_surface(name, getattr(args, "memory_surface", "graph"))
     if len(journey) > 1:
         raise ValueError("each journey corpus declares its own cohort")
     if not args.journey_cohort:
