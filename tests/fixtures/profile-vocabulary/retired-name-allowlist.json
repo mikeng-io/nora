@@ -249,16 +249,16 @@
    "persona_line": 7
   }
  },
- "tests/test_config.py": {
-  "reason": "Retired config spellings are tested only to prove startup refusal and the new destination.",
-  "matches": {
-   "persona": 3
-  }
- },
  "tests/unit/test_config_cli.py": {
   "reason": "Negative control proves the retired configuration section is rejected.",
   "matches": {
    "persona": 2
+  }
+ },
+ "tests/unit/test_memory_config.py": {
+  "reason": "Retired config spellings are tested only to prove startup refusal and the new destination.",
+  "matches": {
+   "persona": 3
   }
  }
 }
