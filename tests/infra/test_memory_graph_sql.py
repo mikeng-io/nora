@@ -7,7 +7,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 import sqlalchemy as sa
 
-from nora.domain.memory_graph import Walk, pointer_entity
+from nora.domain.memory_graph import Entity, Walk, pointer_entity
 from nora.domain.models import NormalizedMessage
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.graph_projection import ProjectionContext, form_batch
@@ -18,7 +18,7 @@ from nora.infra.sql.schema import (
     LEGACY_RELATION,
 )
 from nora.obs.metrics import Metrics
-from tests.contract.test_memory_graph_contract import PERSON, REL, load
+from tests.contract.test_memory_graph_contract import EV, PERSON, REL, SOURCE, load
 from tests.contract.test_memory_graph_contract import _graph_db as _graph_db
 from tests.fixtures.legacy_projection import (
     ProjectingMediaObjectStore,
@@ -94,9 +94,16 @@ async def test_walk_plan_uses_both_relation_endpoint_indexes(sql):
 async def test_walk_omits_assertions_after_the_known_at_cut(sql):
     """A later assertion stays out at `known_at` and appears at a later bound."""
     now = datetime(2026, 1, 1, tzinfo=UTC)
-    future = replace(REL, id="r2", asserted_at=now + timedelta(hours=1))
+    future_event = Entity("e2", "event", "u1", "Generated Later Event")
+    future = replace(
+        REL, id="r2", dst=future_event.key, asserted_at=now + timedelta(hours=1),
+    )
     await load(sql, REL)
-    await load(sql, future)
+    admitted = await sql.stage_and_admit(
+        entities=(future_event,), relations=(future,),
+        evidence=(replace(EV, relation_id=future.id),), sources={SOURCE.key: SOURCE},
+    )
+    assert admitted.relations == (future,)
 
     at_t = await sql.walk((PERSON.key,), Walk("u1", frozenset({"p1"}), valid_at=now, known_at=now))
     rels = {edge.relation.id for edge in at_t.relations}
@@ -106,6 +113,32 @@ async def test_walk_omits_assertions_after_the_known_at_cut(sql):
         (PERSON.key,), Walk("u1", frozenset({"p1"}), valid_at=now + timedelta(hours=2)),
     )
     assert "r2" in {edge.relation.id for edge in later.relations}
+
+
+async def test_walk_sql_omits_assertions_after_the_known_at_cut(sql):
+    """The SQL walk itself applies `known_at` before the domain walk folds rows."""
+    now = datetime(2026, 1, 1, tzinfo=UTC)
+    future_event = Entity("e2", "event", "u1", "Generated Later Event")
+    future = replace(
+        REL, id="r2", dst=future_event.key, asserted_at=now + timedelta(hours=1),
+    )
+    await load(sql, REL)
+    admitted = await sql.stage_and_admit(
+        entities=(future_event,), relations=(future,),
+        evidence=(replace(EV, relation_id=future.id),), sources={SOURCE.key: SOURCE},
+    )
+    assert admitted.relations == (future,)
+
+    async with sql.engine.connect() as conn:
+        at_t = (await conn.execute(sa.text(WALK_SQL), walk_parameters(
+            (PERSON.key,), Walk("u1", frozenset({"p1"}), valid_at=now, known_at=now),
+        ))).mappings().all()
+        later = (await conn.execute(sa.text(WALK_SQL), walk_parameters(
+            (PERSON.key,), Walk("u1", frozenset({"p1"}), valid_at=now + timedelta(hours=2)),
+        ))).mappings().all()
+    assert "r1" in {row["edge"] for row in at_t}
+    assert "r2" not in {row["edge"] for row in at_t}
+    assert "r2" in {row["edge"] for row in later}
 
 
 async def test_projection_toggle_batching_pointer_identity_and_backfill(sql):

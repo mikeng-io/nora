@@ -74,7 +74,7 @@
     "file": "nora/infra/sql/memory_graph.py",
     "old": "       AND (CAST(:known_at AS timestamptz) IS NULL OR asserted_at<=:known_at)",
     "new": "       AND TRUE",
-    "target": "tests/infra/test_memory_graph_sql.py::test_walk_omits_assertions_after_the_known_at_cut"
+    "target": "tests/infra/test_memory_graph_sql.py::test_walk_sql_omits_assertions_after_the_known_at_cut"
   },
   {
     "name": "replay preparation rebuilds the legacy substrate",
