@@ -1,3 +1,9 @@
+---
+class: engineering
+subject: why the repository conventions are shaped the way they are
+owns: []
+---
+
 # Conventions & operational detail
 
 The long-form behind the [code standards](code-standards.md). The standards
@@ -245,7 +251,7 @@ mistake it produced (2026-08-21: eight full gate runs in one session).
   modules that are not occasions are the named MECHANISM, RUNNER and EXEMPT
   entries in the test, each with a written reason, reviewed in the PR that adds
   it and re-checked by the test. A new occasion follows
-  `docs/design/context-assembly/registry.md`
+  `docs/design/agent/assembly.md`
   (DEC-273, ADR 0021).
 
 - **Never read a gate's success through a pipe.** `make gate | tail` returns
@@ -388,7 +394,7 @@ compose and disagreed with this file). Identity and policy are bind-mounted read
 validation every three seconds**. Invalid edits retain the last good version;
 workspace-binding edits refuse the whole reload until recreation. The
 `nora_config_reloads_total` outcomes and `/health` staleness expose pending or
-refused changes (see `docs/design/policy-reload/README.md`). `identity.toml` takes one
+refused changes (see `docs/design/people/README.md`). `identity.toml` takes one
 `[[persons.<id>.<platform>]]` block **per account**, all resolving to one
 `person_id` (their Honcho peer, A2/DEC-14). `policy.toml` is deny-by-default and
 Nora **refuses to start** if it is missing or allows nothing (R-5). Memory's

@@ -1,3 +1,10 @@
+---
+class: design
+subject: what the evaluation suite covers and what it does not
+owns: []
+area: evaluation
+---
+
 # Scenario coverage
 
 Coverage follows user-visible risk and observed failure modes. A case states

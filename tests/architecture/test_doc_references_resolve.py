@@ -16,7 +16,7 @@ FROM a file under it, and a citation OF a path under it from anywhere else.
 sweep of every backticked, slash-containing token in every tracked `.md` file
 produces mostly non-defects: version-like numbers and IPs (no extension), bare
 relative mentions inside a file already scoped to that subtree
-(`agent/guards.py` inside a doc under `docs/design/whatsapp-adoption/README.md`), and — the
+(`agent/guards.py` inside a doc under `docs/design/platform/whatsapp.md`), and — the
 largest category — prose that talks ABOUT a deleted or not-yet-built file
 rather than pointing at a live one. Each tightening below is a STRUCTURAL
 signal already present in this repo's own conventions, not a per-path guess:
@@ -314,43 +314,14 @@ _KNOWN_DANGLING: dict[tuple[str, str], str] = {
     # names the code of its day is not drift, and mass-rewriting prose to chase
     # a delete loses the record of what the delete removed.
     #
-    # The OPERATOR-facing docs (`docs/operations/runbook.md`, `docs/engineering/eval-sop.md`,
+    # The OPERATOR-facing docs (`docs/operations/runbook.md`, `docs/operations/eval-sop.md`,
     # `docs/engineering/conventions-rationale.md`, the `make eval-*` targets)
     # name `python -m evals`, because those tell somebody to run a command.
-    **{
-        (doc, "evals/run.py"): (
-            "the old eval CLI, deleted 2026-09-18; this line records what was "
-            "true when it was written (docs/design/evaluation Step 5)"
-        )
-        for doc in (
-            "docs/design/capability-drop/03-code-surface.md",
-            "docs/design/capability-drop/implementation-brief.md",
-        )
-    },
     # The eval-layer modules live in `tests/`; these references name where the
     # code was before.
-    ("docs/design/capability-drop/03-code-surface.md", "evals/harness.py"): (
-        "re-homed into `tests/` 2026-09-18; the reference records where "
-        "it lived (docs/design/evaluation Step 5)"
-    ),
     ("docs/operations/trace-redaction.md", "evals/judge.py"): (
         "re-homed into `tests/` 2026-09-18; the reference records where "
         "it lived (docs/design/evaluation Step 5)"
-    ),
-    ("docs/design/capability-drop/03-code-surface.md", "nora/app/eval_support.py"): (
-        "re-homed to `tests/offline_eval_support.py` 2026-09-18 (docs/design/evaluation Step 5); "
-        "the "
-        "reference records where it lived"
-    ),
-    ("docs/design/capability-drop/implementation-brief.md", "evals/harness.py"): (
-        "re-homed to `tests/offline_eval_harness.py` 2026-09-18 (docs/design/evaluation Step 5); "
-        "the "
-        "reference records where it lived"
-    ),
-    ("docs/design/capability-drop/implementation-brief.md", "nora/app/eval_support.py"): (
-        "re-homed to `tests/offline_eval_support.py` 2026-09-18 (docs/design/evaluation Step 5); "
-        "the "
-        "reference records where it lived"
     ),
     (
         "docs/adr/0011-the-relevance-gate-stays-off-the-sdk-transport.md",
@@ -368,12 +339,6 @@ _KNOWN_DANGLING: dict[tuple[str, str], str] = {
         "channel went the sidecar route, docs/design/voice/README.md) — the brief is a "
         "historical record of the proposal, not a link to fix"
     ),
-    ("docs/design/discord-integration/00-overview.md", "deploy/watchdog.sh"): (
-        "the shell watchdog was deleted 2026-09-09 once Prometheus covered its one "
-        "condition with a real delivery path; this design records the reasoning as it "
-        "stood, and rewriting a decision record to match later code is what this "
-        "repo's design docs deliberately do not do"
-    ),
     ("docs/design/08-stack-refactor-brief.md", "nora/store/db.py"): (
         "pre-refactor handoff brief describing the SQLite-era code the brief itself "
         "proposed replacing; nora/store/ no longer exists post-refactor"
@@ -385,16 +350,6 @@ _KNOWN_DANGLING: dict[tuple[str, str], str] = {
     ("docs/design/09-decision-index.md", ".github/workflows/gates.yml"): (
         "A12 names a CI gate file; this repo deliberately runs no CI (operator decision) "
         "and the file was never added back after that decision"
-    ),
-    ("docs/design/11-recall-and-threading.md", "nora/engagement/recall.py"): (
-        "early recall design; the module never landed at this path"
-    ),
-    (
-        "docs/design/11-recall-and-threading.md",
-        "nora/infra/sql/migrations/versions/0003_quoted_ts.py",
-    ): (
-        "migration was renumbered/renamed before landing (0003_presence_places.py today), "
-        "same shape as 0017_events.py's own documented renumbering"
     ),
     ("docs/adr/0020-documents-are-json-specs-the-portal-renders.md",
      "nora/compute/smith/page_shell.py"): (

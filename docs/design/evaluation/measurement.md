@@ -1,3 +1,10 @@
+---
+class: design
+subject: "what a measurement is and how a verdict is reached"
+owns: []
+area: evaluation
+---
+
 # Measurement and verdicts
 
 ## One experiment and one evidence source
@@ -115,4 +122,4 @@ Backend readback establishes retention and queryability; a frontend claim needs
 frontend evidence. Neither establishes the criterion's truth by itself.
 
 [Observability](../../operations/observability.md) owns sink and transport mechanics;
-[the eval SOP](../../engineering/eval-sop.md) owns execution and adjudication procedure.
+[the eval SOP](../../operations/eval-sop.md) owns execution and adjudication procedure.

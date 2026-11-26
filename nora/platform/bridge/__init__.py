@@ -1,4 +1,4 @@
-"""Shared platform-bridge wire contract (docs/design/platform-bridges).
+"""Shared platform-bridge wire contract (docs/design/platform/README.md).
 
 `nora.platform.bridge` holds the platform-agnostic pieces every bridge and the
 app share: the v1 event envelope, canonical source identity, the durable

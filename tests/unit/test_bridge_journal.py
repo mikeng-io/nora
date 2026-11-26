@@ -1,4 +1,4 @@
-"""Journal recovery semantics (docs/design/platform-bridges §journal)."""
+"""Journal recovery semantics (docs/design/platform/README.md §journal)."""
 
 import pytest
 

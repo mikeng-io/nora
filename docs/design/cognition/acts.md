@@ -1,3 +1,12 @@
+---
+class: design
+subject: "the act envelope and delegated work"
+owns: []
+area: cognition
+links:
+  - {to: docs/design/cognition/README.md, rel: uses}
+---
+
 # Acts
 
 An act is anything Nora does that changes something outside the graph: a

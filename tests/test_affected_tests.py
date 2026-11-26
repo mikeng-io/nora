@@ -219,7 +219,7 @@ def test_a_docs_tree_data_file_selects_what_reads_it_not_nothing():
     """docs/design/*.toml is not "docs-only, no reader". The scan finds the tests
     that name the design tree; a file with no reader at all is NONE (next
     test), never silently the same as a failure."""
-    assert _selected("docs/design/10-preview-identity.toml") != []
+    assert _selected("docs/operations/identity-preview.toml") != []
 
 
 def test_nora_skills_change_selects_all():

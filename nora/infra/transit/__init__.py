@@ -1,5 +1,5 @@
 """Live Hong Kong bus arrivals — the first grounding capability "
-"(docs/design/system/grounding.md)."""
+"(docs/design/location/README.md)."""
 
 from .client import TransitClient
 

@@ -1,4 +1,4 @@
-"""The platform-observation wired acceptance paths (docs/design/platform-observations
+"""The platform-observation wired acceptance paths (docs/design/platform/observations.md
 04/05's completion): not the helpers — the REAL surfaces a turn runs.
 
 Each test drives a real owner: `TranscriptInjection.assemble` for the

@@ -120,7 +120,7 @@ scope user must succeed; to `http://172.17.0.1:18765` it must be refused).
 
 ## Lifecycle audit: who did what to the machine
 
-The computer's audit (docs/design/sandbox-runtime/sessions.md «Complete evidence») covers every tool call, and
+The computer's audit (docs/design/computer/sandbox.md «Complete evidence») covers every tool call, and
 until 2026-10-01 nothing else: a VM create, a recreate, a computerd restart or a
 token rotation left no row. `nora-computer` runs on the host as the operator,
 outside the nora container and outside the VM, so it cannot append to Postgres
@@ -191,9 +191,9 @@ A **recreate deletes /workspace**, and the audit of 2026-10-01 saw three of them
   last backup that holds any room. It logs `holds no rooms; nothing to back up`,
   makes no archive and prunes nothing.
 - **Not in it:** each room's `browser/` directory (a Chromium profile is a
-  credential store; its cookies are never backed up, docs/design/sandbox-runtime/files.md «Backup and restore») and computerd's
+  credential store; its cookies are never backed up, docs/design/computer/sandbox.md «Backup and restore») and computerd's
   `.tmux` sockets. A project folder that happens to be called `browser` is kept.
-- **It is rollback, not off-host backup** (docs/design/sandbox-runtime/files.md «Backup and restore»): the same machine, the same
+- **It is rollback, not off-host backup** (docs/design/computer/sandbox.md «Backup and restore»): the same machine, the same
   disk. Copy `~/nora-backups` off the host if the host's loss matters.
 - **`nora-computer destroy` takes a backup first and refuses if it cannot**
   (exit 9, the VM untouched). That backup is filed under

@@ -1,7 +1,16 @@
+---
+class: design
+subject: "the four context layers and the presentation blocks for both loops"
+owns: []
+area: cognition
+links:
+  - {to: docs/design/cognition/README.md, rel: uses}
+---
+
 # Context
 
 A pass's context is what its model is shown: four layers, built the same way
-in both loops through [context assembly](../context-assembly/README.md). A
+in both loops through [context assembly](../agent/assembly.md). A
 block is named for what it presents, never for the store it came from.
 
 ## Four layers

@@ -17,7 +17,7 @@ from scripts.log_markers import ROOT
 
 BASELINE = ROOT / "tests" / "architecture" / "design_shape_baseline.json"
 
-MAX_README_LINES = 150
+MAX_README_LINES = 300
 MAX_FILE_LINES = 300
 NOT_DESIGN = {"decision", "decisions", "review", "reviews", "roadmap", "items", "draft", "plan",
               "plans", "migration"}

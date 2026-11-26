@@ -1,4 +1,4 @@
-"""compute_jobs keeps a sub-agent's checkpoint (docs/design/subagent §4d).
+"""compute_jobs keeps a sub-agent's checkpoint (docs/design/subagents/README.md §4d).
 
 Adds `checkpoint` (JSONB, NULL: the worker's four lists plus, written by code, the files it
 kept) and `checkpoint_at` (when the worker last wrote its lists). Both nullable with no

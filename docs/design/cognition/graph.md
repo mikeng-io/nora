@@ -1,3 +1,12 @@
+---
+class: design
+subject: "basis and scope, the planes, the five kinds, intentions, edges and presentations"
+owns: []
+area: cognition
+links:
+  - {to: docs/design/cognition/README.md, rel: uses}
+---
+
 # The graph
 
 ## Rows, edges and two axes
@@ -108,12 +117,12 @@ row inspectable.
 | kind | basis | is | lifecycle |
 |---|---|---|---|
 | **entity** | computed when code resolves it; inferred when its identity is judged | an anchor: a person, room, unit, Nora, a game, a place, a topic | admitted, merged, retired |
-| **item** | observed | something that happened: a message, link, reaction, online-status change, location fix, fetched page, watch result, tool outcome, Nora's own send | append-only |
+| **item** | observed | something that happened: a message, link, reaction, online-status change, presence episode, fetched page, watch result, tool outcome, Nora's own send | append-only |
 | **aggregate** | computed | a derivation over items: episodes, rollups, counts and baselines, verdicts, track records, support tallies | recomputed, never edited |
 | **claim** | inferred | a belief about an entity or a relation | revised, retired, or ended by its valid-to time |
 | **intention** | committed | what Nora has committed to | open, then closed by an outcome or dropped |
 
-Registered [identities](../managed-identity-access/identity.md#one-identity-many-accounts),
+Registered [identities](../people/README.md),
 rooms, units and Nora have code-resolved pointers to authored identity and policy;
 no model proposes, merges or retires those canonical records. Each unit has its
 own graph pointer to a canonical identity, preserving that unit's disclosure

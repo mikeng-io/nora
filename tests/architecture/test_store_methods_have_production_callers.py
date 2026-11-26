@@ -169,7 +169,7 @@ _NO_PRODUCTION_CALLER: dict[tuple[str, str], _Pin] = {
     # so `_ambiguous` skips it before the pin table is ever consulted.
     ("computer_events.py", "orphaned_starts"): _Pin(
         "read_back_affordance",
-        "The computer audit's crash marker (docs/design/sandbox-runtime §12): "
+        "The computer audit's crash marker (docs/design/computer/sandbox.md §12): "
         "`started` rows with no `finished` row, a call interrupted by a crash "
         "or a restart. The operator's query, pinned by the contract suite; no "
         "daemon consumer is designed (a reaper or an alert is S2b-2's).",
@@ -217,7 +217,7 @@ _NO_PRODUCTION_CALLER: dict[tuple[str, str], _Pin] = {
     ("observations.py", "resolve_targets"): _Pin(
         "deferred_consumer",
         "The port's standalone re-link of a retained observation to its "
-        "target (docs/design/platform-observations/observations.md). Production relinking "
+        "target (docs/design/platform/observations.md). Production relinking "
         "instead commits inside the arriving message row's own transaction — "
         "`relink_arriving_targets` (nora/app/bridge_queue.py) — so no caller "
         "outside an ingest commit exists yet.",
@@ -225,7 +225,7 @@ _NO_PRODUCTION_CALLER: dict[tuple[str, str], _Pin] = {
     ("observations.py", "unresolved_targets"): _Pin(
         "deferred_consumer",
         "The retained-but-unresolved target listing, named for the exposure "
-        "lanes in docs/design/platform-observations/observations.md («read "
+        "lanes in docs/design/platform/observations.md («read "
         "ObservationStore.current/heads/history and unresolved_targets»). No "
         "lane reads it this stage: the context and grounding reads take "
         "recent/heads/by_ids/head_for_handle only.",

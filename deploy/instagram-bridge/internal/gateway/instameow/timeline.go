@@ -5,7 +5,7 @@ package instameow
 // (`PolarisProfilePostsTabContentQuery_connection`,
 // docs/design/cognition/loop.md,  «Record everything admitted»).
 //
-// Before S0 no mechanism for this list was known anywhere (docs/design/instagram-adoption/social.md's
+// Before S0 no mechanism for this list was known anywhere (docs/design/platform/instagram.md's
 // investigation; the social stream's back-fill waited on it). The document is
 // the one the web client sends when a profile's posts tab scrolls: 12 items a
 // page, paged by an opaque `after` cursor, posted to `/graphql/query` (not

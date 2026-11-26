@@ -1,4 +1,4 @@
-"""The `subagent` actor on the computer audit (docs/design/subagent §4, step 2).
+"""The `subagent` actor on the computer audit (docs/design/subagents/README.md §4, step 2).
 
 A background worker a tag turn launched makes computer calls under its own actor, so the
 audit says who made each one (`computer_events.actor`, path `subagent`). Widens

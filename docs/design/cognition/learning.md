@@ -1,3 +1,12 @@
+---
+class: design
+subject: "verdicts, track records, and lessons graded by consequences"
+owns: []
+area: cognition
+links:
+  - {to: docs/design/cognition/README.md, rel: uses}
+---
+
 # Learning
 
 Nora has learned when an outcome of her own act changes a later decision and

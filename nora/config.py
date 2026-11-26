@@ -106,7 +106,7 @@ class SignalPlatformConfig(BaseModel):
     account: str
     # "direct" (default): base_url is signal-cli's JSON-RPC/HTTP daemon.
     # "bridge": base_url is the standalone signal-bridge's action API —
-    # inbound then arrives over Redis Streams, not SSE (docs/design/platform-bridges).
+    # inbound then arrives over Redis Streams, not SSE (docs/design/platform/).
     mode: Literal["direct", "bridge"] = "direct"
     # The stream's account leg: an explicit opaque key, NOT derived from the
     # registered number — it must equal signal-bridge's NORA_BRIDGE_ACCOUNT_KEY
@@ -195,7 +195,7 @@ class InstagramPlatformConfig(BaseModel):
 
 
 class BridgesConfig(BaseModel):
-    """The durable inbound handoff's shared settings (docs/design/platform-bridges).
+    """The durable inbound handoff's shared settings (docs/design/platform/).
     `redis_url_env` names the env var carrying the Redis URL — the URL holds a
     password, so it is a secret ref like every `*_env` here, never a value in
     config.toml. Any platform with `mode = "bridge"` requires it.
@@ -1804,7 +1804,7 @@ class SidecarEntry(SpeechEntryConfigBase):
                 f"sidecars entry guild {value!r} must be a bare Discord guild "
                 "id, not \"<guild_id>/<channel_id>\" — an entry maps a GUILD "
                 "to the audio-controller that owns its voice connection "
-                "(docs/design/voice/README.md). Where a guild's SPEECH is "
+                "(docs/design/voice/). Where a guild's SPEECH is "
                 "recorded is policy.toml's `voice = true`, not here."
             )
         return value
@@ -2008,7 +2008,7 @@ class SpeechTtsConfig(BaseModel):
                 raise ValueError(
                     f"[speech.tts] sidecars lists guild {entry.guild!r} twice — "
                     "one guild has exactly one audio-controller "
-                    "(docs/design/voice/README.md)"
+                    "(docs/design/voice/)"
                 )
             seen.add(entry.guild)
         return self
@@ -2235,7 +2235,7 @@ class ComputerContextConfig(BaseModel):
 
 
 class ComputerScopedConfig(BaseModel):
-    """The scoped computer (docs/design/browser-runtime): one sbx
+    """The scoped computer (docs/design/computer/): one sbx
     microVM per computer scope instead of one shared VM.
 
     Ships INERT (`enabled = false`): off, nothing here is built and the
@@ -4088,7 +4088,7 @@ class Config(BaseModel):
     agent: AgentConfig = AgentConfig()
     content_checks: ContentChecksConfig = ContentChecksConfig()
     platforms: PlatformsConfig
-    # `[bridges]`: the durable inbound handoff (docs/design/platform-bridges).
+    # `[bridges]`: the durable inbound handoff (docs/design/platform/).
     # Platforms with `mode = "bridge"` read `redis_url_env`.
     bridges: BridgesConfig = Field(default_factory=BridgesConfig)
     llm: LLMConfig

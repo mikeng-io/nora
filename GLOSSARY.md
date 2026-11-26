@@ -653,7 +653,7 @@ both keyings and so nothing compares them.**
   never renumbered.
 - **A-n** — an architectural invariant from the original spec.
 
-R-19 is **reserved but never assigned** (docs/design/11-recall-and-threading.md). Never take the next free
+R-19 is **reserved but never assigned** (docs/design/conversation/README.md). Never take the next free
 number from memory or from chat: re-read the index at merge time
 (`docs/engineering/conventions.md` «Numbering discipline»).
 

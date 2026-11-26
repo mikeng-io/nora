@@ -1,3 +1,12 @@
+---
+class: design
+subject: "sources, aggregates and stimuli"
+owns: []
+area: cognition
+links:
+  - {to: docs/design/cognition/README.md, rel: uses}
+---
+
 # Observation
 
 Observation is the code that records everything admitted as items, derives

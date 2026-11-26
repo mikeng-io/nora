@@ -39,24 +39,6 @@
    "PERSONA": 2
   }
  },
- "docs/design/17-prompt-substrate.md": {
-  "reason": "Historical design provenance; only the requested standing-ledger call sites change.",
-  "matches": {
-   "Persona": 3,
-   "PersonaSection": 1,
-   "PersonaStore": 1,
-   "nora_persona": 2,
-   "persona": 14,
-   "persona_sha256": 1,
-   "persona_store": 1
-  }
- },
- "docs/design/computer-unit-scope/00-contract.md": {
-  "reason": "Historical design provenance; only the requested standing-ledger call sites change.",
-  "matches": {
-   "Persona": 1
-  }
- },
  "docs/adr/0026-the-character-tier-names-its-entry-parts-profile-traits-hypotheses.md": {
   "reason": "Historical decision text, including superseded ADR 0026 and the ADR 0029 rename contract.",
   "matches": {

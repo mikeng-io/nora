@@ -1,3 +1,10 @@
+---
+class: design
+subject: "the isolated subject an evaluation runs against"
+owns: []
+area: evaluation
+---
+
 # Subject and sandbox
 
 ## Production owns the subject
@@ -18,7 +25,7 @@ For the same occasion, state and stimulus, equivalence is checked at the actual
 model boundary: instructions, rendered blocks, tool schemas and parameters,
 read availability and tool-result semantics. Legitimate generated identities
 remain traceable to their source. No normalization hides a behavioural change.
-The assembly contract is owned by [context assembly](../context-assembly/registry.md).
+The assembly contract is owned by [context assembly](../agent/assembly.md).
 
 ## Isolation replaces dependencies
 

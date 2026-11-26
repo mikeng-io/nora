@@ -1,6 +1,6 @@
 """No-I/O tests for the typed observation contract: envelope versioning and
 compat, the observation wire round-trip and validation, and the fold's
-ordering/coverage semantics (docs/design/platform-observations/observations.md)."""
+ordering/coverage semantics (docs/design/platform/observations.md)."""
 
 from __future__ import annotations
 

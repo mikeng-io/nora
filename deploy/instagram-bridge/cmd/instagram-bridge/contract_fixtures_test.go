@@ -1,7 +1,7 @@
 package main
 
 // Every response body Nora reads, pinned as files BOTH sides read
-// (docs/design/instagram-adoption/README.md).
+// (docs/design/platform/instagram.md).
 //
 // Nora's Python side is tested against `tests/fixtures/instagram_bridge/*.json`:
 // the social client (`nora/infra/social/instagram_client.py`) for the account,
@@ -241,7 +241,7 @@ func synthSearchResults() []*slidetypes.SearchResult {
 
 // synthUsernameLookupResults is GET /accounts?username='s raw hits BEFORE the
 // exact-match filter (app.LookupAccountByUsername): a fuzzy hit ranks ahead
-// of the exact one, the the search probe (docs/design/instagram-adoption/social.md) shape (: "one exact match was not the first
+// of the exact one, the the search probe (docs/design/platform/instagram.md) shape (: "one exact match was not the first
 // result"). A route that ever took items[0] would answer the wrong account
 // against this fixture.
 func synthUsernameLookupResults() []*slidetypes.SearchResult {
@@ -295,7 +295,7 @@ const synthStoryWords = `"caption": {"text": "synthetic caption text"}, "accessi
 // A frame with NO `pk`. `storyFrame` then falls back to `id`, which Instagram
 // shapes as `<pk>_<owner igid>`, so the frame's `id` carries the story
 // OWNER's igid. The Python client must never hand that to the model
-// (docs/design/instagram-adoption/social.md, R-18); this row is what it is tested against.
+// (docs/design/platform/instagram.md, R-18); this row is what it is tested against.
 var synthStoryNoPK = `{"id": "` + synthPK(3) + `_` + synthIGID + `", "taken_at": 1700007200, "expiring_at": 1700086400, "media_type": 1,
      "image_versions2": {"candidates": [{"width": 1080, "height": 1920, "url": "https://scontent.cdninstagram.com/v/t51/synthetic-3.jpg?oh=00_D&oe=0"}]}}`
 
@@ -584,7 +584,7 @@ func readContractCases() []contractCase {
 			fake: func() *fakeIG { return &fakeIG{ProfileErr: httpclient.ErrCheckpointRequired} },
 		},
 		{
-			// The first fixture on the NEW response conventions (docs/design/instagram-adoption/bridge.md «Messaging contract»:):
+			// The first fixture on the NEW response conventions (docs/design/platform/instagram.md «Messaging contract»:):
 			// {"items":[...],"next_cursor":null}, no "ok" field.
 			file: "accounts_search_ok.json", route: "GET /accounts", path: "/accounts?query=example",
 			fake: func() *fakeIG {
@@ -605,7 +605,7 @@ func readContractCases() []contractCase {
 		{
 			// The exact-match rule (app.LookupAccountByUsername, /design/instagram-adoption/social.md):
 			// a fuzzy hit ranks first, and this route must still answer the
-			// exact one rather than items[0] — the the search probe (docs/design/instagram-adoption/social.md) case where "one exact
+			// exact one rather than items[0] — the the search probe (docs/design/platform/instagram.md) case where "one exact
 			// match was not the first result".
 			file: "accounts_by_username_found.json", route: "GET /accounts", path: "/accounts?username=" + synthUsername,
 			fake: func() *fakeIG {
@@ -668,7 +668,7 @@ func readContractCases() []contractCase {
 			fake: func() *fakeIG { return &fakeIG{} },
 		},
 		// The three failure envelopes Nora's `instagram_search` reads as
-		// `unavailable` (docs/design/instagram-adoption/README.md): the session
+		// `unavailable` (docs/design/platform/instagram.md): the session
 		// needs a human (409), Instagram rejected the search (502), and no
 		// session to search with (503). Each is the envelope, never the old
 		// `{"ok": false}` body, so the Python client is tested against the

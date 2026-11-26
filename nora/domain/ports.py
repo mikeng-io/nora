@@ -1174,7 +1174,7 @@ class NewCognitionSession:
 
 @runtime_checkable
 class ObservationStore(Protocol):
-    """The typed platform-observation Record (docs/design/platform-observations
+    """The typed platform-observation Record (docs/design/platform/observations.md
     02): `platform_observation` history plus the `platform_object_state`
     fold head. One fold — `nora.domain.observations.fold_observation` —
     backs the incremental head update, the as-of replay and the fake, so

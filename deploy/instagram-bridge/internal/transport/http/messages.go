@@ -1,7 +1,7 @@
 package httptransport
 
 // The write routes, as resources of a thread
-// (docs/design/instagram-adoption/bridge.md):
+// (docs/design/platform/instagram.md):
 //
 //	POST   /threads/{thread_fbid}/messages                          text or media
 //	DELETE /threads/{thread_fbid}/messages/{message_id}             unsend
@@ -29,7 +29,7 @@ package httptransport
 // MESSAGE TEXT goes into the upstream request and nowhere else: not a span
 // attribute, event, name or status, not a log line, not an error envelope.
 // The server span carries the route pattern, the method and the path, whose
-// ids (thread, message) docs/design/instagram-adoption/bridge.md «Observation» allows. The text is in the BODY, which no
+// ids (thread, message) docs/design/platform/instagram.md «Observation» allows. The text is in the BODY, which no
 // span reads. On failure, the gateway replaces the upstream error's text with
 // a fixed one before it reaches a span or this layer (instameow's
 // sendTextError), because an upstream refusal can quote what it refused.
@@ -239,8 +239,8 @@ func (s *Server) handleUnsend(w http.ResponseWriter, r *http.Request) {
 //
 // `remove` stays a field of this body rather than becoming a DELETE of the
 // resource, because the mutation that retracts a reaction must name WHICH
-// emoji it retracts, and a DELETE has no body to carry it in (docs/design/instagram-adoption/bridge.md
-// docs/design/instagram-adoption/bridge.md «Messaging contract» names only this PUT). The emoji is required on a removal too.
+// emoji it retracts, and a DELETE has no body to carry it in (docs/design/platform/instagram.md
+// docs/design/platform/instagram.md «Messaging contract» names only this PUT). The emoji is required on a removal too.
 type reactionRequest struct {
 	Emoji  string `json:"emoji"`
 	Remove bool   `json:"remove"`

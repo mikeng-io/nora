@@ -1,3 +1,9 @@
+---
+class: engineering
+subject: "how managed identity is exported between installations"
+owns: []
+---
+
 # Managed-to-file export
 
 `scripts/managed_identity_export.py` reads the CURRENT managed identity and
@@ -7,7 +13,7 @@ produces a fresh private `identity.toml`/`policy.toml` pair plus an
 compared verdict-for-verdict against live managed checks.
 
 This is the preparation half of the managed-to-file handoff
-(`docs/design/managed-identity-access/identity.md` «Backend selection and
+(`docs/design/people/README.md` «Backend selection and
 lifecycle»). It is **not** the authority switch: adopting the bundle is the
 separate operator-approved step in `docs/operations/runbook.md` «Managed identity
 activation and recovery», which additionally requires stopping writers,

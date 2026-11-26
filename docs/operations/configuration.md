@@ -54,7 +54,7 @@ lock after backup and validation. Empty assignments remain overrides.
 managed services rather than file authority. Room destinations and topology
 retain their declared configuration. Backend selection is a restart boundary,
 not an identity-file hot reload. See the
-[identity contract](../design/managed-identity-access/identity.md).
+[identity contract](../design/people/README.md).
 
 Configure private Kratos admin and Keto read/write URLs under
 `[identity.managed]`. They must be reachable from Nora's runtime, not just the

@@ -68,7 +68,7 @@ describe("targetOwnsKey", () => {
 });
 
 // The present view's two rules a browser cannot be trusted to show: how a document splits
-// into slides, and what each key does (docs/design/artifact/lifecycle.md).
+// into slides, and what each key does (docs/design/documents/README.md).
 
 const md = (text: string) => ({ type: "Markdown", props: { text } });
 const section = (title: string, ...children: unknown[]) => ({ type: "Section", props: { title }, children });

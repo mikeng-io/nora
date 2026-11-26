@@ -1,3 +1,10 @@
+---
+class: design
+subject: "how Nora holds and works what she knows: one Cognitive Graph worked by two loops"
+owns: []
+area: cognition
+---
+
 # Cognition
 
 **Nora treats memory, belief, commitment and outcome as one continuous,
@@ -70,7 +77,7 @@ part is [emergence](emergence.md).
 ## Scope
 
 This bundle owns cognition: how Nora holds and works what she knows.
-[Context assembly](../context-assembly/README.md) defines how a pass's input is
+[Context assembly](../agent/assembly.md) defines how a pass's input is
 assembled, and [evaluation](../evaluation/README.md) defines how she is
 measured. Both use this bundle's vocabulary.
 

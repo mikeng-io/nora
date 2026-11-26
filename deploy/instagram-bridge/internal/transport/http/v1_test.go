@@ -595,7 +595,7 @@ var _ = fmt.Sprint // keep fmt for later additions
 
 // A valid caller traceparent becomes a span LINK on the action's bounded
 // deliver root — never a parent — and an absent or invalid header simply
-// carries no link (docs/design/instagram-adoption/bridge.md «Messaging contract»).
+// carries no link (docs/design/platform/instagram.md «Messaging contract»).
 func TestV1ActionDeliverSpanLinksCallerContext(t *testing.T) {
 	rec := recordServerSpans(t)
 	store := newFakeActionStore()

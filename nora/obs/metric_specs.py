@@ -442,7 +442,7 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "`not_found` — a NAME resolved to nobody in this room (lookup_person, "
         "where_is, saved_places), and it deliberately cannot be told apart from "
         "«that person was never written down», because a behaviour difference "
-        "would disclose membership (docs/design/12-prompt-tool-skill-boundaries.md §3); "
+        "would disclose membership (docs/design/agent/doctrine.md §3); "
         "`nothing_found` — a SEARCH over what was said matched nothing "
         "(search_memory). A different question from `not_found`, hence a "
         "different label; it was recorded as `ok` until 2026-08-11, which made "
@@ -830,7 +830,7 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     _CounterSpec(
         "nora_search_alias_total",
         "Search queries containing a known person's name or alias, counted (not "
-        "blocked) so the docs/design/system/grounding.md count-vs-block call can be revisited "
+        "blocked) so the docs/design/location/README.md count-vs-block call can be revisited "
         "against real queries.",
     ),
     # Reminders, the two halves. CREATED is the `remind` tool's own answer:
@@ -914,15 +914,15 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     ),
     _CounterSpec(
         "nora_subagent_jobs_total",
-        "Sub-agent worker jobs (docs/design/subagent) by how they ended: done, cancelled, "
-        "or failed for a reason (" + " / ".join(SUBAGENT_OUTCOMES[2:]) + "). The limit "
+        "Sub-agent worker jobs (docs/design/subagents/README.md) by how they ended: done, "
+        "cancelled, or failed for a reason (" + " / ".join(SUBAGENT_OUTCOMES[2:]) + "). The limit "
         "reasons are the loop's own bounds and timeout the wall clock; a rising rate "
         "of them is work that cannot finish inside its bounds (DEC-247, amended).",
         ("outcome",),
     ),
     _CounterSpec(
         "nora_video_jobs_total",
-        "Video clips (`video_create`, docs/design/video-generation) by outcome: at create "
+        "Video clips (`video_create`, docs/design/media/generation.md) by outcome: at create "
         + " / ".join(VIDEO_OUTCOMES[:3]) + "; how a started clip ended "
         + " / ".join(VIDEO_OUTCOMES[3:]) + ". A terminal outcome may count again when "
         "delivery is deferred by a held room and the next tick polls the same clip.",
@@ -939,7 +939,7 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     _CounterSpec(
         "nora_subagent_checkpoint_unwritten_total",
         "Sub-agent checkpoint updates that found no pending job row to write to "
-        "(docs/design/subagent §4d): the row is written after launch, so an early one is "
+        "(docs/design/subagents/README.md): the row is written after launch, so an early one is "
         "expected; the terminal write of the delivery still stores the final checkpoint.",
         (),
     ),
@@ -2163,7 +2163,7 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "Identity/policy reloads by outcome: " + ", ".join(RELOAD_OUTCOMES),
         ("file", "outcome"),
     ),
-    # Durable platform-bridge queue (docs/design/platform-bridges/04-operations.md).
+    # Durable platform-bridge queue (docs/design/platform/README.md).
     # Every label vocabulary is the closed Literal set the call
     # sites in `nora/platform/bridge/telemetry.py` and `inspection.py`
     # enforce at runtime — the names are not restated here because
@@ -2401,7 +2401,7 @@ _GAUGES: tuple[_GaugeSpec, ...] = (
         "never 0.",
         ("target",),
     ),
-    # Durable bridge queue depth (docs/design/platform-bridges/04-operations.md).
+    # Durable bridge queue depth (docs/design/platform/README.md).
     # All of these are ABSENT while the inspection that publishes them cannot
     # run — a declared-but-never-set labelled gauge has no sample, which is
     # exactly what "a failed read must not report zero" requires.
@@ -2588,7 +2588,7 @@ _HISTOGRAMS: tuple[_HistogramSpec, ...] = (
         "is recorded at the ceiling, so read the top bucket against "
         "nora_relevance_gate_errors_total{kind=\"timeout\"}.",
     ),
-    # Bridge queue durations (docs/design/platform-bridges/04-operations.md): queue wait is
+    # Bridge queue durations (docs/design/platform/README.md): queue wait is
     # measured enqueue→attempt-start from persisted timestamps — never a span
     # held open — and stage duration is one attempt or operation's bounded
     # runtime, labelled by the telemetry QueueStage/WorkOutcome vocabularies.

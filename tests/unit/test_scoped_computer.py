@@ -1,4 +1,4 @@
-"""The scoped computer journey ([computer.scoped], docs/design/browser-runtime).
+"""The scoped computer journey ([computer.scoped], docs/design/computer/browser.md).
 
 Generated fixtures only: every scope is a synthetic hex key, every VM a
 fake, every browser target an in-memory stand-in. What is covered:

@@ -1114,7 +1114,7 @@ async def test_clockless_transitions_get_distinct_durable_identities(bridge):
 
     # A frame-less parsed event whose observation DISAGREES with the
     # recorded state is the reconnect-replay ambiguity, nothing provably
-    # not a delayed old transition (docs/design/platform-bridges/02-wire-and-platforms.md)
+    # not a delayed old transition (docs/design/platform/README.md)
     # — retained as journal evidence, never published under a minted seq.
     b._frames.clear()
     await b._capture_touch("reaction_remove", reaction())

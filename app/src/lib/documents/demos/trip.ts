@@ -1,6 +1,6 @@
 import type { DocumentSpec } from "../catalog";
 
-// The December-trip scenario (docs/design/artifact/README.md): research,
+// The December-trip scenario (docs/design/documents/README.md): research,
 // then a document to prepare from and to present. Invented facts.
 export const trip: DocumentSpec = {
   version: 1,

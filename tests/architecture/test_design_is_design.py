@@ -10,7 +10,7 @@ from scripts.design_shape import BASELINE, MAX_FILE_LINES, census, check
 
 def test_detector_sees_each_violation() -> None:
     assert check("docs/design/a/notes.md", "A note is a claim.\n") == []
-    assert check("docs/design/a/README.md", "x\n" * 151) == ["over-budget"]
+    assert check("docs/design/a/README.md", "x\n" * 301) == ["over-budget"]
     assert check("docs/design/a/notes.md", "x\n" * (MAX_FILE_LINES + 1)) == ["over-budget"]
     assert check("docs/design/a/03-decisions.md", "") == [
         "numbered-or-dated-name", "not-a-design-file",

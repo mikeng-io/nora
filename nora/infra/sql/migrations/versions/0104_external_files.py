@@ -1,6 +1,6 @@
 """messages.external_files_json -- a shared file link is recorded as a handle.
 
-docs/design/external-files/00-design.md §1 (build step S1): each link a provider
+docs/design/computer/external-files.md §1 (build step S1): each link a provider
 recognises as one of its files (a Google Doc, Sheet, Slides deck or Drive file)
 is recorded beside its message as `{provider, file_id, url[, resource_key]}`.
 `media_json`'s shape: one TEXT column holding a JSON array, NULL when there is

@@ -1,3 +1,12 @@
+---
+class: design
+subject: "executors, tool calls and their wait window, waking, replay, time and settlement"
+owns: []
+area: cognition
+links:
+  - {to: docs/design/cognition/README.md, rel: uses}
+---
+
 # Execution
 
 Execution is how passes and actions run: which executor owns each, how long a
@@ -125,7 +134,7 @@ observed; a failed replay records none and never takes a live slot.
 
 ## Tracing
 
-- One root span per pass; stages and actions are its children.
-- Spawned work attaches its intended trace context explicitly.
+- How a pass is traced, its root, its stages and spawned work, is owned by
+  [obs](../obs/README.md).
 - Every instrument keeps three outcomes apart: found, nothing found,
   unavailable.

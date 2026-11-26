@@ -2440,7 +2440,7 @@ NOTE = sa.Table(
     sa.Column("anchor_date", sa.Integer),
     sa.Column("anchor_entity_ids", pg.ARRAY(sa.Text), nullable=False,
               server_default=sa.text("'{}'")),
-    # The curated source-object pointers (docs/design/platform-observations/projections.md's
+    # The curated source-object pointers (docs/design/platform/observations.md's
     # retained lane): [{platform, conversation_id, thread, handle}] — the
     # objects this matter still concerns, resolved fresh at every assembly.
     sa.Column("object_refs", pg.JSONB, nullable=False,
@@ -5656,7 +5656,7 @@ NOTEBOOK_ENTRY_REVISION = sa.Table(
 sa.Index("uq_entry_revision_seq", NOTEBOOK_ENTRY_REVISION.c.entry_id,
          NOTEBOOK_ENTRY_REVISION.c.seq, unique=True)
 
-# ---- platform bridges (docs/design/platform-bridges) --------------------------
+# ---- platform bridges (docs/design/platform/README.md) --------------------------
 # Durable inbound handoff: event mapping, work obligations and outbound
 # action intents/results. App workers own event/work state; bridge processes
 # own action reservation/result writes.
@@ -5779,7 +5779,7 @@ sa.Index("idx_bridge_action_owner", BRIDGE_ACTION.c.owner_kind,
          BRIDGE_ACTION.c.owner_id)
 
 
-# ---- platform observations (docs/design/platform-observations/observations.md) --------------
+# ---- platform observations (docs/design/platform/observations.md) --------------
 # The typed Record of what a source reported about an OBJECT — a poll, a
 # room/thread, a member set, a pin set, an artifact, a reaction's target or a
 # message's own metadata. `platform_observation` is the history: one row per

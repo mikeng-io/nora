@@ -218,7 +218,7 @@ decision-numbers:
 schema-parity:
 	uv run pytest -q tests/infra/test_schema_parity.py
 
-# --- live evals (docs/engineering/eval-sop.md "What gates a change"; they need the model
+# --- live evals (docs/operations/eval-sop.md "What gates a change"; they need the model
 # and run on the deploy host, never part of the gate) ---
 
 # Routing is the `tool_selection` corpus (since 21e5405d); this target runs the

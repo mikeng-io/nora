@@ -1,3 +1,12 @@
+---
+class: design
+subject: "the authority of authored text, scope and egress"
+owns: []
+area: cognition
+links:
+  - {to: docs/design/cognition/README.md, rel: uses}
+---
+
 # Boundaries
 
 Boundaries are what no content of the graph can change: the authority of

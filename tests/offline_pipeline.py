@@ -174,7 +174,7 @@ def build_offline_pipeline(
         # `<recalled>`, the pre-fetch — `None`: no memory index here; the live
         # eval subject builds the real search through composition.
         memory_search=None,
-        # The typed platform-observation Record (docs/design/platform-observations
+        # The typed platform-observation Record (docs/design/platform/observations.md
         # 04/05): the transcript window's source events and the standing
         # slot's folded object heads. `None` renders neither — the honest
         # shape an eval without the store is graded against. A case that

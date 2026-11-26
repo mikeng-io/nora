@@ -1,3 +1,9 @@
+---
+class: operations
+subject: how Nora is operated day to day and recovered when something breaks
+owns: []
+---
+
 # Nora operator runbook
 
 Content filters default to `[content_checks] enabled = false`. To restore the
@@ -140,7 +146,7 @@ To tell "quiet" from "broken":
    Nora re-resolves it in the background (every 5 s, backing off to 5 min)
    and promotes it to `live` without a restart. Re-pairing the bridge is the
    whole fix. `/health` is `503` only when no enabled platform is live
-   (docs/design/platform-bridges/platform-liveness.md). A refused credential
+   (docs/design/platform/README.md). A refused credential
    (401/403), a missing bridge bearer or Redis URL, or an unknown `mode`
    still stops startup: those are configuration, not availability.
 
@@ -418,7 +424,7 @@ docker image inspect voice-sidecar:latest --format '{{.Id}}'    # must match
 
 There is no per-guild container: one sidecar serves every server Nora holds
 voice on, and one wake gate serves every sidecar connection
-(docs/design/voice-channel/audio.md).
+(docs/design/voice/README.md).
 
 **THE THREE VOICE IMAGES MOVE TOGETHER.** `nora`, `voice-sidecar` and
 `voice-wake` speak two seams that have both changed inside one release:
@@ -512,7 +518,7 @@ Do not run checkout `docker compose restart` against the installed application.
 
 ## 4b. WhatsApp (whatsapp-bridge)
 
-The bridge (`deploy/whatsapp-bridge/`, docs/design/whatsapp-adoption/README.md) is the
+The bridge (`deploy/whatsapp-bridge/`, docs/design/platform/whatsapp.md) is the
 transport twin of signal-cli: same private network, same no-published-ports
 posture, session on `./state/whatsapp` (chmod 700, never commit). It is only
 relevant when `[platforms.whatsapp] enabled = true`.
@@ -542,7 +548,7 @@ deny-by-default until the DM study lands.
 | WhatsApp protocol update | bridge reconnect loop / messages stop | bump the Baileys pin in deploy/whatsapp-bridge/package.json, rebuild, re-pair if the session was invalidated |
 | Phone offline >~14 days (operational lore, not an SLA) | device unlinked | re-pair with the command above |
 | Session dir lost/corrupt | `paired: false` in the bridge's /health | re-pair (no data loss) |
-| Account restricted (ban) | login throttled/rejected | stop using the number; evaluate cause (docs/design/whatsapp-adoption/identity.md, posture) |
+| Account restricted (ban) | login throttled/rejected | stop using the number; evaluate cause (docs/design/platform/whatsapp.md, posture) |
 | Network blip | transient disconnect | self-heals; the bridge reconnects with backoff |
 
 The container healthcheck only proves the HTTP layer serves (curl exists in
@@ -605,7 +611,7 @@ the variable to go back to password mode.
 Nora has ONE Google identity (`[google]` in `config.toml`, three variables in
 `.env`: `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`,
 `GOOGLE_OAUTH_REFRESH_TOKEN`), shared by every Google service she uses
-(shared files today, docs/design/external-files §4). API keys such as the Maps key
+(shared files today, docs/design/computer/external-files.md §4). API keys such as the Maps key
 are separate and live with their feature.
 
 - **Every Google service answers `unavailable`** and
@@ -960,7 +966,7 @@ The current entry point is `uv run python -m evals <corpus-name>
 `uv run python -m evals --list` lists the selectable corpora without running one;
 `--class` and `--all` select broader runs. Live runs need the configured model,
 source clone and backing services and can spend model calls. Use the
-[eval SOP](../engineering/eval-sop.md#bind-the-selected-measurement) for the independently reviewed
+[eval SOP](eval-sop.md#bind-the-selected-measurement) for the independently reviewed
 contract, setup and the results/trace readback procedure.
 The runner prints measurements; retain its output and exit code with the source
 revision. Langfuse traces are separate evidence, not a substitute for the runner's
@@ -1242,7 +1248,7 @@ missing or allow-nothing policy edits keep the last good version and log WARNING
 last applied content. Changes to policy unit/workspace declarations or identity
 Honcho workspace bindings refuse the whole reload and require recreation.
 Always validate a candidate copy, then copy it in place to preserve the mounted
-inode. See [the publication contract and restart-only boundary](../design/policy-reload/README.md).
+inode. See [the publication contract and restart-only boundary](../design/people/README.md).
 
 **Storage and credentials.** Compose mounts `./data` at `/app/data` and the
 whole `./state` directory at `/app/state` in Nora. Signal session material is
@@ -1313,7 +1319,7 @@ acceptance are approved. A merged image or passing health check alone does not
 switch authority or prove identity mapping. The
 [configuration contract](configuration.md#managed-identity-and-access) owns the
 backend and credential references; the
-[managed design](../design/managed-identity-access/README.md) owns identity,
+[managed design](../design/people/README.md) owns identity,
 consent and scope semantics.
 
 Before activation, rehearse the handoff on isolated generated data: preserve

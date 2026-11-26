@@ -34,7 +34,7 @@ two copies drift and the one that drifts is the one you did not read
 
 Eval CLI runs also keep private durable evidence on the eval host using the same
 OTel provider. Private reproducibility and operator visibility are separate requirements. See
-[Durable run evidence](../engineering/eval-sop.md#durable-run-evidence) for the lock, contents,
+[Durable run evidence](eval-sop.md#durable-run-evidence) for the lock, contents,
 permissions and incomplete-run semantics.
 
 ## Accepted direction: self-hosted SigNoz
@@ -125,7 +125,7 @@ Do not share Langfuse's existing ClickHouse data directory or schemas with SigNo
 No additional Loki, Grafana or Quickwit stack is part of this decision. No prompt
 management/evaluation platform or replacement for the eval runner is introduced.
 
-Related bundles keep their own responsibilities: [platform bridge operations](../design/platform-bridges/04-operations.md#short-linked-otel-operations-and-routing-amendment)
+Related bundles keep their own responsibilities: [platform bridge operations](../design/platform/README.md)
 carry queue lifetimes/links and the transitional route; [evaluation SDK compatibility](../design/evaluation/measurement.md)
 requires populated Sessions after any span-format change. Neither duplicates the
 backend/cutover contract here.

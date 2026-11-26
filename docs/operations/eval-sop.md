@@ -1,3 +1,9 @@
+---
+class: operations
+subject: how an evaluation run is prepared, run and read
+owns: []
+---
+
 # Eval SOP — intercept a regression before it lands live
 
 The standard the operator asked for: how a change is proven against Nora's real

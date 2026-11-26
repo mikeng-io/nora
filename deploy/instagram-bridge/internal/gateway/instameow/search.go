@@ -1,16 +1,16 @@
 package instameow
 
 // Account search: the raw hit list behind `GET /accounts?query=`
-// (docs/design/instagram-adoption/bridge.md).
+// (docs/design/platform/instagram.md).
 //
-// # Why this exists now, ahead of docs/design/instagram-adoption/social.md
+// # Why this exists now, ahead of docs/design/platform/instagram.md
 //
-// the search probe (docs/design/instagram-adoption/social.md) is a measurement, not a feature: does `SearchUsers` find an arbitrary
+// the search probe (docs/design/platform/instagram.md) is a measurement, not a feature: does `SearchUsers` find an arbitrary
 // public Instagram account by its EXACT username, or only accounts already in
 // Nora's DM contact list? The operator chose to run that probe through this
 // real route rather than a second client against the live session, because a
 // second client could disturb the one session that exists. So this file is
-// docs/design/instagram-adoption/social.md's route, built early, to be the search probe (docs/design/instagram-adoption/social.md)'s instrument.
+// docs/design/platform/instagram.md's route, built early, to be the search probe (docs/design/platform/instagram.md)'s instrument.
 //
 // # No re-ranking, no filtering, no invented paging
 //
@@ -58,7 +58,7 @@ import (
 // description, never the upstream message. That message can echo the
 // query itself — a validation error quoting bad input is a normal GraphQL
 // shape — and the query must never enter a span, a log line, or the
-// envelope message, the same never-list `docs/design/instagram-adoption/bridge.md` «Observation» puts message text on.
+// envelope message, the same never-list `docs/design/platform/instagram.md` «Observation» puts message text on.
 //
 // `Unwrap` still exposes the real cause, so `classify`'s `needsHuman` and
 // `isGraphQLFailure` checks (call.go) — and anything downstream matching
@@ -73,7 +73,7 @@ func (e *upstreamSearchError) Unwrap() error { return e.cause }
 // back, in its own order.
 //
 // The QUERY TEXT is never an attribute on the upstream span — it is a name
-// typed about a person, the same never-list `docs/design/instagram-adoption/bridge.md` «Observation» puts message text
+// typed about a person, the same never-list `docs/design/platform/instagram.md` «Observation» puts message text
 // on. Only its length crosses into the span, which is bounded and carries
 // nothing about who was searched for.
 func searchAccounts(ctx context.Context, cli Client, query string) ([]domain.AccountSummary, error) {

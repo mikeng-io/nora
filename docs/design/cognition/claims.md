@@ -1,3 +1,12 @@
+---
+class: design
+subject: "profile parts, support and precedence, likes and constraints, disputes and decay"
+owns: []
+area: cognition
+links:
+  - {to: docs/design/cognition/README.md, rel: uses}
+---
+
 # Claims
 
 A claim is what Nora believes about an entity or a relation: inferred, never

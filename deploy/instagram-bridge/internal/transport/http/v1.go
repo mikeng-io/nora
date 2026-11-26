@@ -169,7 +169,7 @@ var errActionUsage = errors.New("invalid action request")
 func (v *V1) handleActions(w http.ResponseWriter, r *http.Request) {
 	// The action deliver span is a bounded ROOT — never a child of the
 	// otelhttp server span — holding a link to the caller's W3C context
-	// when one rides the request headers (docs/design/instagram-adoption/bridge.md «Messaging contract»). An absent
+	// when one rides the request headers (docs/design/platform/instagram.md «Messaging contract»). An absent
 	// or invalid traceparent simply carries no link.
 	remote := trace.SpanContextFromContext(
 		propagation.TraceContext{}.Extract(context.Background(),

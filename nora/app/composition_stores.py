@@ -173,7 +173,7 @@ class ObservationWiring:
 
 def observation(engine: Any)-> ObservationWiring:
 
-    # The typed platform-observation Record (docs/design/platform-observations 02): persisted
+    # The typed platform-observation Record (docs/design/platform/observations.md 02): persisted
     # whenever a bridge ingests typed source evidence. Cognition OFF still retains the rows
     # — they simply wake no session (the obligation enqueued in the append's transaction is…
     observation_store = SqlObservationStore(engine)

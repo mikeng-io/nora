@@ -74,7 +74,7 @@ type storyBody struct {
 // maxJSONBody is the HTTP layer's bound on a control route's body (1 MiB).
 const maxJSONBody = 1 << 20
 
-// --- the response conventions (docs/design/instagram-adoption/bridge.md) ------
+// --- the response conventions (docs/design/platform/instagram.md) ------
 //
 // Every route answers these since bridge.md: no "ok" field on success, and one
 // error envelope on failure. /health alone keeps its "ok", as an operational

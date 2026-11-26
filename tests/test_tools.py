@@ -142,7 +142,7 @@ def test_every_declared_tool_is_built(wiring):
         "room_read", "member_update",
         # The Record under lineage.
         "record_query",
-        # The observation Record's task reads (docs/design/platform-observations
+        # The observation Record's task reads (docs/design/platform/observations.md
         # 05): built like every closure; with no observation store wired they
         # answer `unavailable` rather than `nothing_found`.
         "poll_list", "poll_read", "room_state_read",

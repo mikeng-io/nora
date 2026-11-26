@@ -17,7 +17,7 @@ Scope: runtime code only: `nora/`, `app/`, `deploy/`, `docker-compose.yml`,
 `docker-compose.yml`, `Dockerfile` and `deploy/`; there is no separate
 infrastructure repository.
 
-Related: `SECURITY.md` (reporting; experimental, best-effort, operator owns credentials/network/backups), `docs/security/2026-10-22-aikido-high-triage.md` (prior Aikido triage), ADR 0030 (content filters off by default), ADR 0019/0022/0025 (sandbox computer and browser).
+Related: `SECURITY.md` (reporting; experimental, best-effort, operator owns credentials/network/backups), ADR 0030 (content filters off by default), ADR 0019/0022/0025 (sandbox computer and browser).
 
 ## Components
 

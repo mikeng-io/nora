@@ -1,3 +1,12 @@
+---
+class: design
+subject: "per-kind tables with shared planes and one edge table, as the truth"
+owns: []
+area: cognition
+links:
+  - {to: docs/design/cognition/README.md, rel: uses}
+---
+
 # Storage
 
 ## The graph is the truth
@@ -10,7 +19,7 @@ rebuildable; it is never the truth.
 
 | holds | tables | lifecycle code enforces |
 |---|---|---|
-| items | one table per source shape (messages, media, location fixes, fetched pages, watch results, acts, tool outcomes) | append-only |
+| items | one table per source shape (messages, media, presence episodes, fetched pages, watch results, acts, tool outcomes); raw location fixes stay with the presence collector | append-only |
 | aggregates | one table per aggregate family | recomputable: dropping and rebuilding gives the same rows |
 | entities | one table | admitted, merged, retired |
 | claims | one table | revisions append; a stale base is refused |

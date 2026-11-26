@@ -46,7 +46,7 @@ DECLARED_STATUS_EXTENSIONS: Mapping[str, str] = {
                  "with several accounts on file. NOT «no entry at all»: that "
                  "sense rode this word on the Instagram rows until "
                  "2026-09-24 and now answers `nothing_found` with a note "
-                 "saying no account is on file (docs/design/instagram-adoption/social.md).",
+                 "saying no account is on file (docs/design/platform/instagram.md).",
     "not_found": "the thing does not exist (R-27b) — a place a route does not "
                  "serve is not «no such place», so this is not `nothing_found`",
     "nothing_known": "no durable knowledge yet (the recall ladder)",
@@ -64,13 +64,13 @@ DECLARED_STATUS_EXTENSIONS: Mapping[str, str] = {
     "started": "the call launched work that is still running: a background job has "
                "an id and no result yet. Not `ok` (that reads as «done») and not "
                "`unavailable` (it did start). The result arrives later, by message "
-               "(docs/design/subagent §3).",
+               "(docs/design/subagents/README.md §3).",
     "queued": "the call was durably accepted into the scope's FIFO but is "
               "waiting behind the task running now: a `task` id and no result "
               "yet. Not `started` (that work is already running) and not "
               "`unavailable` (nothing failed, and an intent-store failure "
               "answers `unavailable`, never `queued`): the result arrives "
-              "later through the delivery path (docs/design/browser-runtime, the "
+              "later through the delivery path (docs/design/computer/browser.md, the "
               "queue lifecycle).",
     "partial": "a search answered from an index still being rebuilt, or with "
                "sources waiting on its projection queue: what it found is real, "
@@ -158,7 +158,7 @@ class ToolSpec:
     to decide "she has replied" by asking the DELIVERER whether it had
     delivered, which is terminality expressed as one specific tool's side
     effect: a second terminal verb
-    (`docs/design/media-read-lane/interaction.md` «One turn, several distinct acts»'s
+    (`docs/design/media/reading.md` «One turn, several distinct acts»'s
     `send_gif`, or a distinct feed step on the tag path) could not be added
     without editing the guard. It is now declared here, read through
     `ToolRegistry.terminal_tools()`, so the next terminal verb is a table edit.
@@ -167,7 +167,7 @@ class ToolSpec:
 
     `time_shiftable` says whether this tool can be asked about a moment other
     than now, and it is here for the reason `budget` and `terminal` are
-    (docs/design/system/grounding.md). It is a THREE-valued field on purpose:
+    (docs/design/location/README.md). It is a THREE-valued field on purpose:
 
       * `None` — the tool has no time dimension at all. `1485/7` is the same
         number whenever it is asked, and `lookup_person` is not about a moment.
@@ -179,7 +179,7 @@ class ToolSpec:
         seconds» for a 19:30 departure is a confident wrong answer of exactly
         the shape R-5 is about.
       * `True` — the tool accepts a target time. Nothing sets this yet;
-        `route(origin, destination, mode, arrive_by)` (docs/design/system/grounding.md) is the
+        `route(origin, destination, mode, arrive_by)` (docs/design/location/README.md) is the
         first, and `arrive_by` is the point of it.
 
     The `False` set is the per-tool declaration that its answer describes this

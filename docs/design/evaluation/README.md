@@ -1,3 +1,10 @@
+---
+class: design
+subject: "how Nora is measured through her production entry points"
+owns: []
+area: evaluation
+---
+
 # Evaluation
 
 Evaluation measures Nora through her production entry points. It supplies a
@@ -48,5 +55,5 @@ scenario + restored state + isolated dependencies
 - Production storage and person-visible services receive no evaluation effects.
   Private evidence remains private, including when a run fails.
 
-The [eval SOP](../../engineering/eval-sop.md) owns operating order and commands.
+The [eval SOP](../../operations/eval-sop.md) owns operating order and commands.
 Implementation gaps do not relax these contracts or license a smaller subject.

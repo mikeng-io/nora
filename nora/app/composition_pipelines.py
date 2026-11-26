@@ -89,7 +89,7 @@ def build_shared(
         subagents=subagents_context,
         # The typed source events of the transcript window and the room's
         # folded object heads for the standing slot: the ONE store the bridge
-        # writes (docs/design/platform-observations/observations.md).
+        # writes (docs/design/platform/observations.md).
         observations=observation_store,
     )
 

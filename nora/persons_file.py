@@ -147,7 +147,7 @@ class _PersonEntry(BaseModel):
                 "platform) is no longer supported (docs/design/people/identity.md) — "
                 "use one typed table per platform instead, e.g. "
                 '`[persons.<id>.signal]` with `phone = "…"` / `uuid = "…"` '
-                "keys; see docs/design/10-preview-identity.toml for the target "
+                "keys; see docs/operations/identity-preview.toml for the target "
                 "shape. (`username` is accepted but never matched on — it "
                 "cannot be a block's only id.)"
             )
@@ -176,7 +176,7 @@ class _PersonEntry(BaseModel):
                     "Discord), and they all resolve to the same person_id and "
                     "share one Honcho peer card (A2). List that account's id "
                     "forms inside the block; see "
-                    "docs/design/10-preview-identity.toml."
+                    "docs/operations/identity-preview.toml."
                 )
         return data
 

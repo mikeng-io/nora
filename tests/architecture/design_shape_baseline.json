@@ -1,45 +1,26 @@
 {
  "docs/design/05-evaluation.md": [
-  "numbered-or-dated-name",
   "date",
-  "history-marker"
+  "history-marker",
+  "numbered-or-dated-name"
  ],
  "docs/design/08-stack-refactor-brief.md": [
-  "numbered-or-dated-name",
-  "date"
+  "date",
+  "numbered-or-dated-name"
  ],
  "docs/design/09-decision-index.md": [
-  "numbered-or-dated-name",
-  "not-a-design-file",
   "date",
   "history-marker",
-  "over-budget"
- ],
- "docs/design/10-preview-identity.toml": [
-  "numbered-or-dated-name",
   "not-a-design-file",
-  "date"
- ],
- "docs/design/10-preview-policy.toml": [
   "numbered-or-dated-name",
-  "not-a-design-file"
- ],
- "docs/design/11-recall-and-threading.md": [
-  "numbered-or-dated-name",
-  "date",
-  "history-marker",
   "over-budget"
  ],
  "docs/design/evaluation/README.md": [
-  "status-marker",
-  "issue-search-link"
- ],
- "docs/design/system/README.md": [
-  "status-marker",
-  "issue-search-link"
+  "issue-search-link",
+  "status-marker"
  ],
  "docs/design/test-selection/README.md": [
-  "status-marker",
-  "issue-search-link"
+  "issue-search-link",
+  "status-marker"
  ]
 }

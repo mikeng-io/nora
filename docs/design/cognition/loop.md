@@ -1,3 +1,12 @@
+---
+class: design
+subject: "the OODAS stages, the engagement and reflection loops, passes and the debrief"
+owns: []
+area: cognition
+links:
+  - {to: docs/design/cognition/README.md, rel: uses}
+---
+
 # The loops
 
 ## Terms

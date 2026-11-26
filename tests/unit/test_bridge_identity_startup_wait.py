@@ -189,7 +189,7 @@ async def test_a_bridge_that_stays_not_ready_degrades_at_the_bound(
     caplog: pytest.LogCaptureFixture,
 ):
     """The wait is BOUNDED — a bridge that never becomes ready is DEGRADED
-    at the bound (docs/design/platform-bridges/platform-liveness.md): not a
+    at the bound (docs/design/platform/README.md): not a
     hang, not a success, and not a process-wide startup failure."""
     state = _state(not_ready=10**9)
     clock = _FakeTime()

@@ -13,7 +13,7 @@ links:
 Cases set in a unit with a general Signal room, a dinner Signal room and a
 Discord channel, each with a description. Run on master (where the unit holds
 one Signal room, as the former rule required) and on the branch, with enough
-cases that a difference is not noise (`docs/engineering/eval-sop.md`).
+cases that a difference is not noise (`docs/operations/eval-sop.md`).
 
 | kind | example | pass |
 |---|---|---|
