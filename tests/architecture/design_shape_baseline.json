@@ -30,65 +30,7 @@
   "history-marker",
   "over-budget"
  ],
- "docs/design/13-trace-content-and-redaction.md": [
-  "numbered-or-dated-name",
-  "date",
-  "status-marker"
- ],
- "docs/design/18-media-custody.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "docs/design/19-media-comprehension.md": [
-  "numbered-or-dated-name",
-  "date",
-  "over-budget"
- ],
- "docs/design/25-version-and-announcement.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "docs/design/appearance/README.md": [
-  "over-budget"
- ],
  "docs/design/evaluation/README.md": [
-  "status-marker",
-  "issue-search-link"
- ],
- "docs/design/media-read-lane/README.md": [
-  "status-marker",
-  "issue-search-link"
- ],
- "docs/design/nora-world/00-overview.md": [
-  "numbered-or-dated-name",
-  "date",
-  "status-marker"
- ],
- "docs/design/nora-world/10-world-as-a-view.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "docs/design/nora-world/20-presentation-and-avatars.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "docs/design/nora-world/30-asset-pipeline.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "docs/design/nora-world/40-shared-venue.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "docs/design/nora-world/50-open-questions.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "docs/design/nora-world/_index.yaml": [
-  "not-a-design-file",
-  "date"
- ],
- "docs/design/self-reference/README.md": [
   "status-marker",
   "issue-search-link"
  ],
@@ -97,10 +39,6 @@
   "issue-search-link"
  ],
  "docs/design/test-selection/README.md": [
-  "status-marker",
-  "issue-search-link"
- ],
- "docs/design/video-generation/README.md": [
   "status-marker",
   "issue-search-link"
  ]

@@ -1,3 +1,11 @@
+---
+class: operations
+subject: how Nora is configured, the files, keys and settings the deployment owns
+owns: []
+links:
+  - {to: docs/design/obs/README.md, rel: uses}
+---
+
 # Configuration and credential delivery
 
 `config.toml` carries deployment settings, `identity.toml` people, `policy.toml`
@@ -136,7 +144,7 @@ intervals. Automatic Instagram and summons reads retain their separate 90-second
 limit. These bounds do not guarantee a provider response within the timeout.
 The per-read concurrency is not a process-wide provider cap; aggregate fan-out
 and measurement limits are documented in
-[the media design](../design/media-read-lane/reading.md).
+[the media design](../design/media/reading.md).
 
 `reaction_send` lets the agent choose an emoji for a message in its visible
 transcript. A confirmed reaction can complete a turn without text. It is recorded
