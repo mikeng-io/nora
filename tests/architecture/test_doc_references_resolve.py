@@ -80,7 +80,7 @@ ROOT = Path(__file__).resolve().parents[2]
 # Only these anchor a backticked token as a repo-root-relative path CLAIM.
 # `doctrine/` is deliberately absent — see the module docstring.
 _CHECKED_PREFIXES = (
-    "docs/design/",
+    "design/",
     "docs/",
     "nora/",
     "tests/",
@@ -462,10 +462,8 @@ def test_every_doc_reference_resolves_or_is_a_known_finding() -> None:
         "before trusting a green run"
     )
 
-    # A path a later calibration unit generates is staged in the document gate,
-    # which owns the list; anything else unresolved is a finding.
-    # An ADR is history and is never edited, so it may cite a path as it stood
-    # before the docs/ move.
+    # Staged paths are owned by the document gate; an ADR is history, so it may
+    # cite a path as it stood before the docs/ move.
     unpinned = {
         k: v for k, v in found.items()
         if k not in _KNOWN_DANGLING and k[1] not in STAGED_TARGETS

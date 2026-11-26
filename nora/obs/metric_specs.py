@@ -230,23 +230,18 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     ),
     _CounterSpec(
         "nora_silent_failures_total",
-        "Failures kept silent from the group, by reason and by which path was "
-        "speaking (audience=\"tag\" | \"heartbeat\" | \"participation\" | "
-        "\"proactive\" — a kind=proactive row's act turn, docs/design/cognition-loop/proactive.md "
-        "— | "
-        "\"summons\" — a public Instagram summons, whose reply is held and "
-        "published by its own flush, never a room adapter — | "
-        "\"participation-shadow\" — the §10.6 mirror — | "
-        "\"relevance-gate-shadow\" — the Relevance Gate's review post, which "
-        "has no turn behind it at all — | \"one-time-code\" — a sign-in code "
-        "sent in a direct message, a fixed template with no turn behind it. "
-        "Both shadow audiences are "
-        "operator-review traffic, never room speech, and a refusal under "
-        "either means the reviewer is missing a determination they are "
-        "tuning the flip on: read them against "
-        "nora_errors_total{stage=\"participation_shadow\"} and "
-        "{stage=\"relevance_gate_shadow\"}, which now move on a guard "
-        "REFUSAL as well as on an exception).",
+        "Failures kept silent from the group, by reason and by which path was speaking "
+        "(audience=\"tag\" | \"heartbeat\" | \"participation\" | \"proactive\" — a kind=proactive "
+        "row's act turn, docs/design/cognition-loop/proactive.md — | \"summons\" — a public "
+        "Instagram summons, whose reply is held and published by its own flush, never a room "
+        "adapter — | \"participation-shadow\" — the §10.6 mirror — | \"relevance-gate-shadow\" — "
+        "the Relevance Gate's review post, which has no turn behind it at all — | "
+        "\"one-time-code\" — a sign-in code sent in a direct message, a fixed template with no "
+        "turn behind it. Both shadow audiences are operator-review traffic, never room speech, "
+        "and a refusal under either means the reviewer is missing a determination they are tuning "
+        "the flip on: read them against nora_errors_total{stage=\"participation_shadow\"} and "
+        "{stage=\"relevance_gate_shadow\"}, which now move on a guard REFUSAL as well as on an "
+        "exception).",
         # `audience` is the ONE label the heartbeat adds to an existing series,
         # rather than the fire path getting its own silent-failure series: `Deliverer`,
         # which the fire path must use as the only caller of `adapter.send`, increments
@@ -664,12 +659,11 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     _CounterSpec(
         "nora_presence_disclosure_refusals_total",
         "whereis disclosures refused (R-21 fail-closed seam, "
-        "docs/design/self-awareness/presence.md). "
-        "`reason` names WHICH of the three conditions fired so a refusal is "
-        "diagnosable: `degraded` (roster unverifiable — answers `unavailable` "
-        "rather than `refused`, R-27, but still counted here), `unnamed` (an "
-        "account in the room maps to no person_id), `not_subset` (a mapped member "
-        "is outside the circle and the room is not location-trusted).",
+        "docs/design/self-awareness/presence.md). `reason` names WHICH of the three conditions "
+        "fired so a refusal is diagnosable: `degraded` (roster unverifiable — answers "
+        "`unavailable` rather than `refused`, R-27, but still counted here), `unnamed` (an account "
+        "in the room maps to no person_id), `not_subset` (a mapped member is outside the circle "
+        "and the room is not location-trusted).",
         ("reason",),
     ),
     # `nora_recovered_replies_total` (DEC-93): a reply the model WROTE without
@@ -945,9 +939,8 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     _CounterSpec(
         "nora_subagent_checkpoint_unwritten_total",
         "Sub-agent checkpoint updates that found no pending job row to write to "
-        "(docs/design/subagent "
-        "§4d): the row is written after launch, so an early one is expected; the terminal "
-        "write of the delivery still stores the final checkpoint.",
+        "(docs/design/subagent §4d): the row is written after launch, so an early one is "
+        "expected; the terminal write of the delivery still stores the final checkpoint.",
         (),
     ),
     # Paired with `nora_loop_exhausted_fallbacks_total` below and read AGAINST

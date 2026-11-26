@@ -161,8 +161,7 @@ def test_empty_diff_selects_nothing():
 #
 # Every `.md` is mapped to the tests that open it, not to a hand-kept table:
 # README.md, docs/design/appearance/README.md, docs/operations/runbook.md, ARCHITECTURE.md,
-# AGENTS.md,
-# CONTRIBUTING.md, the decision index, the deploy READMEs and the
+# AGENTS.md, CONTRIBUTING.md, the decision index, the deploy READMEs and the
 # release-fragment README each have a test that opens them. These cases name
 # the real readers of the real tree, so a change to how a test opens a doc
 # shows up here.

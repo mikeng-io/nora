@@ -18,7 +18,7 @@ independent comparison is required. A missing proof is not missing code.
 
 **`docs/design/` is one design, not a shelf of bundles.** A subject is owned by
 exactly one file in the whole tree: before writing, `git grep -n '<subject
-words>' -- design` and read every hit, not only the bundle you came for. Two
+words>' -- docs/design` and read every hit, not only the bundle you came for. Two
 files describing one subject is the defect, whichever is newer — resolve it by
 deleting the one that is not the owner, never by editing both. A bundle whose
 subject the anchor now owns is abandoned design: **delete it** (§4.3), because a
@@ -100,11 +100,11 @@ docs/design/<topic>/
 
 ## 4. Editing
 
-1. **Find the owner.** `git grep -n -i '<subject words>' -- design` and read the
+1. **Find the owner.** `git grep -n -i '<subject words>' -- docs/design` and read the
    bundle's `README.md`. Check: one file owns the subject, or none does.
 2. **Revise the owner in place**: update or consolidate it so it reads as if it
    had always said the new thing. Delete what the change makes untrue. Add a
-   section or file only for a subject nothing covers. Check: `git diff --stat -- design` shows edits and deletions,
+   section or file only for a subject nothing covers. Check: `git diff --stat -- docs/design` shows edits and deletions,
    not only additions; a purely additive diff needs a new subject to justify it.
 3. **Abandoned design is deleted**, not marked. The commit says what replaced it.
 4. **Move non-design content out** as you meet it: execution work to

@@ -143,7 +143,7 @@ conflict, so the number is chosen immediately before merge (`nora-land` §8).
    State it in one line and write the new reopen condition.
 3. **Rewrite every place that states the old answer**: the row (§3.5), the
    bundle (`nora-design`), the root guides. Grep the withdrawn answer's own
-   words: `git grep -n -i '<old vocabulary>' -- design docs nora *.md .agents`.
+   words: `git grep -n -i '<old vocabulary>' -- docs nora *.md .agents`.
    Check: every hit is rewritten or deleted; none is marked.
 
 ## Tool notes

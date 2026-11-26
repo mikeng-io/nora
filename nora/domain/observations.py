@@ -1,6 +1,6 @@
 """Typed platform observations: the shared header, payload union and fold.
 
-Design/platform-observations/observations.md made concrete. An **observation** is what a
+docs/design/platform-observations/observations.md made concrete. An **observation** is what a
 source reported about an OBJECT (a reaction's target message, a poll, a room
 or thread, a member set, a pin set, a shared artifact, a message's own
 metadata) — created, revised, withdrawn, added/removed, cleared or observed
