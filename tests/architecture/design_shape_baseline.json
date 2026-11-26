@@ -1,8 +1,4 @@
 {
- "docs/design/03-strands-reuse.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
  "docs/design/05-evaluation.md": [
   "numbered-or-dated-name",
   "date",
@@ -34,19 +30,10 @@
   "history-marker",
   "over-budget"
  ],
- "docs/design/12-prompt-tool-skill-boundaries.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
  "docs/design/13-trace-content-and-redaction.md": [
   "numbered-or-dated-name",
   "date",
   "status-marker"
- ],
- "docs/design/17-prompt-substrate.md": [
-  "numbered-or-dated-name",
-  "date",
-  "over-budget"
  ],
  "docs/design/18-media-custody.md": [
   "numbered-or-dated-name",
@@ -61,94 +48,12 @@
   "numbered-or-dated-name",
   "date"
  ],
- "docs/design/agent-worker/00-intent.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "docs/design/agent-worker/10-worker-port.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "docs/design/agent-worker/20-adapters.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "docs/design/agent-worker/30-sandbox-port.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "docs/design/agent-worker/40-models-egress-permissions.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "docs/design/agent-worker/50-verification-and-migration.md": [
-  "numbered-or-dated-name",
-  "not-a-design-file",
-  "date"
- ],
- "docs/design/agent-worker/_index.yaml": [
-  "not-a-design-file",
-  "date"
- ],
  "docs/design/appearance/README.md": [
   "over-budget"
- ],
- "docs/design/artifact/README.md": [
-  "status-marker",
-  "issue-search-link"
- ],
- "docs/design/browser-runtime/README.md": [
-  "status-marker",
-  "issue-search-link"
- ],
- "docs/design/capability-drop/00-overview.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "docs/design/capability-drop/01-when-stays-in-schema.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "docs/design/capability-drop/02-rules-to-conduct.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "docs/design/capability-drop/03-code-surface.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "docs/design/capability-drop/_index.yaml": [
-  "not-a-design-file",
-  "date"
- ],
- "docs/design/computer-unit-scope/00-contract.md": [
-  "numbered-or-dated-name",
-  "date",
-  "status-marker"
- ],
- "docs/design/computer-unit-scope/01-migration.md": [
-  "numbered-or-dated-name",
-  "not-a-design-file",
-  "date",
-  "status-marker",
-  "over-budget"
- ],
- "docs/design/computer-unit-scope/_index.yaml": [
-  "not-a-design-file",
-  "date"
- ],
- "docs/design/context-assembly/README.md": [
-  "status-marker",
-  "issue-search-link"
  ],
  "docs/design/evaluation/README.md": [
   "status-marker",
   "issue-search-link"
- ],
- "docs/design/external-files/00-design.md": [
-  "numbered-or-dated-name",
-  "date",
-  "over-budget"
  ],
  "docs/design/media-read-lane/README.md": [
   "status-marker",
@@ -183,35 +88,15 @@
   "not-a-design-file",
   "date"
  ],
- "docs/design/sandbox-runtime/README.md": [
-  "status-marker",
-  "issue-search-link"
- ],
  "docs/design/self-reference/README.md": [
   "status-marker",
   "issue-search-link"
- ],
- "docs/design/subagent/00-design.md": [
-  "numbered-or-dated-name",
-  "date",
-  "over-budget"
  ],
  "docs/design/system/README.md": [
   "status-marker",
   "issue-search-link"
  ],
  "docs/design/test-selection/README.md": [
-  "status-marker",
-  "issue-search-link"
- ],
- "docs/design/tool-catalogue/README.md": [
-  "status-marker",
-  "issue-search-link"
- ],
- "docs/design/tool-catalogue/deferral.md": [
-  "status-marker"
- ],
- "docs/design/tool-concurrency/README.md": [
   "status-marker",
   "issue-search-link"
  ],
