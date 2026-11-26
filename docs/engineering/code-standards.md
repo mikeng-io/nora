@@ -1,3 +1,9 @@
+---
+class: engineering
+subject: "the code standards every change follows"
+owns: []
+---
+
 # Code standards
 
 The rules every Nora change is written and reviewed against. A reviewer checks
@@ -62,7 +68,7 @@ three times becomes a row here.
 | Every zero is paired with a positive control. | A test that asserts "nothing happened" also shows the same path producing something. | review |
 | A timing test leaves room on both sides. | No wall-clock bound a loaded runner can exceed; the timing test is listed in `TIMING_TESTS` (`scripts/pytest_gate.py`). | review |
 | A test that fails on `master` is a bug now. | "Fails the same on master" is not a baseline: it is fixed, or filed with its cause, before shipping on top. | review |
-| A new behavioural rule has a decision row and a named test. | The row is in `docs/design/09-decision-index.md` and the test in `RULE_TESTS`. | `test_acceptance_rules`; `test_decision_index_tests_exist` |
+| A new behavioural rule has a decision row and a named test. | The row is in `docs/design/decisions.md` and the test in `RULE_TESTS`. | `test_acceptance_rules`; `test_decision_index_tests_exist` |
 
 ### Evidence and acceptance
 
@@ -84,7 +90,7 @@ three times becomes a row here.
 | Check the vendor, not the PR's account of it. | Upstream behaviour is read from the upstream source, binary or real reply. | review |
 | Classify narrowly. | A status, mark or error class covers only the case it describes. | review |
 | A preview writes nothing. | A dry run, plan or shadow mode has no side effects. | review |
-| Don't reverse a decision the operator locked. | A change to a ruled decision is left to the operator. | `docs/design/09-decision-index.md` |
+| Don't reverse a decision the operator locked. | A change to a ruled decision is left to the operator. | `docs/design/decisions.md` |
 
 ### Commits and PRs
 

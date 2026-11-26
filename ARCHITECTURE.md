@@ -1,7 +1,7 @@
 # Nora — Architecture
 
 The map of the system: how it runs and where its code lives. Decisions and their
-costs are in [ADRs](docs/adr/README.md) and the [decision index](docs/design/09-decision-index.md);
+costs are in [ADRs](docs/adr/README.md) and the [decision index](docs/design/decisions.md);
 enabled capabilities and room grants are deployment configuration.
 
 ## Continuity beyond a session

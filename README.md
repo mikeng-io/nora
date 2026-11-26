@@ -134,7 +134,7 @@ platform accounts and persistent storage.
 
 - [Glossary](GLOSSARY.md): the words that mean something specific here.
 - [Architecture](ARCHITECTURE.md): runtime boundaries, data and deployment.
-- [Decisions](docs/adr/README.md) and [design index](docs/design/09-decision-index.md):
+- [Decisions](docs/adr/README.md) and [design index](docs/design/decisions.md):
   rationale, trade-offs and design work, including proposals not yet implemented.
 - [Contributing](CONTRIBUTING.md): development checks and pull requests.
 - [Deployment](deploy/README.md) and the [operator runbook](docs/operations/runbook.md).

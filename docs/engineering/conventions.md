@@ -1,3 +1,9 @@
+---
+class: engineering
+subject: "the repository conventions for branches, commits, PRs and merges"
+owns: []
+---
+
 # Maintainer conventions
 
 Public setup and contribution rules are in [Contributing](../../CONTRIBUTING.md).
@@ -212,7 +218,7 @@ These artifacts have different jobs; confusing them loses the intent:
 | **Linear work brief** | a proposed outcome and its completion boundary | Linear |
 | **GitHub issue** | a repository defect/problem report | `mikeng-io/nora` |
 | **ADR** | a *decision with a cost* — an alternative rejected, a trade accepted | `docs/adr/NNNN-*.md` |
-| **decision row** | a *landed* decision and the test that enforces it | `docs/design/09-decision-index.md` |
+| **decision row** | a *landed* decision and the test that enforces it | `docs/design/decisions.md` |
 
 An open work item or defect report is not a decision. A trivial decision gets
 an index row and nothing more. An ADR is warranted when the decision will look wrong to someone
@@ -224,7 +230,7 @@ worse**. `docs/adr/README.md` carries the full convention.
 ## Numbering discipline
 
 Never take a DEC-, R-, ADR- or issue number from a chat agreement or from
-memory — re-read `docs/design/09-decision-index.md` (or `gh issue list`) at merge
+memory — re-read `docs/design/decisions.md` (or `gh issue list`) at merge
 time, not at claim time. Two sessions that carefully coordinate numbers can
 still both be wrong. If a number you referenced as a placeholder turns out to
 be taken, fix the reference, not the number.

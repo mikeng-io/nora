@@ -64,7 +64,7 @@ code. `nora-design` owns the procedure.
 
 **Git and GitHub are the log.** Commits and PRs record what changed and why;
 GitHub Project owns roadmap; Linear owns execution; GitHub Issues hold reports. The ADRs are
-the one decision record kept as history; `docs/design/09-decision-index.md` lists
+the one decision record kept as history; `docs/design/decisions.md` lists
 the decisions that hold now, each with its test or `NOT ENFORCED` (`nora-decision`).
 
 ## Reporting to the operator

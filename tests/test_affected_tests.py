@@ -191,7 +191,7 @@ def test_generic_docs_markdown_selects_the_universal_doc_reader():
     ("CONTRIBUTING.md", ["tests/architecture/test_contribution_conventions.py"]),
     (".github/pull_request_template.md",
      ["tests/architecture/test_contribution_conventions.py"]),
-    ("docs/design/09-decision-index.md",
+    ("docs/design/decisions.md",
      ["tests/architecture/test_decision_index_ids_are_unique.py",
       "tests/architecture/test_decision_index_tests_exist.py",
       "tests/test_architecture_doc.py"]),
@@ -205,7 +205,7 @@ def test_a_doc_selects_every_test_that_opens_it(path, readers):
 
 def test_mixed_markdown_and_docs_tree_change_unions_every_reader():
     selected = select([
-        "docs/foo.md", "README.md", "docs/design/09-decision-index.md",
+        "docs/foo.md", "README.md", "docs/design/decisions.md",
     ])
     assert selected != ALL
     for reader in ("tests/test_docs.py",

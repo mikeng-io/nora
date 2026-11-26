@@ -647,10 +647,10 @@ both keyings and so nothing compares them.**
 
 ## Rule prefixes
 
-- **R-n** — a behavioural rule. Registered in `docs/design/09-decision-index.md`
+- **R-n** — a behavioural rule. Registered in `docs/design/decisions.md`
   and named in `tests/test_acceptance_rules.py::RULE_TESTS`.
-- **DEC-n** — a decision, with its rationale; `DEPRECATED` rows are marked,
-  never renumbered.
+- **DEC-n** — a decision; a row that no longer holds is deleted and its number
+  never reused.
 - **A-n** — an architectural invariant from the original spec.
 
 R-19 is **reserved but never assigned** (docs/design/conversation/README.md). Never take the next free

@@ -8,13 +8,6 @@
   "date",
   "numbered-or-dated-name"
  ],
- "docs/design/09-decision-index.md": [
-  "date",
-  "history-marker",
-  "not-a-design-file",
-  "numbered-or-dated-name",
-  "over-budget"
- ],
  "docs/design/evaluation/README.md": [
   "issue-search-link",
   "status-marker"

@@ -46,7 +46,6 @@ STAGED_TARGETS = {
     "docs/README.md": "U5",
     "docs/design/README.md": "U5",
     "docs/glossary.md": "U5",
-    "docs/design/decisions.md": "U4",
     "docs/operations/deploy.md": "U5",
 }
 MAX_LINES = 300

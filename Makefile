@@ -209,11 +209,11 @@ heads:
 # parent, and the optional letter keeps a duplicated `R-6b` from going unseen.
 decision-numbers:
 	@echo "== duplicate DEC numbers =="
-	@grep -oE '^\| DEC-[0-9]+[a-z]? \|' docs/design/09-decision-index.md | grep -oE '[0-9]+[a-z]?' | sort -V | uniq -d
+	@grep -oE '^\| DEC-[0-9]+[a-z]? \|' docs/design/decisions.md | grep -oE '[0-9]+[a-z]?' | sort -V | uniq -d
 	@echo "== duplicate R numbers =="
-	@grep -oE '^\| R-[0-9]+[a-z]? \|' docs/design/09-decision-index.md | grep -oE '[0-9]+[a-z]?' | sort -V | uniq -d
+	@grep -oE '^\| R-[0-9]+[a-z]? \|' docs/design/decisions.md | grep -oE '[0-9]+[a-z]?' | sort -V | uniq -d
 
-# The schema gate on its own (DEC-11: `alembic check` is blind to the CHECK
+# The schema gate on its own (DEC-53: `alembic check` is blind to the CHECK
 # constraint and the `ts DESC` index ordering, so this is the real one).
 schema-parity:
 	uv run pytest -q tests/infra/test_schema_parity.py

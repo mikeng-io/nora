@@ -1,4 +1,4 @@
-"""Docs cite repo paths inline in backticks — `docs/design/09-decision-index.md`,
+"""Docs cite repo paths inline in backticks — `docs/design/decisions.md`,
 `nora/agent/tools.py` — and a doc move (such as the ADRs moving from
 `docs/design/adr/` to `docs/adr/`) leaves every backticked citation of the old
 location dangling silently, because a doc move is not a `grep` anyone runs by
@@ -39,7 +39,7 @@ signal already present in this repo's own conventions, not a per-path guess:
     "RETIRED", "DEPRECATED", "SUPERSEDED", or "deleted", or the phrase
     "resolves in git history", is read as the same kind of deliberate
     historical citation the superpowers exemption already covers —
-    `docs/design/09-decision-index.md`'s own header states that a decision whose
+    `docs/design/decisions.md`'s own header states that a decision whose
     subject is deleted is marked exactly this way and never rewritten.
   - A path that is a LITERAL (non-glob) entry in `.gitignore` is a generated
     artifact, not a moved one — `nora/version.json` is built at image time and
@@ -273,19 +273,6 @@ _KNOWN_DANGLING: dict[tuple[str, str], str] = {
     # row no longer exempts its neighbours. A row whose cited code was deleted
     # carries its own `_HISTORICAL_MARKERS` hit (the decision-index header says a
     # row is MARKED, not rewritten) and needs no entry here.
-    # `nora/agent/disclosure.py` (DEC-124) stays pinned: it was never built —
-    # DEC-124's own row names it as a prospective housekeeping move, not a path
-    # that ever existed, so no "deleted" marker fits it.
-    ("docs/design/09-decision-index.md", "nora/agent/disclosure.py"): (
-        "never built; DEC-124's row names `nora/agent/disclosure.py` "
-        "prospectively — 'a housekeeping step for whoever builds the first "
-        "tool that imports it from outside whereis' — as a place "
-        "`DisclosureGuard` could move to, not a file it ever created; "
-        "`DisclosureGuard` still lives in `nora/agent/whereis.py` today. "
-        "checked 2026-09-25 (`git log -S disclosure.py` finds it only in "
-        "this decision-index prose, never as a real file); drop this entry "
-        "the day that move ships"
-    ),
     # --- found once list items were split out of their list ---
     #
     # `_paragraphs` treats each list item as its own record; each of these is a
@@ -295,17 +282,6 @@ _KNOWN_DANGLING: dict[tuple[str, str], str] = {
     # `scripts/ingest_self_asset.py` exists. What remains is history.
     # --- the one-path rebuild ---
     #
-    # The old harness `evals/rebuilt/runner.py` and the pre-port corpus copies
-    # under `evals/cases/` and `evals/adversarial/` are deleted; the live
-    # corpora are `evals/corpora/*.yaml` and the runner is
-    # `evals/backbone.py`. These lines record what was true when written.
-    **{
-        (doc, old): f"pre-port copy deleted 2026-09-21; now evals/corpora/{new}"
-        for doc, old, new in (
-            ("docs/design/09-decision-index.md",
-             "evals/adversarial/being_contradicted.yaml", "being_contradicted.yaml"),
-        )
-    },
     # --- the old eval layer ---
     #
     # These are HISTORY, not broken links: each describes what was true when it
@@ -346,10 +322,6 @@ _KNOWN_DANGLING: dict[tuple[str, str], str] = {
     ("docs/design/08-stack-refactor-brief.md", "nora/store/migrate.py"): (
         "pre-refactor handoff brief describing the SQLite-era code the brief itself "
         "proposed replacing; nora/store/ no longer exists post-refactor"
-    ),
-    ("docs/design/09-decision-index.md", ".github/workflows/gates.yml"): (
-        "A12 names a CI gate file; this repo deliberately runs no CI (operator decision) "
-        "and the file was never added back after that decision"
     ),
     ("docs/adr/0020-documents-are-json-specs-the-portal-renders.md",
      "nora/compute/smith/page_shell.py"): (
