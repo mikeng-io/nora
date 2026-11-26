@@ -1,0 +1,9 @@
+[
+  {
+    "name": "unknown graph embedding state is not embedded",
+    "file": "nora/infra/sql/graph_search_embed.py",
+    "old": "    return {(r.network, r.item_id) for r in rows}\n",
+    "new": "    return wanted\n",
+    "target": "tests/integration/test_story_media_expiry.py::test_with_the_real_graph_index_an_absent_row_keeps_the_bytes tests/integration/test_story_media_expiry.py::test_with_the_real_graph_index_a_queued_row_keeps_the_bytes"
+  }
+]
