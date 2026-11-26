@@ -28,11 +28,16 @@
      Then the review level (none / light / full), actual coverage and the triage line,
      e.g. "light; 1 BLOCKER fixed, 2 FIX-IF-CHEAP, 1 ISSUE #N, 2 DROP". -->
 
-## Authored by
+## Produced by
 
-<!-- Human or agent. For an agent, the tool and model (for example "agent: Claude
-     Sonnet 5.5 in Claude Code"). Name who reviewed it and whether that was a
-     different person or model than the author. -->
+<!-- One row per builder and per reviewer: role (builder or reviewer), the ADE or
+     IDE, the coding agent and the exact model id with its effort when set. A
+     human writes `human` as the agent and `none` as the model. Builder and
+     reviewer differ by vendor (docs/engineering/documents.md «Provenance»). -->
+
+| role | Environment | Agent | Model |
+|---|---|---|---|
+| builder | T3 Code | Claude Code | claude-opus-5-5 (effort high) |
 
 ## Closes
 

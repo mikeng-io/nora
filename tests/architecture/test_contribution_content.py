@@ -11,7 +11,9 @@ from scripts import check_contribution_content as content
 BODY = (
     "## What\nFix a documentation typo.\n\n## Gate on the merged tree\n"
     "make gate: exit 0; 50 passed.\n\n"
-    "## Authored by\nagent: Claude in Claude Code; reviewed by Kimi.\n"
+    "## Produced by\n| role | Environment | Agent | Model |\n|---|---|---|---|\n"
+    "| builder | T3 Code | Claude Code | claude-opus-5-5 (effort high) |\n"
+    "| reviewer | T3 Code | Codex | gpt-6.2-sol (effort high) |\n"
 )
 
 
@@ -502,8 +504,8 @@ def test_metadata_read_failure_replaces_old_success_on_event_head():
 
 
 def test_authored_by_is_required_for_a_human_pr():
-    body = BODY.split("## Authored by")[0]
-    assert any("Authored by" in e for e in content.pr_problems(pr(body=body), "owner/repo"))
+    body = BODY.split("## Produced by")[0]
+    assert any("Produced by" in e for e in content.pr_problems(pr(body=body), "owner/repo"))
 
 
 def test_every_commit_of_a_pr_is_judged_by_the_hooks_own_rules():
@@ -628,3 +630,45 @@ def test_internal_issue_title_requires_a_populated_area_and_gap(title):
     item = issue()
     item["title"] = title
     assert content.issue_problems(item)
+
+
+# ---- provenance (docs/engineering/documents.md «Provenance»)
+
+PRODUCED = BODY.split("## Produced by")[0] + "## Produced by\n| role | Environment | Agent | Model |\n|---|---|---|---|\n"
+ROWS = [
+    "| builder | T3 Code | Claude Code | claude-opus-5-5 (effort high) |",
+    "| builder | T3 Code | Devin | swe-2-1-medium |",
+    "| reviewer | T3 Code | Codex | gpt-6.2-sol (effort high) |",
+]
+
+
+def _problems(rows):
+    return content.pr_problems(pr(body=PRODUCED + "\n".join(rows) + "\n"), "owner/repo")
+
+
+def test_a_pr_with_two_builders_and_a_reviewer_passes():
+    assert _problems(ROWS) == []
+
+
+@pytest.mark.parametrize("row", range(len(ROWS)))
+@pytest.mark.parametrize("cell", [1, 2, 3])
+@pytest.mark.parametrize("blank", ["", " ", "-"])
+def test_each_missing_field_in_any_row_is_refused(row, cell, blank):
+    rows = list(ROWS)
+    cells = rows[row].strip("|").split("|")
+    cells[cell] = f" {blank} "
+    rows[row] = "|" + "|".join(cells) + "|"
+    assert any("missing its" in e for e in _problems(rows))
+
+
+def test_a_pr_with_no_builder_is_refused():
+    assert any("at least one builder" in e for e in _problems(ROWS[2:]))
+
+
+def test_an_unknown_role_is_refused():
+    assert any("role of builder or reviewer" in e for e in _problems([ROWS[0], "| author | a | b | c |"]))
+
+
+def test_the_retired_authored_by_heading_is_refused():
+    body = BODY.split("## Produced by")[0] + "## Authored by\nagent: Claude in Claude Code.\n"
+    assert content.pr_problems(pr(body=body), "owner/repo")
