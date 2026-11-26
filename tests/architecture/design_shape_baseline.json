@@ -151,26 +151,6 @@
   "status-marker",
   "issue-search-link"
  ],
- "docs/design/discord-integration/00-overview.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "docs/design/discord-integration/01-listener-and-resilience.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "docs/design/discord-integration/02-engagement-and-policy.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "docs/design/discord-integration/03-identity-and-portal-auth.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "docs/design/discord-integration/_index.yaml": [
-  "not-a-design-file",
-  "date"
- ],
  "docs/design/evaluation/README.md": [
   "status-marker",
   "issue-search-link"
@@ -209,33 +189,9 @@
   "date",
   "over-budget"
  ],
- "docs/design/instagram-adoption/README.md": [
-  "status-marker",
-  "issue-search-link"
- ],
  "docs/design/media-read-lane/README.md": [
   "status-marker",
   "issue-search-link"
- ],
- "docs/design/message-edits/00-overview.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "docs/design/message-edits/01-model-and-storage.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "docs/design/message-edits/02-behaviour.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "docs/design/message-edits/03-platforms-and-sequencing.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "docs/design/message-edits/_index.yaml": [
-  "not-a-design-file",
-  "date"
  ],
  "docs/design/nora-world/00-overview.md": [
   "numbered-or-dated-name",
@@ -290,34 +246,6 @@
   "not-a-design-file",
   "date"
  ],
- "docs/design/platform-bridges/00-contract.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "docs/design/platform-bridges/01-source-map.md": [
-  "numbered-or-dated-name"
- ],
- "docs/design/platform-bridges/02-wire-and-platforms.md": [
-  "numbered-or-dated-name"
- ],
- "docs/design/platform-bridges/03-ownership-and-recovery.md": [
-  "numbered-or-dated-name"
- ],
- "docs/design/platform-bridges/04-operations.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "docs/design/platform-bridges/05-build-and-acceptance.md": [
-  "numbered-or-dated-name"
- ],
- "docs/design/platform-bridges/_index.yaml": [
-  "not-a-design-file",
-  "date"
- ],
- "docs/design/platform-observations/README.md": [
-  "status-marker",
-  "issue-search-link"
- ],
  "docs/design/policy-reload/README.md": [
   "status-marker",
   "issue-search-link"
@@ -370,10 +298,6 @@
   "status-marker",
   "issue-search-link"
  ],
- "docs/design/social-per-network/README.md": [
-  "status-marker",
-  "issue-search-link"
- ],
  "docs/design/subagent/00-design.md": [
   "numbered-or-dated-name",
   "date",
@@ -386,24 +310,6 @@
  "docs/design/test-selection/README.md": [
   "status-marker",
   "issue-search-link"
- ],
- "docs/design/threads-adoption/00-intent.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "docs/design/threads-adoption/10-architecture.md": [
-  "numbered-or-dated-name",
-  "date",
-  "over-budget"
- ],
- "docs/design/threads-adoption/20-plan-and-verification.md": [
-  "numbered-or-dated-name",
-  "not-a-design-file",
-  "date"
- ],
- "docs/design/threads-adoption/_index.yaml": [
-  "not-a-design-file",
-  "date"
  ],
  "docs/design/tool-catalogue/README.md": [
   "status-marker",
@@ -421,10 +327,6 @@
   "issue-search-link"
  ],
  "docs/design/voice-channel/README.md": [
-  "status-marker",
-  "issue-search-link"
- ],
- "docs/design/whatsapp-adoption/README.md": [
   "status-marker",
   "issue-search-link"
  ]

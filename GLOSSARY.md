@@ -476,7 +476,7 @@ claiming `kind: capability` **fails to load** as an unknown kind. The files sit 
   `relevance_gate = true` in `policy.toml`). **Shadow mode** mirrors every
   determination to a review channel and holds the live send, for reading
   before the flip.
-- **summons** — a public occasion (docs/design/instagram-adoption/summons.md, DEC-212):
+- **summons** — a public occasion (docs/design/social/README.md, DEC-212):
   somebody in `identity.toml` tags her under a public Instagram post, and ONE
   turn on the `summons` audience answers in the comments or says nothing. It
   builds no room and writes no memory; it loads only `core/` and `public/`
@@ -485,7 +485,7 @@ claiming `kind: capability` **fails to load** as an unknown kind. The files sit 
   `mode = "dry_run"`.
 - **surface** — where her words land. A **room** is a private surface she
   belongs to; a public post is a **public surface** read by strangers
-  (docs/design/threads-adoption/10-architecture.md names the `SocialSurface` port a second one
+  (docs/design/social/threads.md names the `SocialSurface` port a second one
   would need). A voice channel is a surface OF a room, not a room (DEC-191).
 - **Relevance Gate** — a cheap, separate model call in front of participation
   (docs/design/cognition/loop.md, `[relevance_gate]`): reads the transcript and Standing and
