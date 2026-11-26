@@ -1,7 +1,7 @@
 # Nora's computer
 
 The persistent microVM that Nora's computer-use tools run on
-(`docs/design/sandbox-runtime/README.md`). It is a Docker Sandboxes (sbx) VM
+(`docs/design/computer/README.md`). It is a Docker Sandboxes (sbx) VM
 booted from `Dockerfile`, and it runs `computerd.py`, a small HTTP API with
 Nora as its only client. Nora reaches it at `http://172.17.0.1:18765`
 (docker0: reachable from the nora container, not from the LAN) with a bearer
@@ -71,7 +71,7 @@ allowlist of DEC-260), so `nora-computer` adds these rules, **scoped to the
 public NAME that resolves to a private address (`127-0-0-1.sslip.io`) still
 passes the deny and reaches the host's services. It is measured and the
 operator accepted the risk rather than add a guard
-(`docs/design/browser-runtime/security.md` «Network and browser isolation»); there
+(`docs/design/computer/README.md` «Invariants»); there
 is none. `egress check` probes IP literals, so
 it cannot see this. The network audit is `sbx policy log`.
 
