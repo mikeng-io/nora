@@ -101,7 +101,7 @@ func (s *Server) Routes() http.Handler {
 	// answered.
 	mux.HandleFunc("GET /accounts/{igid}", observability.Route("GET /accounts/{igid}", s.handleProfile))
 	// The only path to a story anywhere. The social stream's poller reads
-	// members' stories (docs/design/cognition-loop/observation.md), and
+	// members' stories (docs/design/cognition/loop.md), and
 	// the read never marks one seen. A sub-resource of the account,
 	// because that is what it is.
 	mux.HandleFunc("GET /accounts/{igid}/story", observability.Route("GET /accounts/{igid}/story", s.handleStory))

@@ -66,7 +66,7 @@ room, including when queued work is delivered.
 Cognition processes stimuli and maintains working state, notes, events and
 reminders; the Dreamer supplies background research, including culture work.
 Both share one agent factory, tool set and instruction infrastructure
-([execution and time](docs/design/cognition-loop/execution.md)). The
+([execution and time](docs/design/cognition/loop.md)). The
 reminder heartbeat drives deferred conscious turns; addressed turns continue
 through engagement.
 

@@ -272,7 +272,7 @@ type = "layers"
 # prove is the last line: nothing above nora.domain may be imported BY nora.domain.
 #
 # nora.ingest sits ABOVE nora.engagement, not beside it: the standing event fold
-# (docs/design/standing-watermark/10-event-trigger.md) is triggered from the ingest path — every message,
+# (docs/design/cognition/context.md) is triggered from the ingest path — every message,
 # tagged or not, spawns the watermark check — while the fold machinery it reuses
 # (ConversationSlots, the debrief objective/prompt/parse) is engagement's. That is
 # engagement's own framing ("ingest decides WHETHER to engage; engagement decides

@@ -147,7 +147,7 @@ EVAL_GRADING = --grading-contract "$(EVAL_GRADING_CONTRACT)" --grading-contract-
 eval-source:
 	./scripts/refresh_eval_clone.sh
 
-# The ambient-participation flip gate (docs/design/cognition-loop/proactive.md): all
+# The ambient-participation flip gate (docs/design/cognition/loop.md): all
 # 15 cases must reach their expected verdict — zero false-speaks on the
 # knowledge-cut twins, zero speaks on the pure-No five.
 eval-participation:

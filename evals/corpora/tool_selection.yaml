@@ -54,7 +54,7 @@ cases:
     metadata: {tools: [where_been], not_tools: [where_is, routine_read]}
     snapshot: *room_a
 
-  # routine_read (docs/design/group-situation/20-context-awareness-target-shape.md): a question about LATER is neither where_is
+  # routine_read (docs/design/cognition/context.md): a question about LATER is neither where_is
   # (now) nor where_been (the past). The third case is the overlap the design
   # names: «usually on Tuesday nights» is a routine, not a history of hours.
   - name: route_routine_read_future
@@ -81,7 +81,7 @@ cases:
     metadata: {tools: [routine_read], not_tools: [where_is, where_been]}
     snapshot: *room_a
 
-  # docs/design/cognition-loop/observation.md: WHEN someone usually gets somewhere or leaves is
+  # docs/design/cognition/loop.md: WHEN someone usually gets somewhere or leaves is
   # routine_read's too (what=arrival/departure), never where_is or where_been.
   - name: route_routine_read_arrival
     entry: tag
@@ -100,7 +100,7 @@ cases:
     snapshot: *room_a
 
   # note_create's opening lost a clause restating its first sentence (the
-  # catalogue ceiling, docs/design/group-situation/20-context-awareness-target-shape.md); its routing had no case until now.
+  # catalogue ceiling, docs/design/cognition/context.md); its routing had no case until now.
   - name: route_note_create_open_question
     entry: tag
     expect: reply
@@ -704,7 +704,7 @@ cases:
     metadata: {tools: [group_members], not_tools: [room_list, room_read]}
     snapshot: *room_a
 
-  # --- the Record over an interval (docs/design/cognition-loop/README.md) ------
+  # --- the Record over an interval (docs/design/cognition/loop.md) ------
   # `record_query` (2026-09-29) reads what was said over a stretch of time, by
   # author or by words, under lineage. Each case names the neighbour it could
   # lose to: `load_transcript` pages back from now in this room with no filter;
@@ -1300,7 +1300,7 @@ cases:
   # NOT RUN when written: the eval owner runs them on master and the branch.
   # `remember` is on both memory surfaces, a different write on each: a Honcho
   # conclusion off the graph, a Profile `told` line on it (operator ruling
-  # 2026-10-17, docs/design/unified-memory/profiles.md). So the own-fact case runs on both,
+  # 2026-10-17, docs/design/cognition/graph.md). So the own-fact case runs on both,
   # and on each a note is not where a settled fact goes (DEC-316).
   - name: route_keep_group_fact_is_not_remember
     entry: tag

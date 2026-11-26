@@ -122,7 +122,7 @@ def build_offline_pipeline(
     from nora.agent.shared_state import shared_reader
 
     harness_policy = permissive_policy()
-    # The one `standing` view (docs/design/notebook-memory-types/20-standing.md):
+    # The one `standing` view (docs/design/cognition/graph.md):
     # a reader over the same store doubles a caller passes in — `None` only
     # when none were given, exactly like `notes` here.
     shared = (
@@ -265,7 +265,7 @@ def build_offline_pipeline(
         fire_path = FirePath(
             tag_trace_store=None,
             persons=persons, access=access, records=audit, memory=memory,
-            # The shared-state reader (docs/design/notebook-memory-types/20-standing.md):
+            # The shared-state reader (docs/design/cognition/graph.md):
             # `None` in the harness, the assembler's reason above — which
             # also means an eval's proactive occasion never withholds on an
             # `unavailable` view it never had.

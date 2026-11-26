@@ -1,17 +1,4 @@
 {
- "docs/design/00-overview.md": [
-  "numbered-or-dated-name",
-  "date",
-  "history-marker"
- ],
- "docs/design/01-ambient-ingest.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "docs/design/02-tagging-path.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
  "docs/design/03-strands-reuse.md": [
   "numbered-or-dated-name",
   "date"
@@ -113,27 +100,6 @@
   "not-a-design-file",
   "date"
  ],
- "docs/design/ambient-loop/00-overview.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "docs/design/ambient-loop/01-stages-and-seams.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "docs/design/ambient-loop/02-doctrine-and-measurement.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "docs/design/ambient-loop/03-decisions.md": [
-  "numbered-or-dated-name",
-  "not-a-design-file",
-  "date"
- ],
- "docs/design/ambient-loop/_index.yaml": [
-  "not-a-design-file",
-  "date"
- ],
  "docs/design/appearance/README.md": [
   "over-budget"
  ],
@@ -165,13 +131,6 @@
   "not-a-design-file",
   "date"
  ],
- "docs/design/cognition-loop/README.md": [
-  "status-marker",
-  "issue-search-link"
- ],
- "docs/design/cognition-loop/threads.md": [
-  "status-marker"
- ],
  "docs/design/computer-unit-scope/00-contract.md": [
   "numbered-or-dated-name",
   "date",
@@ -191,26 +150,6 @@
  "docs/design/context-assembly/README.md": [
   "status-marker",
   "issue-search-link"
- ],
- "docs/design/conversational-recall/00-intent.md": [
-  "numbered-or-dated-name",
-  "date",
-  "status-marker"
- ],
- "docs/design/conversational-recall/10-findings.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "docs/design/conversational-recall/20-orchestration.md": [
-  "numbered-or-dated-name",
-  "status-marker"
- ],
- "docs/design/conversational-recall/30-measurement.md": [
-  "numbered-or-dated-name"
- ],
- "docs/design/conversational-recall/_index.yaml": [
-  "not-a-design-file",
-  "date"
  ],
  "docs/design/discord-integration/00-overview.md": [
   "numbered-or-dated-name",
@@ -270,23 +209,6 @@
   "date",
   "over-budget"
  ],
- "docs/design/group-situation/00-intent.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "docs/design/group-situation/10-standing-drops-plans.md": [
-  "numbered-or-dated-name",
-  "not-a-design-file",
-  "date"
- ],
- "docs/design/group-situation/20-context-awareness-target-shape.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "docs/design/group-situation/_index.yaml": [
-  "not-a-design-file",
-  "date"
- ],
  "docs/design/instagram-adoption/README.md": [
   "status-marker",
   "issue-search-link"
@@ -344,22 +266,6 @@
   "not-a-design-file",
   "date"
  ],
- "docs/design/notebook-memory-types/00-design.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "docs/design/notebook-memory-types/10-relations.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "docs/design/notebook-memory-types/20-standing.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "docs/design/notebook-memory-types/_index.yaml": [
-  "not-a-design-file",
-  "date"
- ],
  "docs/design/online-status/00-overview.md": [
   "numbered-or-dated-name",
   "date"
@@ -383,10 +289,6 @@
  "docs/design/online-status/_index.yaml": [
   "not-a-design-file",
   "date"
- ],
- "docs/design/personalisation/README.md": [
-  "status-marker",
-  "issue-search-link"
  ],
  "docs/design/platform-bridges/00-contract.md": [
   "numbered-or-dated-name",
@@ -464,10 +366,6 @@
   "status-marker",
   "issue-search-link"
  ],
- "docs/design/self-growth/README.md": [
-  "status-marker",
-  "issue-search-link"
- ],
  "docs/design/self-reference/README.md": [
   "status-marker",
   "issue-search-link"
@@ -475,85 +373,6 @@
  "docs/design/social-per-network/README.md": [
   "status-marker",
   "issue-search-link"
- ],
- "docs/design/standing-ledger/00-intent.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "docs/design/standing-ledger/10-what-standing-holds.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "docs/design/standing-ledger/20-the-ledger.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "docs/design/standing-ledger/30-turn-records.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "docs/design/standing-ledger/40-verification.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "docs/design/standing-ledger/50-migration.md": [
-  "numbered-or-dated-name",
-  "not-a-design-file",
-  "date"
- ],
- "docs/design/standing-ledger/_index.yaml": [
-  "not-a-design-file",
-  "date"
- ],
- "docs/design/standing-split-fold/00-intent.md": [
-  "numbered-or-dated-name",
-  "date",
-  "history-marker"
- ],
- "docs/design/standing-split-fold/10-split-call.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "docs/design/standing-split-fold/20-ratchet-and-tiebreak.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "docs/design/standing-split-fold/30-verification.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "docs/design/standing-split-fold/_index.yaml": [
-  "not-a-design-file",
-  "date"
- ],
- "docs/design/standing-watermark/00-intent.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "docs/design/standing-watermark/10-event-trigger.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "docs/design/standing-watermark/20-watermark-read.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "docs/design/standing-watermark/30-rollup.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "docs/design/standing-watermark/40-verification.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "docs/design/standing-watermark/50-review.md": [
-  "numbered-or-dated-name",
-  "not-a-design-file",
-  "date"
- ],
- "docs/design/standing-watermark/_index.yaml": [
-  "not-a-design-file",
-  "date"
  ],
  "docs/design/subagent/00-design.md": [
   "numbered-or-dated-name",
@@ -594,10 +413,6 @@
   "status-marker"
  ],
  "docs/design/tool-concurrency/README.md": [
-  "status-marker",
-  "issue-search-link"
- ],
- "docs/design/unified-memory/README.md": [
   "status-marker",
   "issue-search-link"
  ],

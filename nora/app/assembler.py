@@ -101,7 +101,7 @@ def build_assembler(
         notes=notes, policy=policy,
         memos=memos,
 
-        # The unit's shared cognitive state (docs/design/notebook-memory-types/20-standing.md):
+        # The unit's shared cognitive state (docs/design/cognition/graph.md):
         # ONE reader bound at the composition root; `None` renders no block.
         shared=shared,
         # The media join: the transcript's `[image a3f2c1]`
@@ -137,7 +137,7 @@ def build_assembler(
         # `<subagents>`. TAG PATH ONLY: the fire path is given no such reader.
         # `None` while `[subagent]` is off, which renders no block.
         subagents=subagents,
-        # `<recalled>`, the pre-fetch (docs/design/unified-memory/README.md): the
+        # `<recalled>`, the pre-fetch (docs/design/cognition/graph.md): the
         # SAME `MemorySearch` the tool registry's `memory_search` holds.
         # `None` on the Honcho surface (`[memory.index] read = false`),
         # which renders no block.
@@ -145,7 +145,7 @@ def build_assembler(
         # The graph's one clock, so the pre-fetch dates and ranks its items
         # at the instant every other component reads.
         clock=clock,
-        # THE SWITCH (docs/design/unified-memory/profiles.md): the Profile accounts'
+        # THE SWITCH (docs/design/cognition/graph.md): the Profile accounts'
         # reader. `None` until `[memory.profile] read` is on beside `[memory.profile]
         # write`, and in every harness that wires none — the turn then
         # renders the Honcho and prose-culture blocks it always has.

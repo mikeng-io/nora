@@ -1,8 +1,8 @@
 """cognition_signal -- signals, the shadow wake log, reactions, deletes and
-source health (docs/design/cognition-loop/README.md «Invariants»,
-docs/design/cognition-loop/observation.md).
+source health (docs/design/cognition/loop.md «Invariants»,
+docs/design/cognition/loop.md).
 
-Five new tables, all append-only (docs/design/cognition-loop/data.md
+Five new tables, all append-only (docs/design/cognition/loop.md
 «One direction of flow»); nothing existing changes.
 Two of them keep `row_history` all the same (below):
 

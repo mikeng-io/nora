@@ -1,11 +1,11 @@
-# The doctrine sorted into law, practice, character and seed (docs/design/self-growth/doctrine.md).
+# The doctrine sorted into law, practice, character and seed (docs/design/cognition/learning.md).
 #
 # This file is the SIDE TABLE the loader reads. It is not a doctrine file: the loader
 # only scans `**/*.md`, so nothing here reaches a prompt, and no `.md` file under
 # this folder carries a marker, which is how the assembled doctrine stays
-# byte-identical. The operator-facing form is docs/design/self-growth/doctrine.md.
+# byte-identical. The operator-facing form is docs/design/cognition/learning.md
 #
-# The buckets are defined in docs/design/self-growth/doctrine.md:
+# The buckets are defined in docs/design/cognition/learning.md:
 #   law        breaking it lies, harms someone, crosses a trust boundary, or claims a
 #              capability she lacks, in ANY unit
 #   practice   a unit could reasonably want it otherwise; learnable from outcomes

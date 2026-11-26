@@ -269,7 +269,7 @@ func synthUsernameLookupAmbiguous() []*slidetypes.SearchResult {
 func synthPK(n int) string { return fmt.Sprintf("9%017d", n) }
 
 // synthStoryJSON is a `PolarisStoriesV3ReelPageStandaloneQuery` answer in the
-// S0 shape (docs/design/cognition-loop/observation.md): the reel's own
+// S0 shape (docs/design/cognition/loop.md): the reel's own
 // `expiring_at` null, each frame's its own.
 func synthStoryJSON() string {
 	return `{"data":{"xdt_api__v1__feed__reels_media":{"reels_media":[{
@@ -545,7 +545,7 @@ func readContractCases() []contractCase {
 			fake: func() *fakeIG { return &fakeIG{DocErr: httpclient.ErrCheckpointRequired} },
 		},
 		{
-			// A rotated doc_id: halt this read, not the login (docs/design/cognition-loop/observation.md).
+			// A rotated doc_id: halt this read, not the login (docs/design/cognition/loop.md).
 			file: "story_stale_query_501.json", route: "GET /accounts/{igid}/story", path: "/accounts/" + synthIGID + "/story",
 			fake: func() *fakeIG { return &fakeIG{StoryBody: []byte(synthStaleQuery)} },
 		},
@@ -554,7 +554,7 @@ func readContractCases() []contractCase {
 			fake: func() *fakeIG { return &fakeIG{} },
 			opts: []bridgeOpt{withDocs(gateway.QueryDocs{Timeline: testTimelineDocID})},
 		},
-		// GET /accounts/{igid}/items (docs/design/cognition-loop/observation.md): one timeline page.
+		// GET /accounts/{igid}/items (docs/design/cognition/loop.md): one timeline page.
 		{
 			file: "items_ok.json", route: "GET /accounts/{igid}/items", path: "/accounts/" + synthIGID + "/items",
 			fake: func() *fakeIG {

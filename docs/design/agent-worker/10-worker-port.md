@@ -88,7 +88,7 @@ the field is not reported.
 **The record.** The whole stream is kept as the session's record. Making it a
 citable `turn(...)` depends on the standing ledger's turn-record view,
 citation validation and reader
-([standing-ledger 50](../standing-ledger/50-migration.md)), which do not
+([standing-ledger 50](../cognition/context.md)), which do not
 exist yet and define no worker-session occasion. Until they ship, the record
 is kept and readable by the operator, and is **not** citable. Making it
 citable is step 6 ([50](50-verification-and-migration.md) §4), and its

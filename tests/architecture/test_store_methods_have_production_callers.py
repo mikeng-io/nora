@@ -192,18 +192,18 @@ _NO_PRODUCTION_CALLER: dict[tuple[str, str], _Pin] = {
     ),
     ("gatherings.py", "revisions_for"): _Pin(
         "read_back_affordance",
-        "An event's full revision chain (docs/design/cognition-loop/data.md; migration "
+        "An event's full revision chain (docs/design/cognition/loop.md; migration "
         "0074_event_revision). No prompt block or tool reads the chain today "
         "— `event_propose`/`event_revise`/`event_set_status` only ever read "
         "the head through `head_revision_id` for `base_revision_id`'s "
         "compare-and-swap. Its consumer is a `History` section on an event "
-        "(docs/design/cognition-loop/data.md's `Changes`, 'every revision: field, from, to, "
+        "(docs/design/cognition/loop.md's `Changes`, 'every revision: field, from, to, "
         "mode, why, when'), not built at step 2b.",
     ),
     ("social_stream.py", "item_state"): _Pin(
         "deferred_consumer",
         "An item's current state, the join every read of social items makes "
-        "(docs/design/cognition-loop/observation.md). The poller writes "
+        "(docs/design/cognition/loop.md). The poller writes "
         "states; nothing reads social items yet.",
     ),
     ("standing.py", "write_if_unchanged"): _Pin(

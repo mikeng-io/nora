@@ -1,6 +1,6 @@
 """event citations -- the `citation` edge table admits events and Rollup keys,
 gains a `part`, and `events` gains `unsupported_at` and `field_meta`
-(docs/design/cognition-loop/data.md; the 2026-09-30 review and #662's;
+(docs/design/cognition/loop.md; the 2026-09-30 review and #662's;
 migration step E1a).
 
 WHAT THIS ADDS, all additive:

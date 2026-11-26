@@ -56,7 +56,7 @@ So the rule protects an address. It is not a storage rule:
    each room's operator description, its culture's summary line, and its
    activity ([20](20-addressing.md) §2).
 4. **Shared state is the unit scope of the standing ledger**
-   ([standing-ledger 20](../standing-ledger/20-the-ledger.md) §6), rendered in
+   ([standing-ledger 20](../cognition/context.md) §6), rendered in
    every room of the unit, gated per entry. This bundle adds nothing else for
    it.
 

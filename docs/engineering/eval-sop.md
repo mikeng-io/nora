@@ -528,7 +528,7 @@ A failure you fixed but did not add a case for is a failure you will ship
 again.
 
 
-## The participation suite — the flip gate (docs/design/cognition-loop/proactive.md)
+## The participation suite — the flip gate (docs/design/cognition/loop.md)
 
 `make eval-participation` runs the 15-case participation corpus, including
 relevance-Yes cases, their knowledge-cut twins, and the pure-No cases (S6-S10) — the S1 and S4 pairs were

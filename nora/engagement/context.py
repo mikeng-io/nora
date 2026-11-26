@@ -233,7 +233,7 @@ class TranscriptInjection:
         # `<memos>` (DEC-306): the unit's kept memos, unit-wide like `notes`.
         # `None` renders no block.
         self._memos_store = memos
-        # The unit's shared cognitive state reader (docs/design/notebook-memory-types/
+        # The unit's shared cognitive state reader (docs/design/cognition/graph.md
         # 20-standing.md): one callable bound at the composition
         # root over the canonical stores, `None` in every harness that wires
         # none — which renders no `<standing>` block.

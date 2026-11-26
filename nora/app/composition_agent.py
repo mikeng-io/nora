@@ -252,7 +252,7 @@ def _memory_tool_args(
         # Built once above: the assembler's pre-fetch holds the same one.
         "memory_search": memory_search,
         # The graph surface's `remember` writes a Profile `told` line
-        # (docs/design/unified-memory/profiles.md); wired with `memory_search`, never alone.
+        # (docs/design/cognition/graph.md); wired with `memory_search`, never alone.
         "profile": (
             SqlProfileStore(
                 engine,

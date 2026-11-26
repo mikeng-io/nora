@@ -132,7 +132,7 @@ type profileBody struct {
 	// caller can skip a story fetch entirely rather than fetch-then-find-empty,
 	// which matters because a story read is a deliberate act: the social
 	// stream's poller reads one only when this probe moved
-	// (docs/design/cognition-loop/observation.md).
+	// (docs/design/cognition/loop.md).
 	HasStory bool `json:"has_story"`
 	// LatestReelMedia is the raw value behind HasStory, forwarded because it
 	// is a timestamp and a caller comparing it against

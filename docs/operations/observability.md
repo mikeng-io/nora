@@ -444,7 +444,7 @@ That is R-76; `docs/engineering/conventions-rationale.md` has the argument and t
 Metric names are append-only. The six retired `nora_message_reading_*` counters
 stay declared at zero so saved queries remain valid; the later `nora_extraction_*`
 family left with the per-message extraction worker it measured
-(docs/design/unified-memory/graph.md). Reading statements now persist through Cognition
+(docs/design/cognition/graph.md). Reading statements now persist through Cognition
 step one; its own trace and budget instruments measure that path.
 
 **Three states on every instrument, never two** — `ok` / `nothing_found` /

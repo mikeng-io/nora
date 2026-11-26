@@ -1,4 +1,4 @@
-"""`SqlProfileStore`: Profile accounts and their lines (docs/design/unified-memory/profiles.md).
+"""`SqlProfileStore`: Profile accounts and their lines (docs/design/cognition/graph.md).
 
 **One write path.** `write` opens one transaction, locks the account row,
 reads every line of the account, asks `nora.domain.profile.plan_write`

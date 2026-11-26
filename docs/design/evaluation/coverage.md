@@ -81,7 +81,7 @@ hypotheticals, but not invented real-world presence. Source-grounded contrasts
 cover attribution versus eyewitness claims, contextual roles versus invented
 authority, unknown versus supported identity, and public provenance versus
 private internals. Their product rule belongs to
-[doctrine](../self-growth/doctrine.md); evaluation measures it without creating
+[doctrine](../cognition/learning.md); evaluation measures it without creating
 a new version of that rule.
 
 Comparisons use the same anchors and measurement contract. Repeated draws

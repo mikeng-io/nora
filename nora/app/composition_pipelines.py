@@ -181,7 +181,7 @@ async def standing(
             working_set_max_chars=cfg.standing.working_set_max_chars,
             content_checks=content_checks,
         )
-    # The Cognition session's completion hook (docs/design/notebook-memory-types/ 20-standing.md
+    # The Cognition session's completion hook (docs/design/cognition/graph.md 20-standing.md
     # §3): the SAME tools-less Standing fold the tag path runs after every admitted turn,
     # run once per room the finished session actually bound, with the session's whole…
     standing_fold = None

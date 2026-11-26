@@ -330,7 +330,6 @@ _KNOWN_DANGLING: dict[tuple[str, str], str] = {
             "true when it was written (docs/design/evaluation Step 5)"
         )
         for doc in (
-            "docs/design/ambient-loop/02-doctrine-and-measurement.md",
             "docs/design/capability-drop/03-code-surface.md",
             "docs/design/capability-drop/implementation-brief.md",
         )

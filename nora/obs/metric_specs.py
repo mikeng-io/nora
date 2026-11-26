@@ -221,9 +221,9 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "and stage=\"fire_culture\" — a room's account that exists and could "
         "not be read (a raise, or the bounded read timing out). A room never "
         "folded is not an error and moves nothing. The <self> read "
-        "(docs/design/self-growth/character.md) is stage=\"tag_self\", "
+        "(docs/design/cognition/learning.md) is stage=\"tag_self\", "
         "stage=\"fire_self\" and stage=\"cognition_self\", on the same terms. "
-        "The <recalled> pre-fetch (docs/design/unified-memory/README.md) is "
+        "The <recalled> pre-fetch (docs/design/cognition/graph.md) is "
         "stage=\"tag_prefetch\": a memory search that failed, timed out or "
         "could not be rendered, so the turn went on without the block.",
         ("stage", "platform"),
@@ -232,7 +232,7 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "nora_silent_failures_total",
         "Failures kept silent from the group, by reason and by which path was speaking "
         "(audience=\"tag\" | \"heartbeat\" | \"participation\" | \"proactive\" — a kind=proactive "
-        "row's act turn, docs/design/cognition-loop/proactive.md — | \"summons\" — a public "
+        "row's act turn, docs/design/cognition/loop.md — | \"summons\" — a public "
         "Instagram summons, whose reply is held and published by its own flush, never a room "
         "adapter — | \"participation-shadow\" — the §10.6 mirror — | \"relevance-gate-shadow\" — "
         "the Relevance Gate's review post, which has no turn behind it at all — | "
@@ -707,7 +707,7 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "plus \"unattributed\"), and by audience. recovered vs send_reply is "
         "DEC-93's tell: a rising recovered share means the route is not "
         "honouring tool_choice=required. `audience` was added before the "
-        "participation occasion shipped (docs/design/cognition-loop/proactive.md): the "
+        "participation occasion shipped (docs/design/cognition/loop.md): the "
         "series named only tag turns when it was created, and a participation "
         "outcome landing here unlabelled would be indistinguishable from one.",
         ("outcome", "audience"),
@@ -848,11 +848,11 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "(too_soon / too_far / too_many); the turn-provenance refusal "
         "(fire_turn); the input refusals (unmapped / unparseable / past); "
         "screened, a proactive row whose text failed the Dreamer's "
-        "identifier/coordinate screen (docs/design/cognition-loop/README.md D3); "
+        "identifier/coordinate screen (docs/design/cognition/loop.md D3); "
         "refused_origin_unresolvable / refused_origin_wrong_unit / "
         "refused_origin_not_proactive, a note-linked proactive row whose "
         "origin room cannot be resolved, drifted across a unit, or is "
-        "not proactive-trusted — docs/design/cognition-loop/proactive.md (#248), where "
+        "not proactive-trusted — docs/design/cognition/loop.md (#248), where "
         "the row's destination is the note's own room, never a fallback to "
         "home; duplicate_note, a proactive row about a note that already has "
         "one waiting or firing (issue #158: one reminder per thing, held at "
@@ -879,7 +879,7 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "failed_error (the fire turn raised, or a crash left the row FIRING); "
         "and the fire-time screens' outcomes. A kind=proactive row adds silent "
         "(DONE, the act turn declined) and cancelled_note_retired / "
-        "cancelled_note_moved (docs/design/cognition-loop/proactive.md).",
+        "cancelled_note_moved (docs/design/cognition/loop.md).",
         ("outcome",),
     ),
     # DEFERRALS: a tick that finds the conversation slot held leaves its rows
@@ -1526,7 +1526,7 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     _CounterSpec(
         "nora_participation_silence_total",
         "Participation determinations that concluded 'say nothing' (the "
-        "healthy default — docs/design/cognition-loop/proactive.md), by platform. "
+        "healthy default — docs/design/cognition/loop.md), by platform. "
         "Budget-cut turns are NOT here; those are silent failures.",
         ("platform",),
     ),
@@ -1544,7 +1544,7 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     _CounterSpec(
         "nora_proactive_silence_total",
         "Proactive act turns that read the room again and declined their "
-        "own earlier intention (the healthy default — docs/design/cognition-loop/proactive.md), "
+        "own earlier intention (the healthy default — docs/design/cognition/loop.md), "
         "by platform. Budget-cut turns are NOT here.",
         ("platform",),
     ),
@@ -1593,7 +1593,7 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     _CounterSpec(
         "nora_relevance_gate_total",
         "Relevance Gate verdicts the MODEL returned, by verdict and platform "
-        "(docs/design/cognition-loop/proactive.md). A fail-closed no_go is NOT here — it "
+        "(docs/design/cognition/loop.md). A fail-closed no_go is NOT here — it "
         "is on nora_relevance_gate_errors_total — so go/(go+no_go) here is a "
         "true admission rate and not a rate diluted by outages. In shadow "
         "mode only the go verdicts are delivered anywhere; this series is the "
@@ -1660,7 +1660,7 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     ),
     # The Lessons session: one per unit, by what it did; `decayed` is code
     # retiring a lesson at its horizon.
-    # The Profile sessions, in shadow (docs/design/unified-memory/profiles.md).
+    # The Profile sessions, in shadow (docs/design/cognition/graph.md).
     _CounterSpec(
         "nora_profile_session_total",
         "Profile sessions by outcome (" + " / ".join(sorted(PROFILE_OUTCOMES)) + "). "
@@ -2055,7 +2055,7 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "trigger for chunking long nodes.",
         ("kind",),
     ),
-    # The social stream's poller (docs/design/cognition-loop/observation.md).
+    # The social stream's poller (docs/design/cognition/loop.md).
     # Every vocabulary is DERIVED from `nora.domain.social_stream`. No person,
     # account or item is a label.
     _CounterSpec(
@@ -2382,7 +2382,7 @@ _GAUGES: tuple[_GaugeSpec, ...] = (
         "Age of a unit's oldest pending stimulus that could wake it (a reply "
         "to Nora inside reply_quiet_seconds does not count), set by the wake "
         "evaluator each tick; 0 when nothing is pending "
-        "(docs/design/cognition-loop/observation.md). ABSENT until the "
+        "(docs/design/cognition/loop.md). ABSENT until the "
         "evaluator's first tick for the unit.",
         ("unit",),
     ),
@@ -2583,7 +2583,7 @@ _HISTOGRAMS: tuple[_HistogramSpec, ...] = (
     _HistogramSpec(
         "nora_relevance_gate_seconds",
         "One Relevance Gate model call's latency, on every exit including the "
-        "fail-closed ones (docs/design/cognition-loop/proactive.md, issue #163). "
+        "fail-closed ones (docs/design/cognition/loop.md, issue #163). "
         "RIGHT-CENSORED at [relevance_gate] timeout_seconds — a timed-out call "
         "is recorded at the ceiling, so read the top bucket against "
         "nora_relevance_gate_errors_total{kind=\"timeout\"}.",

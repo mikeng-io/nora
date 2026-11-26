@@ -435,7 +435,7 @@ def build_tool_specs(
     # shipped default, offline, eval) is the Honcho path.
     memory_retrieval: MemorySearch | None = None,
     all_memory_surfaces: bool = False,
-    # The Profile write (docs/design/unified-memory/profiles.md): the graph surface's
+    # The Profile write (docs/design/cognition/graph.md): the graph surface's
     # `remember` writes a `told` line through it. `None` answers `unavailable`.
     profile: ProfileWriter | None = None,
     # Profile heads shared with the rendered context; None withholds the read.

@@ -1,5 +1,5 @@
 """decision_log -- one row per ambient decision, so Nora's three deciders can
-see each other's verdicts (issue #199, docs/design/ambient-loop).
+see each other's verdicts (issue #199, docs/design/cognition/loop.md).
 
 Nora has three paths that can take a room's floor and, until this table, no
 shared state between them. The Relevance Gate persisted NOTHING durable --

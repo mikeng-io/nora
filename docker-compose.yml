@@ -319,8 +319,8 @@ services:
       - INSTAGRAM_COMMENT_WRITES=${INSTAGRAM_COMMENT_WRITES:-off}
       - INSTAGRAM_COMMENT_DAILY_CAP=${INSTAGRAM_COMMENT_DAILY_CAP:-10}
       - INSTAGRAM_COMMENT_MIN_INTERVAL=${INSTAGRAM_COMMENT_MIN_INTERVAL:-90s}
-      # The story and timeline reads' GraphQL doc_ids (docs/design/cognition-loop/
-      # docs/design/cognition-loop/observation.md), from the host's .env: they rotate with
+      # The story and timeline reads' GraphQL doc_ids (docs/design/cognition/loop.md
+      # docs/design/cognition/loop.md), from the host's .env: they rotate with
       # Instagram's web builds and are never in the repo. Unset is a 501.
       - INSTAGRAM_STORY_DOC_ID=${INSTAGRAM_STORY_DOC_ID:-}
       - INSTAGRAM_TIMELINE_DOC_ID=${INSTAGRAM_TIMELINE_DOC_ID:-}
@@ -459,7 +459,7 @@ services:
     # the `honcho` network below, which holds Honcho's api and this one service.
     # docs/operations/runbook.md §"Closing Honcho" has the order the steps must go in.
     #
-    # `embedder` (docs/design/unified-memory/graph.md V1): the
+    # `embedder` (docs/design/cognition/graph.md V1): the
     # internal network that holds the embedding server and this one service.
     networks: [nora, honcho, embedder]
     logging:
@@ -801,7 +801,7 @@ services:
     volumes:
       - ./config.toml:/app/config.toml:ro
       - ./identity.toml:/app/identity.toml:ro
-      # The unit rollups (step 2, docs/design/cognition-loop/observation.md) read
+      # The unit rollups (step 2, docs/design/cognition/loop.md) read
       # which rooms make up each unit and who its members are. Without it the
       # presence Rollup still runs and the unit rollups compute nothing.
       - ./policy.toml:/app/policy.toml:ro
@@ -863,7 +863,7 @@ services:
       retries: 5
 
   # embedder — the memory index's embedding model
-  # (docs/design/unified-memory/graph.md): Qwen3-VL-Embedding-2B,
+  # (docs/design/cognition/graph.md): Qwen3-VL-Embedding-2B,
   # the Q4_K_M GGUF and its f16 projector, served by llama.cpp's server with
   # `--embedding --pooling last`, the setup the bake-off measured (#22, #24:
   # ~3.06 GB peak RSS, ~0.4 s a text and ~3.4 s an image on norty's CPU).

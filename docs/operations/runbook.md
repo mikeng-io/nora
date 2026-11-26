@@ -54,7 +54,7 @@ To tell "quiet" from "broken":
    `nora_silent_failures_total{audience="heartbeat"}` alongside
    `nora_reminders_fired_total{outcome}` and `nora_heartbeat_last_tick_age_seconds`.
 
-   The participation occasion (docs/design/ambient-loop/01-stages-and-seams.md, once enabled) is the
+   The participation occasion (docs/design/cognition/loop.md, once enabled) is the
    third audience on this series, and it changes what "silent" MEANS: a
    participation turn that says nothing is the HEALTHY outcome, so it never lands
    here — it counts on `nora_participation_silence_total`, and a spoke turn on
@@ -65,7 +65,7 @@ To tell "quiet" from "broken":
    `nora_silent_failures_total{audience="participation"} / (nora_participation_silence_total + nora_participation_spoke_total)`,
    NOT a share of the tag budget.
 
-   The proactive occasion (docs/design/cognition-loop/README.md, DEC-162; since
+   The proactive occasion (docs/design/cognition/loop.md, DEC-162; since
    2026-10-03, DEC-277, its reminder rows are written by the Cognition
    session's `remind`, and the fire path's act turn below is unchanged) is the fourth audience and has
    participation's exact shape: a `kind="proactive"` row's act turn that
@@ -844,7 +844,7 @@ confusable. If it refuses, widen `--range` or lower `--days`.
 **The counter is the weak half and the script says so.** Prometheus labels
 lazily and the process restarts a few times a day, so a refusal never scraped
 before a restart leaves no trace, and times are accurate only to the scrape
-interval. `docs/design/ambient-loop/02-doctrine-and-measurement.md` §3 names the fix — a durable per-verdict row, which
+interval. `docs/design/cognition/loop.md` §3 names the fix — a durable per-verdict row, which
 DEC-179 excluded from `decision_log` on purpose. Until that exists, `overrides`
 is approximate and is a lower bound.
 
@@ -1648,7 +1648,7 @@ is the minimal rollback if the problem is a caller of the old port.
 ## Typed Profile historical recovery
 
 Keep `[memory.profile] read = false` until the operator accepts the
-[bounded cutover evidence](../design/unified-memory/understanding.md)
+[bounded cutover evidence](../design/cognition/graph.md)
 and authorizes the concrete switch. The earlier fixed coverage/reply gates are
 historical, superseded by that acceptance owner. The typed migration is nullable and retains every legacy row; a
 successful old shadow session is not historical coverage. The person adaptor

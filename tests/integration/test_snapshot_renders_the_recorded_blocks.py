@@ -135,7 +135,7 @@ async def test_a_restore_renders_the_blocks_the_turn_was_handed(
         recorded = await render_tag_blocks(live, message=tag, now=NOW)
         # The open note stays in `<notes>` — its own block retains that role;
         # `standing` carries the folded position, never an all-memory
-        # aggregation (docs/design/notebook-memory-types/20-standing.md).
+        # aggregation (docs/design/cognition/graph.md).
         assert "Friday ride" in recorded["notes"]
         assert "they are deciding whether friday still works" in recorded["standing"]
         at = await _clock(engine)

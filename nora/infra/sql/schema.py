@@ -844,7 +844,7 @@ ROLLUP_OUTING = sa.Table(
 #: Daybook: one person's local (Hong Kong) day in one unit. Counts of
 #: what the Record and the rollups below it hold, never an event attended (no
 #: upward input). `items_posted` is NULL where the person's social accounts were not
-#: observed that day (docs/design/cognition-loop/observation.md), 0 where observed and none.
+#: observed that day (docs/design/cognition/loop.md), 0 where observed and none.
 ROLLUP_DAYBOOK = sa.Table(
     "rollup_daybook",
     METADATA,
@@ -5085,8 +5085,8 @@ IDX_SOCIAL_PERCEPTION_ITEM = sa.Index(
 )
 IDX_SOCIAL_PERCEPTION_AT = sa.Index("idx_social_perception_at", SOCIAL_PERCEPTION.c.at)
 
-# What deleting a blob's bytes leaves behind (0109, docs/design/cognition-loop/
-# docs/design/cognition-loop/data.md): the content address, the kind of thing the bytes were
+# What deleting a blob's bytes leaves behind (0109, docs/design/cognition/loop.md
+# docs/design/cognition/loop.md): the content address, the kind of thing the bytes were
 # and when they went, APPEND-ONLY, one row per deletion. The same bytes can be
 # stored again later (a member posts them anew), so a tombstone says the bytes
 # were gone for the rows recorded before `deleted_at`, never for a row
@@ -5116,7 +5116,7 @@ IDX_BLOB_TOMBSTONE_SHA = sa.Index(
 )
 
 
-# `profile` / `profile_line` (migration `0117_persona`, docs/design/unified-memory/profiles.md
+# `profile` / `profile_line` (migration `0117_persona`, docs/design/cognition/graph.md
 # §1): one account per entity, kept as typed lines. `profile` is the account
 # and changes in place (`revision`, bumped by every committed write, is the
 # compare-and-set a session writes against), so it keeps `row_history`.
@@ -5451,7 +5451,7 @@ LEDGER_COMMITMENT_REVISION = _ledger_table(
 )
 LEDGER_THREAD_REVISION = _ledger_table("standing_thread_revision", "thread", history=True)
 
-# Generic memory graph stores (docs/design/unified-memory/graph.md). Vocabularies live in code.
+# Generic memory graph stores (docs/design/cognition/graph.md). Vocabularies live in code.
 ENTITY = sa.Table(
     "entity",
     METADATA,

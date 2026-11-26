@@ -1548,7 +1548,7 @@ class LinkedInSocialConfig(BaseModel):
 
 
 class SocialPollConfig(BaseModel):
-    """The social stream's poller (docs/design/cognition-loop/observation.md):
+    """The social stream's poller (docs/design/cognition/loop.md):
     each member's Instagram account is probed, and a story or a list of
     posts and reels is read only when the probe says it changed. Every value is
     a starting value, sized after a week of `social_poll` rows.
@@ -1661,7 +1661,7 @@ class SocialConfig(BaseModel):
     tool result is re-sent on every subsequent model call and what accumulates
     must be bounded.
 
-    **A story frame's bytes** (docs/design/cognition-loop/observation.md),
+    **A story frame's bytes** (docs/design/cognition/loop.md),
     kept in custody by the poller, are deleted `story_media_keep_days` after
     the frame's `expires_at` once its media is both perceived and embedded,
     and `story_media_keep_max_days` after it whatever is done
@@ -2624,7 +2624,7 @@ class NoraProfileConfig(BaseModel):
 
 
 class ProfileConfig(BaseModel):
-    """`[memory.profile]`: the Profile sessions, in shadow (docs/design/unified-memory/profiles.md,
+    """`[memory.profile]`: the Profile sessions, in shadow (docs/design/cognition/graph.md,
     ). One Dreamer session per (unit, listed person), woken
     like the person's Character session (`[memory.profile.person] update_every_messages` and
     `[memory.profile] update_every_seconds`) and at once by a `told` line a turn wrote about them,

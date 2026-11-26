@@ -65,7 +65,7 @@ both ways (a one-line fix must not be delegated, a multi-file feature must).
 | **3. The relay** | the per-session token relay behind the host's public HTTPS entry, its model allowlist and budget; no egress rule changes | the key negatives and the **positive relay call** (§3) |
 | **4. The Pi adapter and the tool** | the adapter behind a `[subagent]` flag, `coding_task_run` on the sub-agent's surface, the permission policy | the adapter contract; the task corpus (§1); `tool_selection` (§2) |
 | **5. The ACP adapter** | one adapter, enabled per harness after its four questions are answered | the adapter contract per harness; the task corpus for any harness offered as a default |
-| **6. Citable worker records** | the worker session as a turn-record occasion; `turn(...)` citation of it | depends on the standing ledger's record view, citation validation and reader ([standing-ledger 50](../standing-ledger/50-migration.md)); its per-item disclosure rules |
+| **6. Citable worker records** | the worker session as a turn-record occasion; `turn(...)` citation of it | depends on the standing ledger's record view, citation validation and reader ([standing-ledger 50](../cognition/context.md)); its per-item disclosure rules |
 
 Steps 1 to 5 ship without step 6: until then, worker records are kept but not citable.
 

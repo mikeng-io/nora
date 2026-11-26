@@ -434,8 +434,8 @@ tier.** Both are gone: the code is deleted, the decision-index rows are marked
 (never renumbered), and every design node and spec that describes them carries a
 `DEPRECATED` banner. **Their database tables are NOT dropped** — the code goes,
 the schema stays, and dropping them is a separate explicit decision. The evidence
-that decided it is `docs/design/cognition-loop/data.md` ; the issue
-is #115. Nothing under `docs/design/cognition-loop/` numbered 20, 21, 23, 24, 25,
+that decided it is `docs/design/cognition/loop.md` ; the issue
+is #115. Nothing under `docs/design/cognition/loop.md` numbered 20, 21, 23, 24, 25,
 28, 31 or 32 describes code that exists.
 
 **Deprecated 2026-09-08 — the note tier's entity-resolution chain and the
@@ -516,7 +516,7 @@ The catalogue: eight
 layers where an instrument could not observe the thing it existed to observe,
 plus the silent-match family one level down — the instruments we use to FIND
 those layers returning a positive-looking answer without ever engaging.
-`docs/design/cognition-loop/execution.md` is where the bundle gives that
+`docs/design/cognition/loop.md` is where the bundle gives that
 discipline a home for its own change. Neither is repeated here. This section
 carries the eight rules and the measurement behind each.
 
@@ -696,7 +696,7 @@ lived only in the plan, and nothing in this repo had ever looked at one. The
 fix is `== sa.false()` (`nora/infra/sql/turn_verdicts.py:100`) and the check is
 `tests/contract/test_turn_verdict_store_contract.py::test_the_trigger_read_
 actually_uses_its_partial_index`. (Both were deleted on 2026-09-24 with the
-grounding verdict, `docs/design/standing-ledger/00-intent.md`; the lesson stands.)
+grounding verdict, `docs/design/cognition/context.md`; the lesson stands.)
 
 **And the first version of that test compiled its OWN statement** with the
 correct spelling and EXPLAINed that — so reverting the store's predicate to the
@@ -813,7 +813,7 @@ return None` from `_should_rebuild` and the stage raises `AttributeError` on
 assertions still hold. R-72 named that test among the ones enforcing it, and it
 measured nothing. It was found by a reviewer mutating a clause the author had
 not. (R-72 is retired and the test gone with `_should_rebuild` itself, deleted
-2026-09-24 with the grounding verdict, `docs/design/standing-ledger/00-intent.md`; the lesson
+2026-09-24 with the grounding verdict, `docs/design/cognition/context.md`; the lesson
 stands.)
 
 At least five tests in that one file had the shape. The fix in each is two

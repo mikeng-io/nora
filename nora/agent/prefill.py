@@ -158,7 +158,7 @@ _BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
     ("peer_card", 20, "person"),
     ("peer_history", 30, "person"),
     ("people_in_window", 35, "room"),
-    # THE PRE-FETCH (docs/design/unified-memory/README.md): what her memory holds
+    # THE PRE-FETCH (docs/design/cognition/graph.md): what her memory holds
     # that this message touches, searched by code from its own seeds. Beside
     # the memory of the people talking it will replace on the graph surface,
     # and before the unit's open questions. `turn`: it is searched from one
@@ -203,7 +203,7 @@ _BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
     # move every turn. Tag turn only, and only under `[subagent] enabled` with
     # a job in the window.
     ("subagents", 59, "turn"),
-    # THE ONE STANDING BLOCK (docs/design/notebook-memory-types/20-standing.md): her
+    # THE ONE STANDING BLOCK (docs/design/cognition/graph.md): her
     # position, open judgements, pending acts and what she already did —
     # projected per destination from the canonical stores, unit-wide like
     # `notes`, and last of the state blocks so the transcript follows

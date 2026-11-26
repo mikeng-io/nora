@@ -1,6 +1,6 @@
 """The shared cognitive state: dedupe, projection, coverage, render.
 
-`docs/design/notebook-memory-types/20-standing.md`'s generated
+`docs/design/cognition/graph.md`'s generated
 scenarios, at unit grain: the same act in two rooms is ONE act (never a
 citation-set match), an unread source is `unavailable` never
 `nothing_found`, and a send the row could not record is `unknown`, never

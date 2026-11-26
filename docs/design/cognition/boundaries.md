@@ -36,6 +36,9 @@ people's responses to her acts, never only her own earlier words.
 - **Exposure**: external rows may reach a room through the guards; internal
   rows are read by Nora and never egress; operator rows are never read by Nora.
 - A person in two units has independent state in each.
+- **Opening a pass's items** re-applies each item's origin rules against where
+  it would now be shown: a withheld item is counted, never shown, and an item
+  outside the reader's scope reads exactly as one that does not exist.
 - **A DM is a room of the primary unit.** It reads that unit's understanding
   through the ordinary disclosure rules and reads no affiliate unit. Its raw
   items are never shown outside the DM. A claim citing DM items carries the DM

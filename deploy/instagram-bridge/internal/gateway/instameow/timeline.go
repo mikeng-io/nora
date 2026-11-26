@@ -3,7 +3,7 @@ package instameow
 // `GET /accounts/{igid}/items`: one page of an account's posts and reels,
 // newest first, over the web app's profile timeline document
 // (`PolarisProfilePostsTabContentQuery_connection`,
-// docs/design/cognition-loop/observation.md,  «Record everything admitted»).
+// docs/design/cognition/loop.md,  «Record everything admitted»).
 //
 // Before S0 no mechanism for this list was known anywhere (docs/design/instagram-adoption/social.md's
 // investigation; the social stream's back-fill waited on it). The document is
@@ -131,7 +131,7 @@ type timelineNode struct {
 	// leniently (placeOf): a malformed tag never fails the page, and is
 	// carried as an UNKNOWN place, never as "no tag".
 	Location json.RawMessage `json:"location"`
-	// The audience's counts (docs/design/cognition-loop/observation.md), each read leniently (countOf, flagOf):
+	// The audience's counts (docs/design/cognition/loop.md), each read leniently (countOf, flagOf):
 	// a value of the wrong type, a negative count or an absent key is
 	// unknown, never 0, and never fails the page. Who liked (`top_likers`,
 	// `facepile_top_likers`), Nora's own like (`has_liked`) and the Facebook

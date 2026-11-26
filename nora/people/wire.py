@@ -88,7 +88,7 @@ class UnitRoomsWiring:
 
 
 def unit_rooms(allowlist) -> UnitRoomsWiring:
-    # The one Standing view (docs/design/notebook-memory-types/20-standing.md): ONE reader over
+    # The one Standing view (docs/design/cognition/graph.md): ONE reader over
     # the canonical stores, held by the tag assembler, the fire path and the cognition
     # session — a second copy per path would be the second store the design rules out.…
     unit_rooms = LiveMapping(

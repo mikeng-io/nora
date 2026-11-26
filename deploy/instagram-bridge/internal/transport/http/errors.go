@@ -27,7 +27,7 @@ package httptransport
 //	     too: Instagram answered a configured document with an error naming
 //	     the DOCUMENT (its doc_id rotated with a web build), so the read has
 //	     no working mechanism until an operator captures the id again
-//	     (docs/design/cognition-loop/observation.md). It is NOT a session
+//	     (docs/design/cognition/loop.md). It is NOT a session
 //	     problem and NOT a 502: a caller halts that one read and must not
 //	     back the login off, which a 502 asks for.
 //	502  Instagram answered, and the answer was an error

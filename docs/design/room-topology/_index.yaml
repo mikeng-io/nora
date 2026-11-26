@@ -11,7 +11,7 @@ description: >
   (the operator's description), what it is like (its culture) and what is
   being passed on, and asks when two rooms fit. Room names become unique
   within a unit in place of the one-per-platform refusal. Cross-room shared
-  state is the unit scope of docs/design/standing-ledger/, not a transcript feed.
+  state is the unit scope of docs/design/cognition/context.md, not a transcript feed.
   Steps 1 and 2 are merged; step 3 removes the refusal and amends the decisions.
   Live policy admission remains the operator's config change.
 status: proposal

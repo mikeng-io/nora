@@ -1,4 +1,4 @@
-"""`SocialPoller` — the social stream's clock (docs/design/cognition-loop/observation.md):
+"""`SocialPoller` — the social stream's clock (docs/design/cognition/loop.md):
 it probes each member's account on one network, reads a story or
 a page of posts and reels only when the probe says it changed, and records
 what it found.
