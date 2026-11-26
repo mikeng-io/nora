@@ -133,8 +133,7 @@ lands an indexed decision, and these headings in order:
 - **Architecture**: the design bundle the change edits, or `none` and why.
 - **Also**: findings left outside the change; omit when empty.
 - **Gate on the merged tree**: the actual outcome and exit code.
-- **Produced by**: one row per builder and reviewer, each with its ADE or IDE, coding
-  agent and exact model (`docs/engineering/documents.md` «Provenance»).
+- **Produced by**: a row per builder and reviewer: ADE or IDE, agent, exact model.
 - **Closes**: `Closes #N` only when the PR fully resolves it; otherwise reference
   `issue #N` in the prose. Omit when there is no issue.
 

@@ -43,7 +43,10 @@ Every item passes all of these:
    Boundaries. A requirement found only in a bundle the anchor contradicts is
    a design defect to fix first, not a requirement.
 6. **Small.** At most 6 items, in one area. More routes to a split, and each
-   child names the parent item it advances.
+   child names the parent item it advances. A child that advances none, or adds
+   a capability, tool, store or read path to a removal outcome, is a scope
+   amendment for the operator before dispatch. One branch chain carries one
+   outcome; another outcome starts from `master` on its own branch.
 
 Progress, gaps and partial verdicts go in Current state, never in Done when.
 

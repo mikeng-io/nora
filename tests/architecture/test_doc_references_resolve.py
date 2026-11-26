@@ -63,6 +63,7 @@ would otherwise be flagged.
 
 from __future__ import annotations
 
+from scripts.check_documents import STAGED_TARGETS
 import re
 import subprocess
 from pathlib import Path
@@ -447,7 +448,11 @@ def test_every_doc_reference_resolves_or_is_a_known_finding() -> None:
         "before trusting a green run"
     )
 
-    unpinned = {k: v for k, v in found.items() if k not in _KNOWN_DANGLING}
+    # A path a later calibration unit generates is staged in the document gate,
+    # which owns the list; anything else unresolved is a finding.
+    unpinned = {
+        k: v for k, v in found.items() if k not in _KNOWN_DANGLING and k[1] not in STAGED_TARGETS
+    }
     assert not unpinned, (
         "new dangling documentation reference(s) — a backticked path that no "
         "longer resolves and is not in _KNOWN_DANGLING. Report to the "

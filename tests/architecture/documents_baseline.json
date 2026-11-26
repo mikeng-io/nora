@@ -1,0 +1,208 @@
+{
+ "ARCHITECTURE.md": [
+  "root-document"
+ ],
+ "DESIGN.md": [
+  "root-document"
+ ],
+ "GLOSSARY.md": [
+  "root-document"
+ ],
+ "ORCHESTRATION.md": [
+  "root-document"
+ ],
+ "REVIEW.md": [
+  "root-document"
+ ],
+ "SECURITY_MODEL.md": [
+  "root-document"
+ ],
+ "docs/adr/0001-honcho-is-interpretation-not-record.md": [
+  "frontmatter-missing"
+ ],
+ "docs/adr/0002-honcho-session-binding-deferred.md": [
+  "frontmatter-missing"
+ ],
+ "docs/adr/0003-context-budget-deferred-read-the-counter.md": [
+  "frontmatter-missing"
+ ],
+ "docs/adr/0004-tool-naming-is-measured.md": [
+  "frontmatter-missing"
+ ],
+ "docs/adr/0005-grounding-is-four-kinds.md": [
+  "frontmatter-missing"
+ ],
+ "docs/adr/0006-reasoning-effort-is-protocol-discipline.md": [
+  "frontmatter-missing"
+ ],
+ "docs/adr/0007-tool-surface-policy.md": [
+  "frontmatter-missing"
+ ],
+ "docs/adr/0008-tool-contract-metadata.md": [
+  "frontmatter-missing"
+ ],
+ "docs/adr/0009-output-contract-vocabulary.md": [
+  "frontmatter-missing"
+ ],
+ "docs/adr/0010-agents-md-is-the-entry-point.md": [
+  "frontmatter-missing"
+ ],
+ "docs/adr/0011-the-relevance-gate-stays-off-the-sdk-transport.md": [
+  "frontmatter-missing"
+ ],
+ "docs/adr/0012-one-renderer-for-every-context-block.md": [
+  "frontmatter-missing"
+ ],
+ "docs/adr/0013-a-block-says-what-it-is-and-its-type-says-it.md": [
+  "frontmatter-missing"
+ ],
+ "docs/adr/0013-the-reasoning-strip-is-counted-in-postgres.md": [
+  "frontmatter-missing"
+ ],
+ "docs/adr/0014-a-tagged-place-outranks-an-auto-identified-one.md": [
+  "frontmatter-missing"
+ ],
+ "docs/adr/0015-tool-surface-policy-v2.md": [
+  "frontmatter-missing"
+ ],
+ "docs/adr/0016-skill-policy.md": [
+  "frontmatter-missing"
+ ],
+ "docs/adr/0017-agent-skills-carry-the-procedures.md": [
+  "frontmatter-missing"
+ ],
+ "docs/adr/0018-a-note-revision-restates-the-body.md": [
+  "frontmatter-missing"
+ ],
+ "docs/adr/0019-noras-computer-runs-in-an-sbx-microvm.md": [
+  "frontmatter-missing"
+ ],
+ "docs/adr/0020-documents-are-json-specs-the-portal-renders.md": [
+  "frontmatter-missing"
+ ],
+ "docs/adr/0021-every-prompt-is-assembled-and-the-enforcer-finds-it.md": [
+  "frontmatter-missing"
+ ],
+ "docs/adr/0022-noras-browser-is-headed-chrome-with-a-vault-fill-broker.md": [
+  "frontmatter-missing"
+ ],
+ "docs/adr/0023-artifacts-are-files-the-portal-shares-and-drop-retires.md": [
+  "frontmatter-missing"
+ ],
+ "docs/adr/0024-releases-are-cut-by-release-please-and-the-upgrade-note-retires.md": [
+  "frontmatter-missing"
+ ],
+ "docs/adr/0025-group-computer-workspaces-belong-to-units.md": [
+  "frontmatter-missing"
+ ],
+ "docs/adr/0026-the-character-tier-names-its-entry-parts-profile-traits-hypotheses.md": [
+  "frontmatter-missing"
+ ],
+ "docs/adr/0027-the-release-pr-is-planned-from-git-reachability-and-the-merge-rules-are-github-rulesets.md": [
+  "frontmatter-missing"
+ ],
+ "docs/adr/0028-pull-requests-are-labelled-and-assigned-by-a-workflow-and-a-visible-commit-has-a-body.md": [
+  "frontmatter-missing"
+ ],
+ "docs/adr/0029-a-prompt-block-names-its-subject-and-author-by-id.md": [
+  "frontmatter-missing"
+ ],
+ "docs/adr/0030-content-filters-are-disabled-by-default-and-reversible.md": [
+  "frontmatter-missing"
+ ],
+ "docs/adr/0031-master-pushes-automatically-release-patch-and-minor.md": [
+  "frontmatter-missing"
+ ],
+ "docs/adr/0032-reuse-proven-release-artifacts-and-reconcile-containers.md": [
+  "frontmatter-missing"
+ ],
+ "docs/adr/0033-private-secrets-and-model-endpoints.md": [
+  "frontmatter-missing"
+ ],
+ "docs/adr/0034-self-hosted-signoz-unifies-application-and-llm-observability.md": [
+  "frontmatter-missing"
+ ],
+ "docs/adr/0035-shared-smokescreen-http-egress.md": [
+  "frontmatter-missing"
+ ],
+ "docs/adr/0036-pull-requests-run-the-tests-their-diff-can-affect.md": [
+  "frontmatter-missing"
+ ],
+ "docs/adr/0037-code-is-grouped-by-area-and-depends-inward.md": [
+  "frontmatter-missing"
+ ],
+ "docs/adr/0038-bound-automatic-validation-and-run-full-tests-on-demand.md": [
+  "frontmatter-missing"
+ ],
+ "docs/adr/0039-nora-assets-and-nora-site-leave-this-repo.md": [
+  "frontmatter-missing"
+ ],
+ "docs/adr/0040-every-release-is-a-patch-and-the-deploy-checks-the-host.md": [
+  "frontmatter-missing"
+ ],
+ "docs/adr/README.md": [
+  "frontmatter-missing"
+ ],
+ "docs/code-standards.md": [
+  "frontmatter-missing"
+ ],
+ "docs/configuration.md": [
+  "frontmatter-missing"
+ ],
+ "docs/eval-sop.md": [
+  "frontmatter-missing"
+ ],
+ "docs/maintainers/ai-engineering-study.md": [
+  "frontmatter-missing"
+ ],
+ "docs/maintainers/blender-mcp.md": [
+  "frontmatter-missing"
+ ],
+ "docs/maintainers/conventions-rationale.md": [
+  "frontmatter-missing"
+ ],
+ "docs/maintainers/conventions.md": [
+  "frontmatter-missing"
+ ],
+ "docs/maintainers/github.md": [
+  "frontmatter-missing"
+ ],
+ "docs/maintainers/lessons.md": [
+  "frontmatter-missing"
+ ],
+ "docs/maintainers/managed-identity-export.md": [
+  "frontmatter-missing"
+ ],
+ "docs/maintainers/managed-identity-handoff.md": [
+  "frontmatter-missing"
+ ],
+ "docs/maintainers/roadmap-review-2026-11-02.md": [
+  "frontmatter-missing",
+  "numbered-or-dated-name"
+ ],
+ "docs/observability.md": [
+  "frontmatter-missing"
+ ],
+ "docs/releases/README.md": [
+  "frontmatter-missing"
+ ],
+ "docs/releases/V3.md": [
+  "frontmatter-missing"
+ ],
+ "docs/releases/V4.md": [
+  "frontmatter-missing"
+ ],
+ "docs/releases/V5.md": [
+  "frontmatter-missing"
+ ],
+ "docs/runbook.md": [
+  "frontmatter-missing"
+ ],
+ "docs/security/2026-10-22-aikido-high-triage.md": [
+  "frontmatter-missing",
+  "numbered-or-dated-name"
+ ],
+ "docs/security/outbound-fetches.md": [
+  "frontmatter-missing"
+ ]
+}

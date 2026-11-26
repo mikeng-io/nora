@@ -25,9 +25,6 @@ from tests.pii_synth import Synth
 
 ROOT = Path(__file__).resolve().parents[2]
 
-# Every commit names what produced it; these tests judge the identifier scanner.
-PROVENANCE = "Environment: test\nAgent: test\nModel: test"
-
 
 def _load(name: str):
     spec = importlib.util.spec_from_file_location(name, ROOT / "scripts" / f"{name}.py")
@@ -42,6 +39,7 @@ SY = Synth(4242)
 NAME = "Quorvel Tamriswix"  # invented; in the test denylist only
 PHONE = SY.phone("81")
 UUID = SY.uuid()
+PROVENANCE = "Environment: test\nAgent: test\nModel: test"
 
 
 class Repo:
@@ -65,8 +63,7 @@ class Repo:
 
     def commit(self, msg: str, *paths: str, env: dict | None = None, no_verify: bool = False):
         self.git("add", *(paths or ["-A"]))
-        # A body, so a `feat:`/`fix:` message satisfies the commit-body rule and these
-        # tests keep judging the identifier scanner alone.
+        # A body and provenance, so these tests judge the identifier scanner alone.
         body = "A body that states the reason, so the body rule passes.\n\n" + PROVENANCE
         args = ["commit", "-q", "-m", msg, "-m", body] + (["--no-verify"] if no_verify else [])
         return self.git(*args, env=env)

@@ -870,8 +870,8 @@
  {
   "name": "round 3 e: commit-msg scans before the subject checker prints",
   "file": ".githooks/commit-msg",
-  "old": "python3 -I -S \"$SCANNER\" message \"$1\"\nexec python3 -I -S \"$CHECKER\" \"$1\"",
-  "new": "python3 -I -S \"$CHECKER\" \"$1\"\nexec python3 -I -S \"$SCANNER\" message \"$1\"",
+  "old": "python3 -I -S \"$SCANNER\" message \"$1\"\n# Provenance is judged by the author identity git will record, never by the message.\nauthor_email=\"$(git var GIT_AUTHOR_IDENT | sed -E 's/^.*<([^>]*)>.*$/\\1/')\"\nexec python3 -I -S \"$CHECKER\" \"$1\" \"$author_email\"",
+  "new": "# Provenance is judged by the author identity git will record, never by the message.\nauthor_email=\"$(git var GIT_AUTHOR_IDENT | sed -E 's/^.*<([^>]*)>.*$/\\1/')\"\npython3 -I -S \"$CHECKER\" \"$1\" \"$author_email\"\nexec python3 -I -S \"$SCANNER\" message \"$1\"",
   "target": "tests/infra/test_pii_hooks.py::test_a_bad_subject_never_prints_an_identifier"
  },
  {

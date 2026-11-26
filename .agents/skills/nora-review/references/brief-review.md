@@ -27,7 +27,7 @@ Check, and cite file:line or the source for each finding:
 5. **Route.** The route matches the triggers in `nora-work/references/lifecycle.md`.
 6. **Scoped.** For a split's child, each item advances a named parent item,
    and nothing adds a capability, tool, store or read path to a removal
-   outcome (`ORCHESTRATION.md` «Coordination and decisions»). Either one is a
+   outcome (`nora-dispatch/references/brief.md` «Small»). Either one is a
    BLOCKER that goes to Mike.
 
 **Return:** for each item, APPROVE or BLOCKER with a one-line reason. Label a
