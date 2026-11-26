@@ -25,6 +25,10 @@ Check, and cite file:line or the source for each finding:
 4. **Operator authority.** The authority, side effects and blast radius are
    stated, and none exceeds what Mike has granted.
 5. **Route.** The route matches the triggers in `nora-work/references/lifecycle.md`.
+6. **Scoped.** For a split's child, each item advances a named parent item,
+   and nothing adds a capability, tool, store or read path to a removal
+   outcome (`ORCHESTRATION.md` «Coordination and decisions»). Either one is a
+   BLOCKER that goes to Mike.
 
 **Return:** for each item, APPROVE or BLOCKER with a one-line reason. Label a
 BLOCKER that the author's pre-flight should have caught as `pre-flight miss`.

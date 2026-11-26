@@ -91,6 +91,16 @@ For a shared design, interface or migration, read the related active work and
 session threads before assigning writes (`nora-dispatch`); one writer owns a shared
 seam at a time, and one outcome owner integrates.
 
+- **Scope is the parent's Done-when.** Each unit of a split names the parent
+  item it advances. A unit that advances none is a scope amendment, and so is
+  one that adds a capability, tool, store or read path to an outcome whose
+  subject is removal. Both go to the operator before dispatch.
+- **One outcome per branch chain.** Work for another outcome starts from
+  `master` on its own branch; it never rides another outcome's chain.
+- **The design anchor settles conflicts.** When two bundles disagree, the work
+  stops and the design is fixed first (`nora-design`). A brief never resolves a
+  design conflict by choosing a side.
+
 ## Execution tier
 
 Pick the lowest tier that covers the ambiguity and the cost of a miss; disclosure,

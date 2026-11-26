@@ -40,8 +40,10 @@ Every item passes all of these:
    every legitimate case fails.
 5. **Faithful.** No requirement of the source issue or the design that belongs
    to this outcome is dropped. Moving one out of scope names it in
-   Boundaries.
-6. **Small.** At most 6 items, in one area. More routes to a split.
+   Boundaries. A requirement found only in a bundle the anchor contradicts is
+   a design defect to fix first, not a requirement.
+6. **Small.** At most 6 items, in one area. More routes to a split, and each
+   child names the parent item it advances.
 
 Progress, gaps and partial verdicts go in Current state, never in Done when.
 
@@ -52,7 +54,9 @@ author does that discovery first, so that the first review round normally finds
 no BLOCKER.
 
 1. **Census the sources.** List every requirement in the source request, the
-   issue, the design it cites and Mike's rulings, each with its location. Map
+   issue, the design it cites and Mike's rulings, each with its location, read
+   at the brief's base revision. A previous session's notes, handoffs and
+   narratives are leads to check, never evidence. Map
    each one to a Done-when item or to a named exclusion in Boundaries. A
    requirement mapped to neither is a gap to fix now.
 2. **Run the reviewer's checklist yourself.** Apply the finite checklist above,
