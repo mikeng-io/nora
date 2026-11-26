@@ -1,6 +1,6 @@
 """The `SqlBindingStore.register` transaction's named steps — person,
 identifier ownership, re-binding and the account row, all run inside the
-caller's one `engine.begin()` (`docs/design/managed-identity-access/`).
+caller's one `engine.begin()` (`docs/design/people/README.md`).
 """
 
 from __future__ import annotations

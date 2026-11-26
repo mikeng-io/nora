@@ -600,7 +600,7 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "nora_presence_fixes_total",
         "Distinct location fixes written to presence_fixes, by circle and the "
         "wire_state the fix carried (live / stale). A change-recorder count: a "
-        "still member does not increment it (docs/design/self-awareness/presence.md).",
+        "still member does not increment it (docs/design/presence/README.md).",
         ("circle", "wire_state"),
     ),
     # Every circle READ, by how it resolved. `unavailable` (transport / non-200)
@@ -659,7 +659,7 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     _CounterSpec(
         "nora_presence_disclosure_refusals_total",
         "whereis disclosures refused (R-21 fail-closed seam, "
-        "docs/design/self-awareness/presence.md). `reason` names WHICH of the three conditions "
+        "docs/design/location/README.md). `reason` names WHICH of the three conditions "
         "fired so a refusal is diagnosable: `degraded` (roster unverifiable — answers "
         "`unavailable` rather than `refused`, R-27, but still counted here), `unnamed` (an account "
         "in the room maps to no person_id), `not_subset` (a mapped member is outside the circle "

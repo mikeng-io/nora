@@ -1,4 +1,4 @@
-"""presence_fixes — the presence collector's record (docs/design/self-awareness/presence.md)
+"""presence_fixes — the presence collector's record (docs/design/presence/README.md)
 
 A second table in the SAME `nora` database as `messages` (docs/design/cognition/loop.md),
 PLAINTEXT

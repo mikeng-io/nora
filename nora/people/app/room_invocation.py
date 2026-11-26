@@ -1,6 +1,6 @@
 """One authenticated in-room management invocation, for both entries.
 
-`docs/design/managed-identity-access/management.md` «In-room management»: a
+`docs/design/people/authority.md` «In-room management»: a
 delegated operator asks Nora, in the room itself, to register one referenced
 platform account or to add/remove one person's scoped membership. Two entry
 surfaces land on the same invocation here:

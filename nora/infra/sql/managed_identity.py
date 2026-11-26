@@ -1,7 +1,7 @@
 """SQL BindingStore with individually committed reads/writes.
 
 Ownership, lifecycle, aliases and recovery contracts are declared in
-`docs/design/managed-identity-access/` and the shared binding-store contract suite.
+`docs/design/people/README.md` and the shared binding-store contract suite.
 """
 
 from __future__ import annotations

@@ -747,7 +747,7 @@ headers_env = ""                      # env var NAME holding auth headers; reuse
 # [identity] — which backend owns person binding and scoped grants.
 # "file" (default) is identity.toml + policy.toml exactly as today;
 # "managed" selects self-hosted Ory Kratos + Keto + PostgreSQL under the
-# same ports (docs/design/managed-identity-access/). A backend change is a
+# same ports (docs/design/people/README.md). A backend change is a
 # boot-time decision — it builds a different object graph, so it is a
 # restart, never a hot reload.
 # backend = "file"

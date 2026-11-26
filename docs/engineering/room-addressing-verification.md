@@ -1,14 +1,12 @@
 ---
-type: design
-title: "Verification: the routing eval, tool_selection, and the policy and relay tests"
-description: "A send_to routing corpus with clear, ask and refuse cases, measured on master and on the branch; tool_selection for the new argument; the unit tests that pin the new invariant and the unchanged gates."
-tags: [nora, topology, eval, routing, send-to, tests]
-timestamp: '2026-10-25'
-edges:
-  - {dst: 20-addressing, rel: measures, provenance: asserted}
+class: engineering
+subject: "how room addressing is measured: the routing corpus, tool selection and the unit tests"
+owns: [room addressing verification]
+links:
+  - {to: docs/design/people/rooms.md, rel: uses}
 ---
 
-# 40 · Verification
+# Room addressing verification
 
 ## 1. Routing corpus (new)
 

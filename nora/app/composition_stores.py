@@ -435,7 +435,7 @@ async def managed_identity(
     listeners before the app accepts the backend. An unreachable Kratos or
     Keto is `StartupError`, never a fallback to file grants: falling back
     would silently serve stale file authority as managed truth
-    (`docs/design/managed-identity-access/authorization.md` «Failure»).
+    (`docs/design/people/authority.md` «Failure»).
     """
     _people_wire = importlib.import_module("nora.people").wire
     if cfg.identity.backend == "file":

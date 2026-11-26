@@ -3,10 +3,6 @@
   "numbered-or-dated-name",
   "date"
  ],
- "docs/design/04-config-identity.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
  "docs/design/05-evaluation.md": [
   "numbered-or-dated-name",
   "date",
@@ -21,12 +17,6 @@
   "not-a-design-file",
   "date",
   "history-marker",
-  "over-budget"
- ],
- "docs/design/10-identity-and-policy-schema.md": [
-  "numbered-or-dated-name",
-  "date",
-  "status-marker",
   "over-budget"
  ],
  "docs/design/10-preview-identity.toml": [
@@ -175,35 +165,6 @@
   "status-marker",
   "issue-search-link"
  ],
- "docs/design/event-abstraction/00-overview.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "docs/design/event-abstraction/01-shape-decision.md": [
-  "numbered-or-dated-name",
-  "not-a-design-file",
-  "date"
- ],
- "docs/design/event-abstraction/02-naming-rename.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "docs/design/event-abstraction/03-reminder-schema.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "docs/design/event-abstraction/04-dispatch-and-batching.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "docs/design/event-abstraction/05-gathering-fold-in.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "docs/design/event-abstraction/_index.yaml": [
-  "not-a-design-file",
-  "date"
- ],
  "docs/design/external-files/00-design.md": [
   "numbered-or-dated-name",
   "date",
@@ -266,30 +227,6 @@
   "not-a-design-file",
   "date"
  ],
- "docs/design/online-status/00-overview.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "docs/design/online-status/01-tool-shape-and-naming.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "docs/design/online-status/02-data-sources.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "docs/design/online-status/03-guards-and-disclosure.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "docs/design/online-status/04-consumers.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "docs/design/online-status/_index.yaml": [
-  "not-a-design-file",
-  "date"
- ],
  "docs/design/platform-bridges/00-contract.md": [
   "numbered-or-dated-name",
   "date"
@@ -318,51 +255,7 @@
   "status-marker",
   "issue-search-link"
  ],
- "docs/design/policy-reload/README.md": [
-  "status-marker",
-  "issue-search-link"
- ],
- "docs/design/private-dm.md": [
-  "date"
- ],
- "docs/design/private-dm/README.md": [
-  "status-marker",
-  "issue-search-link"
- ],
- "docs/design/room-topology/00-intent.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "docs/design/room-topology/10-topology.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "docs/design/room-topology/20-addressing.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "docs/design/room-topology/30-what-reads-the-platform.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "docs/design/room-topology/40-verification.md": [
-  "numbered-or-dated-name",
-  "date"
- ],
- "docs/design/room-topology/50-migration.md": [
-  "numbered-or-dated-name",
-  "not-a-design-file",
-  "date"
- ],
- "docs/design/room-topology/_index.yaml": [
-  "not-a-design-file",
-  "date"
- ],
  "docs/design/sandbox-runtime/README.md": [
-  "status-marker",
-  "issue-search-link"
- ],
- "docs/design/self-awareness/README.md": [
   "status-marker",
   "issue-search-link"
  ],
@@ -417,10 +310,6 @@
   "issue-search-link"
  ],
  "docs/design/video-generation/README.md": [
-  "status-marker",
-  "issue-search-link"
- ],
- "docs/design/voice-channel/README.md": [
   "status-marker",
   "issue-search-link"
  ],

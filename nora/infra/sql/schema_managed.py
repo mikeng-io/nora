@@ -1,4 +1,4 @@
-"""Managed identity and scoped access tables (`docs/design/managed-identity-access/`).
+"""Managed identity and scoped access tables (`docs/design/people/README.md`).
 
 One canonical person across accounts and platforms; a matchable identifier
 has exactly one owner, enforced by the identifier table's primary key —
