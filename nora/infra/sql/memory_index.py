@@ -685,7 +685,8 @@ async def story_frame_embedded(
     conn: AsyncConnection, frames: Iterable[tuple[str, str]], *, model: str,
 ) -> set[tuple[str, str]]:
     """Of `frames` (`(network, item_id)`), those whose embedding is done, for
-    `StoryMediaExpiry` (design/cognition-loop/observation.md): the frame has at least
+    `StoryMediaExpiry` (design/18-media-custody.md;
+    design/instagram-adoption/social.md): the frame has at least
     one medium node, and every one of them holds a vector of `model` or is
     terminal, given up (`EMBED_MAX_ATTEMPTS`) or failed `empty`, which no
     later tick will change. A frame with no medium node (never projected,

@@ -1581,7 +1581,8 @@ class SocialConfig(BaseModel):
     tool result is re-sent on every subsequent model call and what accumulates
     must be bounded.
 
-    **A story frame's bytes** (design/cognition-loop/observation.md),
+    **A story frame's bytes** (design/18-media-custody.md;
+    design/instagram-adoption/social.md),
     kept in custody by the poller, are deleted `story_media_keep_days` after
     the frame's `expires_at` once its media is both perceived and embedded,
     and `story_media_keep_max_days` after it whatever is done

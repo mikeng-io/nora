@@ -2,10 +2,8 @@ from __future__ import annotations
 
 import functools
 import logging
-from collections.abc import Awaitable, Callable, Mapping, Sequence
+from collections.abc import Mapping
 from typing import Any
-
-from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nora.agent.dreamer import HomeRoom
 from nora.app.gatherings import screened_area
@@ -252,20 +250,6 @@ def social_unit_rooms(allowlist: Any)-> dict[str, tuple[tuple[str, str], ...]]:
         )
         for unit in {c.unit for c in allowlist.rooms() if c.unit}
     }
-
-
-def _story_frames_embedded(
-    engine: AsyncEngine, model: str,
-) -> Callable[[Sequence[tuple[str, str]]], Awaitable[set[tuple[str, str]]]]:
-    """The memory index's answer to which story frames are embedded under the"""
-    from nora.infra.sql.memory_index import story_frame_embedded
-
-    async def embedded(frames: Sequence[tuple[str, str]]) -> set[tuple[str, str]]:
-
-        async with engine.connect() as conn:
-            return await story_frame_embedded(conn, frames, model=model)
-
-    return embedded
 
 
 def reverse_geocoder(

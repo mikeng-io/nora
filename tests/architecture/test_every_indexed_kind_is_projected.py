@@ -50,7 +50,9 @@ _SANDBOX_REPLAY_FILES = frozenset({"scripts/memory_graph_spike.py"})
 _SCAN_ROOTS = ("nora", "scripts")
 
 
-def _projector_names(tree: ast.Module) -> tuple[set[str], set[str]]:
+def _projector_names(
+    tree: ast.Module, function_names: frozenset[str] = _PROJECTING_CALLS,
+) -> tuple[set[str], set[str]]:
     """Names bound to the memory-index module or to one of its projection calls."""
     modules: set[str] = set()
     functions: set[str] = set()
@@ -59,7 +61,7 @@ def _projector_names(tree: ast.Module) -> tuple[set[str], set[str]]:
             for alias in node.names:
                 if f"{node.module}.{alias.name}" == _MEMORY_INDEX_MODULE:
                     modules.add(alias.asname or alias.name)
-                elif node.module == _MEMORY_INDEX_MODULE and alias.name in _PROJECTING_CALLS:
+                elif node.module == _MEMORY_INDEX_MODULE and alias.name in function_names:
                     functions.add(alias.asname or alias.name)
         elif isinstance(node, ast.Import):
             for alias in node.names:
@@ -68,13 +70,16 @@ def _projector_names(tree: ast.Module) -> tuple[set[str], set[str]]:
     return modules, functions
 
 
-def _projection_call(node: ast.AST, modules: set[str], functions: set[str]) -> str | None:
+def _projection_call(
+    node: ast.AST, modules: set[str], functions: set[str],
+    call_names: frozenset[str] = _PROJECTING_CALLS,
+) -> str | None:
     if not isinstance(node, ast.Call):
         return None
     func = node.func
     if isinstance(func, ast.Name) and func.id in functions:
         return func.id
-    if isinstance(func, ast.Attribute) and func.attr in _PROJECTING_CALLS:
+    if isinstance(func, ast.Attribute) and func.attr in call_names:
         value = func.value
         if isinstance(value, ast.Name) and value.id in modules:
             return func.attr
@@ -83,23 +88,27 @@ def _projection_call(node: ast.AST, modules: set[str], functions: set[str]) -> s
     return None
 
 
-def _projection_calls(path: Path) -> list[tuple[str, int, str]]:
+def _projection_calls(
+    path: Path, function_names: frozenset[str] = _PROJECTING_CALLS,
+) -> list[tuple[str, int, str]]:
     tree = ast.parse(path.read_text(encoding="utf-8"))
-    modules, functions = _projector_names(tree)
+    modules, functions = _projector_names(tree, function_names)
     return [
         (str(path.relative_to(ROOT)), node.lineno, name)
         for node in ast.walk(tree)
-        if (name := _projection_call(node, modules, functions)) is not None
+        if (name := _projection_call(node, modules, functions, function_names)) is not None
     ]
 
 
-def _production_projection_calls() -> list[tuple[str, int, str]]:
+def _production_projection_calls(
+    function_names: frozenset[str] = _PROJECTING_CALLS,
+) -> list[tuple[str, int, str]]:
     found = []
     for root in _SCAN_ROOTS:
         for path in sorted((ROOT / root).rglob("*.py")):
             if "migrations" in path.parts:
                 continue
-            found.extend(_projection_calls(path))
+            found.extend(_projection_calls(path, function_names))
     return found
 
 
@@ -278,6 +287,53 @@ def test_no_live_writer_projects_the_legacy_index() -> None:
         "production legacy projection returned; only deletion custody (`drop`) "
         f"and the pinned/explicit substrate may write the legacy index: {disallowed}"
     )
+
+
+def test_the_story_frame_embedded_scan_sees_every_import_form() -> None:
+    """Positive control for the read scan: no import shape makes its zero vacuous."""
+    target = frozenset({"story_frame_embedded"})
+    write = "def f():\n"
+    cases = {
+        "package module": "from nora.infra.sql import memory_index\n" + write
+        + "    memory_index.story_frame_embedded(conn, [], model='m')\n",
+        "module alias": "from nora.infra.sql import memory_index as mi\n" + write
+        + "    mi.story_frame_embedded(conn, [], model='m')\n",
+        "function import": "from nora.infra.sql.memory_index import story_frame_embedded as s\n"
+        + write + "    s(conn, [], model='m')\n",
+        "function-local import": write
+        + "    from nora.infra.sql import memory_index\n"
+        + "    memory_index.story_frame_embedded(conn, [], model='m')\n",
+        "fully qualified": write
+        + "    nora.infra.sql.memory_index.story_frame_embedded(conn, [], model='m')\n",
+        "direct module import": "import nora.infra.sql.memory_index\n" + write
+        + "    memory_index.story_frame_embedded(conn, [], model='m')\n",
+    }
+    for label, code in cases.items():
+        tree = ast.parse(code)
+        modules, functions = _projector_names(tree, target)
+        assert any(
+            _projection_call(node, modules, functions, target)
+            for node in ast.walk(tree)
+        ), label
+
+
+def test_no_live_caller_reads_story_embedding_from_the_legacy_index() -> None:
+    """`story_frame_embedded` has no caller outside tests and no replacement reader."""
+    target = frozenset({"story_frame_embedded"})
+    control = ast.parse(
+        "def f():\n"
+        "    from nora.infra.sql.memory_index import story_frame_embedded\n"
+        "    story_frame_embedded(conn, [], model='m')\n",
+    )
+    modules, functions = _projector_names(control, target)
+    assert any(
+        _projection_call(node, modules, functions, target) for node in ast.walk(control)
+    ), "positive control: the scan sees the legacy read"
+    offenders = sorted(
+        f"{path}:{line} {name}"
+        for path, line, name in _production_projection_calls(target)
+    )
+    assert not offenders, f"production legacy story-embedding read returned: {offenders}"
 
 
 def test_the_projection_gate_is_gone() -> None:
