@@ -47,6 +47,11 @@ jobs:
           enable-cache: false
       - run: uv sync --frozen --extra evals
       - run: make lint typecheck imports
+      - name: Changed documents follow docs/engineering/documents.md
+        if: github.event_name == 'pull_request'
+        run: |
+          git fetch --no-tags --depth=1 origin ${{ github.event.pull_request.base.sha }}
+          uv run python -m scripts.check_documents --base ${{ github.event.pull_request.base.sha }}
 
   contracts:
     needs: classify

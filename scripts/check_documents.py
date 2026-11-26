@@ -1,14 +1,14 @@
-"""Check every document against docs/engineering/documents.md.
+"""Check the documents a change touches against docs/engineering/documents.md.
 
-`tests/architecture/test_documents.py` holds existing violations to
-`tests/architecture/documents_baseline.json`, which only shrinks.
+Only changed files are judged, so an untouched legacy file is not, and touching one
+means fixing it. The whole tree is still read for the cross-file rules.
 
-usage: python -m scripts.check_documents --write   # rewrite the baseline after a cleanup
+usage: python -m scripts.check_documents --staged       # the pre-commit hook
+       python -m scripts.check_documents --base <ref>   # CI: what a PR changed
 """
 
 from __future__ import annotations
 
-import json
 import re
 import subprocess
 import sys
@@ -17,7 +17,6 @@ from pathlib import Path
 import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
-BASELINE = ROOT / "tests" / "architecture" / "documents_baseline.json"
 
 CLASS_HOME = {
     "design": "docs/design/",
@@ -215,24 +214,60 @@ def documents() -> dict[str, str]:
     }
 
 
-def census() -> dict[str, list[str]]:
+def _chosen(path: str) -> bool:
+    return path.startswith("docs/") or ("/" not in path and path.endswith(".md"))
+
+
+def changed(args: list[str]) -> list[str]:
+    """Added, copied, modified or renamed documents: staged, or since a base ref."""
+    rng = ["--cached"] if args == ["--staged"] else [args[1], "HEAD"]
+
+    def names(kinds: str) -> set[str]:
+        out = subprocess.run(
+            ["git", "diff", "-z", "--name-only", f"--diff-filter={kinds}", *rng],  # noqa: S607
+            cwd=ROOT, check=True, capture_output=True,
+        ).stdout.decode("utf-8").split("\0")
+        return {p for p in out if p and _chosen(p)}
+
+    # A root document is judged only when it is new: editing one a later unit
+    # moves into docs/ is not adding a root document.
+    added = names("ACR")
+    return sorted(p for p in names("ACMR") if "/" in p or p in added)
+
+
+def staged_text(path: str) -> str:
+    """A path's content as staged, so the hook judges what is being committed."""
+    if not path.endswith(".md"):
+        return ""
+    done = subprocess.run(
+        ["git", "show", f":{path}"], cwd=ROOT, capture_output=True,  # noqa: S607
+    )
+    return done.stdout.decode("utf-8", errors="replace") if done.returncode == 0 else ""
+
+
+def violations(paths: list[str], read=None) -> dict[str, list[str]]:
+    """The rules each changed path breaks; the rest of the tree is context only."""
     files = documents()
-    result = {path: found for path, text in files.items() if (found := check(path, text))}
+    if read is not None:
+        files.update({path: read(path) for path in paths})
+    result = {path: check(path, files.get(path, "")) for path in paths}
     markdown = {p: t for p, t in files.items() if p.endswith(".md")}
     for path, found in tree_rules(markdown, resolves).items():
-        result.setdefault(path, []).extend(found)
-    return {path: sorted(set(found)) for path, found in result.items()}
+        if path in result:
+            result[path].extend(found)
+    return {path: sorted(set(found)) for path, found in result.items() if found}
 
 
-def main() -> int:
-    if sys.argv[1:] != ["--write"]:
+def main(argv: list[str]) -> int:
+    if argv not in (["--staged"],) and not (len(argv) == 2 and argv[0] == "--base"):
         print(__doc__)
         return 2
-    now = census()
-    BASELINE.write_text(json.dumps(now, indent=1, sort_keys=True) + "\n", encoding="utf-8")
-    print(f"{len(now)} documents with violations -> {BASELINE.relative_to(ROOT)}")
-    return 0
+    paths = changed(argv)
+    found = violations(paths, staged_text if argv == ["--staged"] else None)
+    for path, rules in found.items():
+        print(f"{path}: {', '.join(rules)} (docs/engineering/documents.md)", file=sys.stderr)
+    return 1 if found else 0
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(main(sys.argv[1:]))

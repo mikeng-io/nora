@@ -87,9 +87,9 @@ the routes, the transition table and the re-triage triggers.
 The operator owns outcomes, scope amendments and exceptions. The orchestrator
 chooses units, workers, review tier and next steps within that authority;
 builders implement their slice; reviewers judge it without adding requirements.
-Split scope and design conflicts follow `nora-dispatch` brief «Small», «Faithful».
 For a shared design, interface or migration, read the related active work and
-threads first; one writer owns a shared seam at a time; one outcome owner integrates.
+session threads before assigning writes (`nora-dispatch`); one writer owns a shared
+seam at a time, and one outcome owner integrates.
 
 ## Execution tier
 

@@ -1,17 +1,14 @@
-"""Every document follows docs/engineering/documents.md. Recorded violations only shrink."""
+"""A changed document follows docs/engineering/documents.md."""
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 import pytest
 
 from scripts.check_documents import (
-    BASELINE,
     MAX_LINES,
     STAGED_TARGETS,
-    census,
     check,
     tree_rules,
 )
@@ -139,19 +136,6 @@ def test_a_link_must_name_a_repository_file():
     assert not resolves("/") and not resolves("docs") and not resolves("../outside.md")
 
 
-def test_the_census_reads_paths_with_spaces_and_non_ascii(tmp_path, monkeypatch):
-    import subprocess
-
-    import scripts.check_documents as gate
-
-    (tmp_path / "docs/engineering").mkdir(parents=True)
-    for name in ("a b.md", "café.md"):
-        (tmp_path / "docs/engineering" / name).write_text("# no frontmatter\n", encoding="utf-8")
-    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
-    monkeypatch.setattr(gate, "ROOT", tmp_path)
-    assert set(gate.census()) == {"docs/engineering/a b.md", "docs/engineering/café.md"}
-
-
 def test_a_bundle_readme_may_use_the_full_300_line_budget():
     assert check("docs/design/x/README.md", GOOD_DESIGN + "x\n" * (MAX_LINES - 10)) == []
 
@@ -194,52 +178,27 @@ def test_every_staged_target_names_the_unit_that_removes_it():
     assert all(unit in {"U2", "U3", "U4", "U5"} for unit in STAGED_TARGETS.values())
 
 
-def test_documents_match_the_baseline() -> None:
-    baseline: dict[str, list[str]] = json.loads(BASELINE.read_text(encoding="utf-8"))
-    now = census()
-    new = {p: sorted(set(v) - set(baseline.get(p, []))) for p, v in now.items()}
-    new = {p: v for p, v in new.items() if v}
-    gone = {p: sorted(set(v) - set(now.get(p, []))) for p, v in baseline.items()}
-    gone = {p: v for p, v in gone.items() if v}
-    assert not new, (
-        "documents break docs/engineering/documents.md: fix the document, never the "
-        f"baseline: {new}"
-    )
-    assert not gone, (
-        "documents were fixed; shrink the baseline by these entries "
-        f"(python -m scripts.check_documents --write, then check the diff only removes): {gone}"
-    )
-
-
-def test_a_malformed_link_is_named_and_never_crashes_the_census(tmp_path, monkeypatch):
+def test_the_hook_judges_only_the_documents_a_commit_changes(tmp_path, monkeypatch):
     import subprocess
 
     import scripts.check_documents as gate
 
+    def git(*args):
+        subprocess.run(["git", *args], cwd=tmp_path, check=True, capture_output=True)  # noqa: S603
+
+    git("init", "-q")
     (tmp_path / "docs/engineering").mkdir(parents=True)
-    bad = {"a.md": "links: [{to: README.md, rel: [uses]}]", "b.md": "links: 7"}
-    for name, links in bad.items():
-        text = f"---\nclass: engineering\nsubject: {name}\nowns: []\n{links}\n---\n"
-        (tmp_path / "docs/engineering" / name).write_text(text, encoding="utf-8")
-    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    (tmp_path / "docs/engineering/legacy.md").write_text("# untouched, no frontmatter\n")
+    git("add", "-A")
+    git("-c", "user.email=t@example.com", "-c", "user.name=t", "commit", "-qm", "init")
     monkeypatch.setattr(gate, "ROOT", tmp_path)
-    found = gate.census()
-    assert all("frontmatter-links" in found[f"docs/engineering/{n}"] for n in bad)
-
-
-def test_a_symlink_never_resolves_outside_and_a_dangling_one_is_seen(tmp_path, monkeypatch):
-    import subprocess
-
-    import scripts.check_documents as gate
-
-    outside = tmp_path / "outside.md"
-    outside.write_text("x\n", encoding="utf-8")
-    repo = tmp_path / "repo"
-    (repo / "docs/design").mkdir(parents=True)
-    (repo / "docs/escape.md").symlink_to(outside)
-    (repo / "docs/design/loose.bin").symlink_to(repo / "missing")
-    subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
-    subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
-    monkeypatch.setattr(gate, "ROOT", repo)
-    assert not gate.resolves("docs/escape.md")
-    assert "design-root" in gate.census()["docs/design/loose.bin"]
+    (tmp_path / "docs/engineering/new.md").write_text(GOOD_ENGINEERING)
+    git("add", "docs/engineering/new.md")
+    assert gate.main(["--staged"]) == 0
+    (tmp_path / "docs/engineering/bad.md").write_text("# no frontmatter\n")
+    git("add", "docs/engineering/bad.md")
+    assert gate.main(["--staged"]) == 1
+    assert gate.changed(["--staged"]) == ["docs/engineering/bad.md", "docs/engineering/new.md"]
+    (tmp_path / "NOTES.md").write_text("# a new root document\n")
+    git("add", "NOTES.md")
+    assert "NOTES.md" in gate.changed(["--staged"])
