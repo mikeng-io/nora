@@ -98,11 +98,28 @@ async def test_cognitive_graph_edges_and_entity_anchors_are_in_the_diff(pg_modul
     foreign = _entity("entity-foreign", "Generated Foreign", ["Generated Alpha"])
     foreign["unit"] = "foreign-unit"
     await writer.create(ENTITY, foreign)
+    foreign_b = _entity("entity-foreign-b", "Generated Foreign Topic", [])
+    foreign_b["unit"] = "foreign-unit"
+    await writer.create(ENTITY, foreign_b)
+    foreign_edge = {
+        "id": "edge-foreign", "unit": "foreign-unit", "kind": "edge", "basis": "inferred",
+        "reasoning": "deduced", "confidence": "medium", "state": "live",
+        "exposure": "internal", "writer": "generated", "type": "about",
+        "src_id": "entity-foreign", "dst_id": "entity-foreign-b",
+    }
+    await writer.create(EDGE, foreign_edge)
     with_edge = await state()
     created = diff(with_anchor, with_edge).kinds["graph"].created
     assert [e.entry_id for e in created] == ["about:edge-about"]
     assert created[0].after["src_id"] == "entity-a"
     assert created[0].after["type"] == "about"
     assert with_edge.entries("topic")["anchor:generated alpha"]["id"] == "entity-a"
+    # Positive control: the foreign edge row exists, and the unit boundary —
+    # scope, never a filter inside it — keeps it out of this unit's snapshot.
+    async with engine.connect() as conn:
+        assert await conn.scalar(sa.select(sa.func.count()).select_from(EDGE).where(
+            EDGE.c.id == "edge-foreign")) == 1
     assert all(edge["unit"] == "u" for edge in with_edge.entries("graph").values())
+    assert "edge-foreign" not in {
+        edge["id"] for edge in with_edge.entries("graph").values()}
     await engine.dispose()

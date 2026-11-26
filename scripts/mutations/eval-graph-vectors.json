@@ -9,8 +9,8 @@
   {
     "name": "identity: another model's vector is never adopted",
     "file": "nora/subject/sandbox_index.py",
-    "old": "    current = sa.and_(row.embedding.isnot(None), row.embedding_model == model)\n    source_rows: dict[str, tuple[Any, ...]] = {}\n",
-    "new": "    current = sa.and_(row.embedding.isnot(None), row.embedding_model.isnot(None))\n    source_rows: dict[str, tuple[Any, ...]] = {}\n",
+    "old": "    current = sa.and_(row.embedding.isnot(None), row.embedding_model == model)\n    result = await conn.execute(sa.select(\n",
+    "new": "    current = sa.and_(row.embedding.isnot(None), row.embedding_model.isnot(None))\n    result = await conn.execute(sa.select(\n",
     "target": "tests/integration/test_eval_sandbox_vectors.py::test_another_models_vector_is_never_adopted"
   },
   {

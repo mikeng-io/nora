@@ -17,13 +17,15 @@ another. After seeding and before the drive this module:
 
 `IndexCache` keeps the first build's `IndexImage` — the full `graph_search`
 contents, vectors rendered as text — for draws seeding the same graph. Its
-key includes the caller's key, the source, model and measured source
-coverage, plus the digest of the searchable rows the sandbox's own sources
-project. A reuse must equal a build exactly: after an image is applied, the
-sandbox's current source projection must equal the key set recorded at the
-build, or the draw is refused. There is no node-id sequence, projection
-queue or `memory_index_state` in `graph_search`; those legacy elements have
-no counterpart here.
+key includes the caller's key, the source and model, the digest of the
+searchable rows the sandbox's own sources project, and the digest of the
+source worker state adoption would copy. A reuse must equal a build exactly:
+after an image is applied, the rows actually written are read back inside
+the same transaction and must equal the cached image in full, and their
+`(graph_id, unit, text)` keys must equal both the sandbox's current source
+projection and the projection recorded at the build, or the draw is refused.
+There is no node-id sequence, projection queue or `memory_index_state` in
+`graph_search`; those legacy elements have no counterpart here.
 """
 
 from __future__ import annotations
@@ -269,21 +271,33 @@ def refuse_low_coverage(sandbox: Coverage, source: Coverage) -> None:
         )
 
 
-async def _adopt_worker_state(
-    source: AsyncConnection, target: AsyncConnection, *, model: str, batch: int = 500,
-) -> None:
-    """Copy worker state for exactly equal indexed text."""
+async def _adoptable_state(conn: AsyncConnection, model: str) -> dict[str, tuple[Any, ...]]:
+    """The worker state adoption copies per exact text — the reuse key's input identity."""
     row = GRAPH_SEARCH.c
     current = sa.and_(row.embedding.isnot(None), row.embedding_model == model)
-    source_rows: dict[str, tuple[Any, ...]] = {}
-    result = await source.execute(sa.select(
+    result = await conn.execute(sa.select(
         row.text, sa.cast(row.embedding, sa.Text).label("vector"), row.embedding_model,
         row.embedded_at, row.embed_attempts, row.embed_error, row.embed_input,
     ).where(sa.or_(current, row.embedding.is_(None))).order_by(
         sa.case((current, 0), else_=1), row.unit, row.graph_id,
     ))
+    state: dict[str, tuple[Any, ...]] = {}
     for r in result:
-        source_rows.setdefault(str(r.text), tuple(r)[1:])
+        state.setdefault(str(r.text), tuple(r)[1:])
+    return state
+
+
+def _state_digest(state: dict[str, tuple[Any, ...]]) -> str:
+    blob = json.dumps(sorted(state.items()), default=str, separators=(",", ":"))
+    return hashlib.sha256(blob.encode()).hexdigest()
+
+
+async def _adopt_worker_state(
+    source: AsyncConnection, target: AsyncConnection, *, model: str, batch: int = 500,
+) -> None:
+    """Copy worker state for exactly equal indexed text."""
+    row = GRAPH_SEARCH.c
+    source_rows = await _adoptable_state(source, model)
     updates = []
     target_rows = await target.execute(sa.select(
         row.graph_id, row.unit, row.text,
@@ -333,20 +347,24 @@ async def index_sandbox(
         built = None
         seeded_expected: tuple[tuple[str, str, str], ...] = ()
         if cache is not None:
-            async with target.connect() as conn:
+            async with source.connect() as src, target.connect() as conn:
                 seeded_expected = await _expected_rows(conn)
-            cache_key = (source_url, model, source_cov, key, _keys_digest(seeded_expected))
+                state_digest = _state_digest(await _adoptable_state(src, model))
+            cache_key = (source_url, model, key, _keys_digest(seeded_expected), state_digest)
             built = cache.get(cache_key)
         if built is not None:
             async with target.begin() as dst:
                 await _apply_index_image(dst, built.image)
+                persisted = await index_image(dst)
                 expected = await _expected_rows(dst)
-                applied = {(str(r[0]), str(r[1]), str(r[2])) for r in built.image.rows}
-                if applied != set(expected) or set(expected) != set(built.expected):
+                applied = {(str(r[0]), str(r[1]), str(r[2])) for r in persisted.rows}
+                if (persisted != built.image or applied != set(expected)
+                        or set(expected) != set(built.expected)):
                     raise GraphIndexRefusedError(
                         "the graph index applied from an earlier build does not fit this "
-                        "sandbox: its searchable source rows differ from the build's; a "
-                        "reuse must equal a build"
+                        "sandbox: the rows actually written differ from the build's, or "
+                        "its searchable source rows differ from the build's; a reuse "
+                        "must equal a build"
                     )
             reused = True
         else:

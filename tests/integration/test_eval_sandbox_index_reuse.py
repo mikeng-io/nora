@@ -122,6 +122,11 @@ async def test_another_declared_key_is_built_not_reused(source, pg_template):
 
 
 async def test_a_reused_index_still_reads_its_coverage_back(source, pg_template):
+    """The coverage line measures the sandbox, not the source: the source
+    holds a fourth embedded row the sandbox never seeds, so substituting
+    source counts for target counts fails here."""
+    await _write(source[1], {"c-extra-source": "a source-only embedded claim"})
+    await _embed(source[1], {"a source-only embedded claim": ("vector", (MODEL, 4))})
     cache = IndexCache()
     async with AsyncExitStack() as stack:
         first = await _sandbox(stack, source[0], pg_template)
@@ -131,8 +136,33 @@ async def test_a_reused_index_still_reads_its_coverage_back(source, pg_template)
         reused = await index_sandbox(second[0], source_url=source[0], model_id=MODEL_ID,
                                      cache=cache, key=KEY)
         assert reused.reused
+        assert reused.source.embedded == 4  # positive control: the two sides differ
         assert reused.coverage.embedded == 3 and reused.coverage.owed == 0
         assert "reused" in reused.line()
+
+
+async def test_a_source_whose_worker_state_moved_is_built_not_reused(source, pg_template):
+    """The reviewer's counterexample: the source's worker timestamps change
+    while text, model and coverage counts are preserved. A reuse under the
+    old image would differ from a build, so the cache must miss and build."""
+    cache = IndexCache()
+    async with AsyncExitStack() as stack:
+        first = await _sandbox(stack, source[0], pg_template)
+        a = await index_sandbox(first[0], source_url=source[0], model_id=MODEL_ID,
+                                cache=cache, key=KEY)
+        original = await _digest(first[1])
+        async with source[1].begin() as conn:
+            await conn.execute(sa.update(GRAPH_SEARCH).values(
+                embedded_at=GRAPH_SEARCH.c.embedded_at + 3_600_000))
+        moved = await _sandbox(stack, source[0], pg_template)
+        fresh = await _sandbox(stack, source[0], pg_template)
+        b = await index_sandbox(moved[0], source_url=source[0], model_id=MODEL_ID,
+                                cache=cache, key=KEY)
+        c = await index_sandbox(fresh[0], source_url=source[0], model_id=MODEL_ID)
+        assert not a.reused and not b.reused and not c.reused
+        assert await _counts(moved[1]) == (3, 3)
+        assert await _digest(moved[1]) == await _digest(fresh[1])
+        assert await _digest(moved[1]) != original  # positive control: the state moved
 
 
 async def test_an_applied_index_that_does_not_fit_the_sandbox_is_refused(source, pg_template):

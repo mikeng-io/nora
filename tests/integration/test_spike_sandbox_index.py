@@ -37,6 +37,7 @@ from nora.infra.sql.memory_graph import SqlMemoryGraph
 from nora.infra.sql.schema import (
     COGNITION_WAKE,
     LEGACY_MEMORY_WORK_ITEM,
+    LEGACY_RELATION,
     MEMORY_NODE,
     MEMORY_PROJECTION_QUEUE,
     MESSAGES,
@@ -112,7 +113,50 @@ async def _graph_text(engine) -> str:
         ))
 
 
-async def test_the_replay_preparation_indexes_the_restored_sandbox(clean_pg_url, pg_template):
+def _graph_context_subject(database_url: str, tmp_path) -> SimpleNamespace:
+    """A subject whose replay substrate wires the graph context as composition builds it."""
+    from nora.config_reload import LivePersons, LivePolicy
+    from nora.persons import load_persons
+    from nora.policy import load_policy
+
+    identity = tmp_path / "identity.toml"
+    identity.write_text(
+        '[persons."member-a"]\nname="Generated Member"\n'
+        '[persons."generated-person"]\nname="Generated Person"\n'
+    )
+    policy = tmp_path / "policy.toml"
+    policy.write_text(
+        'default="deny"\n[[conversations]]\nplatform="signal"\n'
+        'id="generated-room"\nlabel="Generated Room"\n'
+        f'unit="{UNIT}"\npersons=["member-a","generated-person"]\n'
+    )
+    reload = SimpleNamespace(
+        policy=LivePolicy(load_policy(policy)),
+        persons=LivePersons(load_persons(identity)),
+    )
+    return SimpleNamespace(
+        database_url=database_url,
+        cfg=SimpleNamespace(
+            doctrine=SimpleNamespace(display_name="Generated Nora"),
+            memory=SimpleNamespace(
+                graph=SimpleNamespace(enabled=True),
+                index=SimpleNamespace(read=False, embed=False, embedder_model=MODEL_ID))),
+        deps=SimpleNamespace(config_reload=reload),
+    )
+
+
+async def _project_authorship_relations(conn) -> int:
+    return int((await conn.execute(
+        sa.select(sa.func.count()).select_from(LEGACY_RELATION).where(
+            LEGACY_RELATION.c.rel == "authored_by",
+            LEGACY_RELATION.c.written_by.like("project:%"),
+            LEGACY_RELATION.c.status == "current",
+        ))).scalar_one())
+
+
+async def test_the_replay_preparation_indexes_the_restored_sandbox(
+    clean_pg_url, pg_template, tmp_path,
+):
     engine = create_sql_engine(clean_pg_url)
     try:
         read_id = uuid4().hex
@@ -198,16 +242,14 @@ async def test_the_replay_preparation_indexes_the_restored_sandbox(clean_pg_url,
                 with pytest.raises(NoResultFound):
                     await records.load(work(("social", f"{NET}:item-1")))
                 before = await spike.acts(sandbox)
-                subject = SimpleNamespace(
-                    database_url=url,
-                    cfg=SimpleNamespace(
-                        memory=SimpleNamespace(
-                            graph=SimpleNamespace(enabled=False),
-                            index=SimpleNamespace(
-                                read=False, embed=False, embedder_model=MODEL_ID))),
-                )
+                subject = _graph_context_subject(url, tmp_path)
                 built = await spike.index_replay_sandbox(subject, source_url=clean_pg_url)
                 async with sandbox.connect() as conn:
+                    # Argument in, row out: a rebuild that received the context
+                    # yet wrote no relation cannot pass here.
+                    assert await _project_authorship_relations(conn) > 0, (
+                        "the contexted rebuild must store the messages' authorship relations"
+                    )
                     assert await conn.scalar(sa.select(sa.func.count()).select_from(
                         MEMORY_NODE).where(MEMORY_NODE.c.kind == "social")) == 2, (
                         "replay preparation must project the as-of social sources")
