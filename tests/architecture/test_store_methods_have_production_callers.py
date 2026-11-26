@@ -313,8 +313,6 @@ _AMBIGUOUS: frozenset[str] = frozenset(
         "aclose", "append", "claim", "create", "delete", "fail",
         # Message targets and observation grounding have distinct by-id stores.
         "by_ids",
-        # The historical observation facade withholds the SQL store's current heads.
-        "heads", "head_for_handle",
         "describe", "enqueue", "get", "history", "lookup", "mark", "put", "read",
         "finish",  # RawSpanRecorder and the store both declare this verb.
         "recent", "record", "resolve", "rsvps_for", "save", "search",
@@ -362,9 +360,6 @@ _AMBIGUOUS: frozenset[str] = frozenset(
         # `PresenceStore.latest_fix` and `.window` share their names with
         # `SelectedPresenceStore` (nora/location/adapters/selected_presence.py).
         "latest_fix", "window",
-        # `SqlComprehendRecords.load` shares the name with
-        # `RecordedServices.load` (nora/subject/recorded_services.py).
-        "load",
         # `SqlRollupStore.rows` shares the name with `JourneyDriver.rows`
         # (nora/subject/journey.py); `self.rows(...)` calls cannot be
         # attributed, which is why its pin row was retired.
@@ -390,7 +385,7 @@ _STORE_MODULES: frozenset[str] = frozenset(
         "graph_stimuli.py", "item_registration.py",
         "mobility_writes.py", "observation_heads.py", "social_item_writes.py",
         "assess.py", "audit.py", "bridge_store.py", "cognition_store.py",
-        "comprehend.py", "lessons.py", "tension.py", "entries.py",
+        "lessons.py", "tension.py", "entries.py",
         "compute_jobs.py", "computer_events.py", "computer_exports.py",
         "computer_sessions.py", "computer_tasks.py", "browser_tabs.py",
         "character.py", "culture.py", "decision_log.py", "documents.py",

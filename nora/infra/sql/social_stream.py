@@ -79,7 +79,6 @@ from nora.domain.social_stream import (
 )
 from nora.infra.sql.blob_refs import held_elsewhere
 from nora.infra.sql.item_registration import SqlItemRegistration
-from nora.infra.sql.memory_index import current_place
 from nora.infra.sql.schema import (
     BLOB_TOMBSTONE,
     EVENTS,
@@ -94,7 +93,7 @@ from nora.infra.sql.schema import (
     SOCIAL_POLL,
     STIMULUS,
 )
-from nora.infra.sql.social_item_writes import SocialItemWrites, latest_counts
+from nora.infra.sql.social_item_writes import SocialItemWrites, current_place, latest_counts
 
 Stage = PollStage
 

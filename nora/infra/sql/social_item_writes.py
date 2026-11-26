@@ -26,6 +26,16 @@ from nora.infra.sql.item_registration import SqlItemRegistration
 from nora.infra.sql.schema import SOCIAL_ITEM, SOCIAL_ITEM_COUNT, SOCIAL_ITEM_STATE, SOCIAL_POLL
 
 
+def current_place(i: Any) -> Any:
+    """The item's current tagged place: the latest place state row's, else the recorded one."""
+    st = SOCIAL_ITEM_STATE
+    placed = sa.and_(st.c.network == i.c.network, st.c.item_id == i.c.item_id,
+                     st.c.source_state == PLACE_STATE)
+    latest = (sa.select(st.c.place).where(placed)
+              .order_by(st.c.recorded_at.desc(), st.c.id.desc()).limit(1).scalar_subquery())
+    return sa.case((sa.exists().where(placed), latest), else_=i.c.location)
+
+
 class SocialItemWrites:
     """The social stream's observed source writes."""
 

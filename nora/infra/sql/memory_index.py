@@ -156,7 +156,7 @@ from nora.domain.memory_index import (
 )
 from nora.domain.models import parse_mentions_json
 from nora.domain.rollup import days_touched, episode_key, iso, local_date, room_key
-from nora.domain.social_stream import HIDING_STATES, PLACE_STATE
+from nora.domain.social_stream import HIDING_STATES
 from nora.infra.sql.embed_schedule import EMBED_MAX_ATTEMPTS as EMBED_MAX_ATTEMPTS
 from nora.infra.sql.embed_schedule import embed_due, failed_attempts
 from nora.infra.sql.schema import (
@@ -188,6 +188,7 @@ from nora.infra.sql.schema import (
     SOCIAL_ITEM,
     SOCIAL_ITEM_STATE,
 )
+from nora.infra.sql.social_item_writes import current_place
 from nora.infra.sql.tag_traces import body_turn_lineage
 
 __all__ = [
@@ -579,23 +580,6 @@ def _hidden(i: Any) -> Any:
         st.c.network == i.c.network, st.c.item_id == i.c.item_id,
         st.c.source_state.in_(HIDING_STATES),
     )
-
-
-def current_place(i: Any) -> Any:
-    """The `social_item` row `i`'s current tagged place, in SQL: the latest
-    `place` state row's (NULL when that change removed the tag), else the
-    place it was recorded with."""
-    st = SOCIAL_ITEM_STATE
-    placed = sa.and_(
-        st.c.network == i.c.network, st.c.item_id == i.c.item_id,
-        st.c.source_state == PLACE_STATE,
-    )
-    latest = (
-        sa.select(st.c.place).where(placed)
-        .order_by(st.c.recorded_at.desc(), st.c.id.desc()).limit(1)
-        .scalar_subquery()
-    )
-    return sa.case((sa.exists().where(placed), latest), else_=i.c.location)
 
 
 async def _project_social(conn: AsyncConnection, source_id: str) -> None:

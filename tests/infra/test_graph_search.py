@@ -2,24 +2,46 @@
 
 from dataclasses import replace
 
+import pytest
 import sqlalchemy as sa
+from aiohttp.test_utils import TestServer
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from nora.infra.embedder import LlamaEmbedder, fingerprint, model_file
 from nora.infra.sql import memory_index
 from nora.infra.sql.audit import SqlRecordStore
 from nora.infra.sql.cognitive_graph_schema import CLAIM, ENTITY, GRAPH_SEARCH
 from nora.infra.sql.cognitive_graph_store import SqlCognitiveGraph
 from nora.infra.sql.item_retention import tombstone_items
+from nora.infra.sql.memory_embed import MemoryEmbedWorker
 from nora.infra.sql.schema import MEMORY_NODE, MESSAGES, PRESENCE_FIXES
 from nora.memory.adapters.graph_search import rebuild_graph_search
 from nora.memory.domain.registration import AGGREGATE_FAMILIES, SEARCHABLE_SOURCES
 from tests.infra.test_item_registration import _PERSON, _UNIT, _registration, _Writer
 from tests.infra.test_item_registration import engine as graph_test_engine
-from tests.integration.test_memory_vectors import MODEL, worker
-from tests.integration.test_memory_vectors import llama as fake_llama
+from tests.unit.test_embedder import FakeLlamaServer
+
+MODEL_ID = "model-a.gguf@0000"
+MODEL = fingerprint(MODEL_ID)
 
 engine = graph_test_engine
-llama = fake_llama
+
+
+@pytest.fixture
+async def llama():
+    fake = FakeLlamaServer()
+    server = TestServer(fake.app())
+    await server.start_server()
+    try:
+        yield fake, str(server.make_url("")).rstrip("/")
+    finally:
+        await server.close()
+
+
+def worker(engine, url):
+    return MemoryEmbedWorker(
+        engine, LlamaEmbedder(url), model=MODEL, model_file=model_file(MODEL_ID), batch=16,
+    )
 
 
 async def _message(engine: AsyncEngine, text: str = "Lanternmessage") -> str:
@@ -140,7 +162,7 @@ async def test_worker_embeds_graph_search_without_embedding_the_legacy_index(eng
         ))).one()
     assert graph_before.embedding is None and legacy_before.embedding is None
 
-    assert await worker(engine, url, legacy_index=False).run_once() == 1
+    assert await worker(engine, url).run_once() == 1
 
     async with engine.connect() as conn:
         row = (await conn.execute(sa.select(

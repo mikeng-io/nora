@@ -9,13 +9,13 @@ from nora.infra.sql.cognitive_graph_schema import EDGE, ENTITY
 from nora.infra.sql.cognitive_graph_store import SqlCognitiveGraph
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.entries import SqlEntryStore
-from nora.infra.sql.schema import MEMORY_NODE
+from nora.infra.sql.schema import STIMULUS
 from scripts.cognition_loop.state import diff, snapshot
 
 CONTENT = EntryContent(
     (("topic", "generated-racing"),),
     "A recurring generated subject.",
-    (("media", "generated-1"),),
+    (("social", "41"),),
     "medium",
     "active",
     "cognition",
@@ -28,9 +28,10 @@ CONTENT = EntryContent(
 async def test_topic_entries_are_created_revised_and_retired_in_the_diff(pg_module_url):
     engine = create_sql_engine(pg_module_url)
     async with engine.begin() as conn:
-        await conn.execute(sa.insert(MEMORY_NODE).values(
-            kind="media", source_id="generated-1", unit="u",
-            origin_room="signal:room-a"))
+        await conn.execute(sa.insert(STIMULUS).values(
+            id=41, unit="u", kind="social", item="generated-item",
+            ref="generated-ref", platform="signal", conversation_id="room-a", at_ms=1,
+        ))
     store = SqlEntryStore(engine)
 
     async def state():

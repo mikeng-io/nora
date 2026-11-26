@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 from nora.domain.entries import Entry, EntryContent, EntryRevision, check_entry
 from nora.domain.lineage import ROW, Lineage, message, topic_revision_lineage
 from nora.domain.rollup import room_key
-from nora.infra.sql.schema import MEMORY_NODE, MESSAGES, STIMULUS
+from nora.infra.sql.schema import MESSAGES, STIMULUS
 from nora.infra.sql.schema import NOTEBOOK_ENTRY as E
 from nora.infra.sql.schema import NOTEBOOK_ENTRY_REVISION as R
 
@@ -78,24 +78,6 @@ async def _citation_lineages(
                     out[(k, str(r.id))] = _room_lineage(
                         room_key(r.platform, r.conversation_id)
                     )
-    rest = [k for k, v in out.items() if v is None]
-    if rest:
-        nodes = (
-            await conn.execute(
-                sa.select(
-                    MEMORY_NODE.c.kind, MEMORY_NODE.c.source_id,
-                    MEMORY_NODE.c.lineage, MEMORY_NODE.c.origin_room,
-                ).where(
-                    sa.tuple_(MEMORY_NODE.c.kind, MEMORY_NODE.c.source_id).in_(rest),
-                )
-            )
-        ).all()
-        for n in nodes:
-            own = Lineage.from_json(n.lineage)
-            if not any(es for _, es in own.sections) and n.origin_room:
-                own = _room_lineage(n.origin_room)
-            if any(es for _, es in own.sections):
-                out[(n.kind, n.source_id)] = own
     return out
 
 
