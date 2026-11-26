@@ -91,7 +91,7 @@ def test_load_tools_cannot_reach_any_retired_tool(ambient):
 @pytest.mark.parametrize("ambient", [False, True])
 def test_who_said_remains_loadable_on_the_engagement_surface(ambient):
     """The attribution read is not a legacy store read: the engagement surface
-    keeps it available where granted (DEC-316)."""
+    keeps it available where granted."""
     surface = _surface(fire_turn=ambient, defer=True)
     agent = Agent(tools=surface.tools)
     assert "who_said" in surface.admitted

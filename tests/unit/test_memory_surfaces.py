@@ -3,7 +3,7 @@
 Production wires the graph reads `memory_search` and `memory_read`
 unconditionally; evaluation may omit them only as an explicit experimental
 arm. The transcript-window attribution read `who_said` remains available
-either way where granted (DEC-316). Both surfaces offer `load_transcript`
+either way where granted. Both surfaces offer `load_transcript`
 to read the room's rows.
 
 Pinned at every place tools are assembled, each through its own production
