@@ -1,3 +1,12 @@
+---
+class: engineering
+subject: the build order and executable acceptance for the platform bridges' durable handoff
+owns:
+  - bridge acceptance: the ordered build steps and the named failure-window controls that show the platform bridges' handoff holds
+links:
+  - {to: docs/design/platform/README.md, rel: derives}
+---
+
 # Integrated implementation plan and measurable acceptance
 
 **Everything below is proposed.** No new schema, client, test or command named here exists by virtue of this bundle. Parent owns final gate, commit/PR, independent review and any separately authorized deployment. This design handoff runs only whitespace and cheap bundle/reference checks.
@@ -46,7 +55,7 @@ Implement these as named pytest/bridge test cases using generated identities/con
 | test_queue_metrics_and_inspection | Enqueue never-delivered, pending and ACKed retained entries. Assert calculated backlog differs from XLEN, oldest wait/pending reflect fixtures, positive counters move, retained failures visible. Break inspector/Redis and assert unavailable with no fresh zero; storage errors and stuck reader/backlog are observable. |
 | test_linked_lifecycle_readback | With a disposable collector, the backend selected by 04-operations and log capture, enqueue event while app down; restart, claim attempt A, kill/reclaim into B, complete and ACK. Inspect real exported span JSON and lifecycle logs by safe event/stream/attempt IDs: both attempts link original producer, B links A, queue wait measured separately, no span spans shutdown/wait, no unrelated parent. A second event fails and is retained; a third send loses response and logs uncertainty without a second upstream call. Confirm queue traces and complete linked model traces in SigNoz for the target pipeline; if testing the pre-cutover pipeline, confirm queue traces in Jaeger and zero queue-only Langfuse exports. State which pipeline was measured; preserve model trace linkage/provenance. Then break collector: work/ACK still complete, telemetry unavailable is reported honestly. |
 
-The trace readback uses the same sampler and collector rules intended for installation, not an AlwaysOn test-only provider. A collecting OTLP sink alone proves export, not backend routing, retention or UI visibility. The accepted SigNoz target and transitional Jaeger/Langfuse route are distinguished in [04-operations](04-operations.md#short-linked-otel-operations-and-routing-amendment). Installed collector readback remains a separate future requirement; fixture success cannot attest to its current configuration.
+The trace readback uses the same sampler and collector rules intended for installation, not an AlwaysOn test-only provider. A collecting OTLP sink alone proves export, not backend routing, retention or UI visibility. The accepted SigNoz target and transitional Jaeger/Langfuse route are distinguished in [bridge operations](../operations/bridge-operations.md#short-linked-otel-operations-and-routing-amendment). Installed collector readback remains a separate future requirement; fixture success cannot attest to its current configuration.
 
 ## Completion criteria and boundaries
 

@@ -1,3 +1,12 @@
+---
+class: operations
+subject: how the platform bridges' queue, telemetry, rename and cutover are run
+owns:
+  - bridge operations: the queue's persistence and retention settings, the bridge metrics and lifecycle logs, and the cutover and backout order
+links:
+  - {to: docs/design/platform/README.md, rel: derives}
+---
+
 # Persistence, telemetry and cutover — proposed
 
 ## Redis lifecycle
@@ -45,7 +54,7 @@ When model work starts, its existing engagement/fire generation root stays a **s
 Python producer/consumer uses OTel SDK through the existing provider setup; Go/Node producers need minimal OTLP SDK initialization/export and the same resource/kind/field contract. Export queue OTLP/HTTP to the existing collector, with bridge service.name reflecting service names. No hand-written GenAI attributes and no Strands wrapper around bridge operations. The queue span helper records only allowlisted error type/reason/status, not the existing generic helper’s automatic exception message/stack capture; exceptions still propagate unchanged to the work seam. Test this with a synthetic secret-bearing SDK error. Export setup/timeout/failure remains best effort.
 
 **Collector contract amended 2026-10-30:** the accepted
-[SigNoz design](../../operations/observability.md#accepted-direction-self-hosted-signoz)
+[SigNoz design](observability.md#accepted-direction-self-hosted-signoz)
 owns backend selection and whole-trace retention. Queue operations and complete
 model traces target SigNoz, with their separate roots and links retained. The
 queue root kind remains a semantic classification; it must not prescribe Jaeger
