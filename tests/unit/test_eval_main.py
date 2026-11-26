@@ -106,6 +106,34 @@ def test_positions_prints_each_draws_written_position_and_its_length(capsys):
     assert "[ERROR] residue-x#2  (none)" in out
 
 
+def test_print_input_composes_the_graph_surface(monkeypatch, capsys):
+    """The render probe is not a memory-arm escape hatch: its default Spec
+    carries `graph`, which is what activates sandbox indexing in the draw."""
+    from types import SimpleNamespace
+
+    from strands_evals import Case
+
+    import evals.__main__ as main
+
+    seen = []
+
+    def fake_task(spec):
+        seen.append(spec)
+
+        def run(case):
+            return {"environment_state": [
+                SimpleNamespace(name=main.NORA_SHOWN, state="rendered input"),
+            ]}
+
+        return run
+
+    monkeypatch.setattr(main, "load_corpus", lambda name: [Case(name="case", input="x")])
+    monkeypatch.setattr(main, "nora_task", fake_task)
+    assert main._print_input("standing", "case", source_url="postgresql://u@h/generated") == 0
+    assert [spec.memory_surface for spec in seen] == ["graph"]
+    assert capsys.readouterr().out.strip() == "rendered input"
+
+
 def test_the_estimate_counts_draws_and_bounds_their_cost():
     """Per corpus, cases x samples x that corpus's measured per-draw cost."""
     from evals.__main__ import JUDGED_DRAW_SECONDS, UNJUDGED_DRAW_SECONDS, estimate
