@@ -71,6 +71,7 @@ def _policy(*, proactive: bool, home_room_here: bool) -> str:
 async def _graded(
     *, entry: str, expect: str, clean_pg_url: str, pg_template: str, tmp_path: Any,
     policy: str = "", input: str = "", metadata: dict[str, Any] | None = None,
+    memory_surface: str | None = None,
 ) -> tuple[Any, dict[str, Any]]:
     source = await seed_source(
         clean_pg_url, tmp_path, _HISTORY, template=pg_template, policy=policy,
@@ -82,6 +83,7 @@ async def _graded(
     spec = Spec(
         source_url=source.url, entry=entry, overrides=_NO_PROVIDER,
         policy=source.policy, identity=source.identity, template=source.template,
+        memory_surface=memory_surface,
     )
     result = await offline_drive(case, spec)
     data = EvaluationData(
@@ -175,6 +177,22 @@ async def test_a_proactive_case_never_grades_on_a_wiring_refusal(
         "produces an empty result, so an ungraded ERROR is the only reading "
         "that cannot lie."
     )
+
+
+@pytest.mark.asyncio
+async def test_the_eval_memory_off_arm_composes_without_memory_reads(
+    clean_pg_url, pg_template, tmp_path, monkeypatch,
+) -> None:
+    """The eval-only control reaches one real draw offline; the harness's
+    admitted-surface check, not a passed flag, proves memory_search/memory_read
+    are absent. An untagged line needs no model, so nothing paid runs."""
+    monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
+    out, state = await _graded(
+        entry="tag", expect="silence", clean_pg_url=clean_pg_url,
+        pg_template=pg_template, tmp_path=tmp_path, input="anyway what time is lunch",
+        memory_surface="off",
+    )
+    assert out.label == PASS, f"off arm: {out.reason} {state}"
 
 
 @pytest.mark.asyncio

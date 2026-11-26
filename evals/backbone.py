@@ -95,7 +95,7 @@ from nora.subject import (
 )
 from nora.subject.effect_capture import subject_effects
 from nora.subject.eval_evidence import EvidenceError
-from nora.subject.obtain import RoomNotInPolicyError
+from nora.subject.obtain import RoomNotInPolicyError, surface_tool_names
 from nora.subject.recorded_services import RecordedServices
 from nora.subject.transport import held_states
 
@@ -1670,9 +1670,18 @@ async def _drive_draw(case: Case, spec: Spec, *, recording: RecordedServices) ->
                 environment=environment, overrides=spec.overrides,
                 identity=spec.identity if spec.identity is not None else _deployment_identity(),
                 policy=spec.policy if spec.policy is not None else _deployment_policy(), now=now,
+                graph_memory=spec.memory_surface != "off",
             )
             subject = (await obtain(drawn_subject, legacy_replay=True) if port.legacy_replay
                        else await obtain(drawn_subject))
+            memory_checked = spec.memory_surface in {"graph", "off"}
+            if memory_checked:
+                names = surface_tool_names(subject)
+                expected = {"memory_search", "memory_read"}
+                if spec.memory_surface == "off" and not expected.isdisjoint(names):
+                    raise ValueError("memory-off arm composed graph memory read tools")
+                if spec.memory_surface == "graph" and not expected <= names:
+                    raise ValueError("graph arm did not compose its memory read tools")
             if spec.judge is not None:
                 spec = dataclasses.replace(spec, judge=spec.judge.bind(subject.cfg))
             from nora.subject.eval_evidence import current, fingerprint

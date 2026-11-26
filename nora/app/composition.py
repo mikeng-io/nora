@@ -427,6 +427,7 @@ async def build_dependencies(
     clock: Callable[[], datetime] = wall_clock,
     operational_clock: Callable[[], datetime] | None = None,
     legacy_replay: bool = False,
+    include_graph_reads: bool = True,
 ) -> Dependencies:
     """Build the process graph from cfg and return its runtime Dependencies.
 
@@ -445,13 +446,14 @@ async def build_dependencies(
     """
     return await StartupOwner.run(
         _compose_dependencies, cfg,
-        clock=clock, operational_clock=operational_clock, legacy_replay=legacy_replay)
+        clock=clock, operational_clock=operational_clock, legacy_replay=legacy_replay,
+        include_graph_reads=include_graph_reads)
 
 
 async def _compose_dependencies(
     cfg: Config, *, clock: Callable[[], datetime],
     operational_clock: Callable[[], datetime] | None,
-    legacy_replay: bool,
+    legacy_replay: bool, include_graph_reads: bool,
     owner: StartupOwner,
 ) -> Dependencies:
     op_clock = operational_clock or clock
@@ -840,7 +842,10 @@ async def _compose_dependencies(
     engagement_graph = EngagementGraph(
         access, _memory_wire.message_graph_ids(engine), graph_profiles,
     )
-    graph_reads = _memory_wire.configured_graph_reads(cfg, engine, access, lineage)
+    graph_reads = (
+        _memory_wire.configured_graph_reads(cfg, engine, access, lineage)
+        if include_graph_reads else None
+    )
     _agent_registry = build_registry(
         allowlist=allowlist, blobs=blobs,
         browser=browser, browser_manager=browser_manager,

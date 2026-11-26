@@ -279,7 +279,7 @@ def _journey_inputs(tmp_path):
         journey_cohort=cohort_path, services=services_path,
         service_inputs=load_services(services_path), run_budget="10",
         sample=1, subject_overrides=None, judge=None,
-        measure="protocol")
+        measure="protocol", memory_surface="graph")
 
 
 def test_the_journey_corpus_is_selectable_by_name_never_by_class_or_all():
@@ -308,6 +308,7 @@ def test_a_journey_selection_binds_the_declared_inputs(tmp_path):
     pytest.param({"sample": 2}, id="sampled"),
     pytest.param({"subject_overrides": "x.json"}, id="subject-overrides"),
     pytest.param({"judge": "some-judge"}, id="eval-judge-on-journey-only"),
+    pytest.param({"memory_surface": "off"}, id="memory-off-arm-not-composable"),
 ])
 def test_a_journey_selection_refuses_an_absent_or_promoting_input(tmp_path, damage):
     """Every clause refuses BEFORE composition or model dispatch, and no
