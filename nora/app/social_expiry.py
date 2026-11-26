@@ -57,9 +57,9 @@ log = logging.getLogger("nora.app.social_expiry")
 PUT_GRACE_SECONDS = 3600.0
 
 
-#: The graph's answer: of these `(network, item_id)` frames, the ones whose
-#: embedding is settled. None means no index reads them, so no frame is embedded
-#: and each waits for the hard limit.
+#: Of these `(network, item_id)` frames, the ones whose embedding is settled.
+#: None means no index reads them, so no frame is embedded and each waits for
+#: the hard limit.
 EmbeddedFrames = Callable[[Sequence[tuple[str, str]]], Awaitable[set[tuple[str, str]]]]
 
 

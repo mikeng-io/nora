@@ -5,8 +5,8 @@ hand.
 
 Every test ticks the pass on a moving clock rather than seeding a state and
 asking once: «not before the bound», «once», «after a restart» are all state
-carried from one tick to the next. The graph index embeds no social item yet,
-so at the tick no frame is embedded; when the bytes go once BOTH exist is
+carried from one tick to the next. Production wires no embedding callback,
+so a frame waits for the hard limit; when the bytes go once BOTH exist is
 `bytes_due`'s, `tests/unit/test_story_bytes_due.py`.
 
 Database scoped to the MODULE and truncated between tests (docs/code-standards.md).
@@ -18,6 +18,7 @@ import json
 from collections.abc import AsyncIterator, Awaitable, Callable, Iterator, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
 from typing import Any
 from uuid import uuid4
 
@@ -25,9 +26,10 @@ import psycopg
 import pytest
 import sqlalchemy as sa
 
-from nora.app.composition_readers import _settled_story_frames
+import nora.app.composition_social as composition_social
 from nora.app.social_expiry import EmbeddedFrames, StoryMediaExpiry
 from nora.domain.social_stream import SocialItem
+from nora.infra.embedder import fingerprint
 from nora.infra.sql.cognitive_graph_schema import GRAPH_SEARCH, REGISTRY
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.schema import (
@@ -234,6 +236,24 @@ async def test_at_the_first_bound_a_perceived_and_embedded_frame_loses_its_bytes
     assert all(("instagram", "unperceived") not in a for a in asked)
 
 
+def _production_embedded(world: World) -> EmbeddedFrames | None:
+    """The embedding collaborator the production composition wires today."""
+    cfg = SimpleNamespace(
+        memory=SimpleNamespace(index=SimpleNamespace(embedder_model="a-model")),
+        social=SimpleNamespace(
+            story_expiry_enabled=True,
+            story_media_keep_days=KEEP,
+            story_media_keep_max_days=MAX,
+            poll=SimpleNamespace(tick_seconds=600),
+        ),
+    )
+    wired = composition_social.expiry(
+        blobs=world.blobs, cfg=cfg, engine=world.engine, metrics=world.metrics,
+    ).story_expiry
+    assert wired is not None
+    return wired._embedded
+
+
 async def _graph_row(
     world: World, item_id: str, *, embedded: bool = False, attempts: int = 0,
     error: str | None = None,
@@ -255,53 +275,63 @@ async def _graph_row(
         if embedded:
             values.update({
                 "embedding": [1.0] + [0.0] * 2047,
-                "embedding_model": "a-model",
+                "embedding_model": fingerprint("a-model"),
             })
         await conn.execute(sa.update(GRAPH_SEARCH).where(
             GRAPH_SEARCH.c.graph_id == graph_id, GRAPH_SEARCH.c.unit == unit,
         ).values(**values))
 
 
-async def test_with_the_real_graph_index_an_absent_row_keeps_the_bytes(world) -> None:
-    world.embedded = _settled_story_frames(world.engine, "a-model")
+async def test_an_absent_graph_row_keeps_the_bytes(world) -> None:
+    """No graph row can settle the frame's medium; the hard-limit control proves the sweep ran."""
+    world.embedded = _production_embedded(world)
+    control = await world.seed("control", perceived=True)
+    world.clock.days(20)
     sha = await world.seed("s1", perceived=True)
     expiry = world.expiry()
 
-    world.clock.days(1 + KEEP)
+    world.clock.days(11)
     await expiry.tick()
 
     assert world.held(sha)
-    assert await world.tombstones() == []
+    assert not world.held(control), "the positive control: the hard limit still deletes"
+    assert await world.tombstones() == [(control, "story_frame", "hard_limit")]
 
 
-async def test_with_the_real_graph_index_a_queued_row_keeps_the_bytes(world) -> None:
-    world.embedded = _settled_story_frames(world.engine, "a-model")
-    queued = await world.seed("queued", perceived=True)
+async def test_a_queued_graph_row_keeps_the_bytes(world) -> None:
+    """A retryable caption-row failure is not the medium's settlement; bytes wait."""
+    world.embedded = _production_embedded(world)
     control = await world.seed("control", perceived=True)
+    world.clock.days(20)
+    queued = await world.seed("queued", perceived=True)
     await _graph_row(world, "queued", attempts=1, error="rejected:generated")
-    await _graph_row(world, "control", embedded=True)
     expiry = world.expiry()
 
-    world.clock.days(1 + KEEP)
+    world.clock.days(11)
     await expiry.tick()
 
     assert world.held(queued), "a failure still queued for retry is not embedded"
-    assert not world.held(control), "the positive control: an embedded frame's bytes go"
-    assert [r for _, _, r in await world.tombstones()] == ["embedded"]
+    assert not world.held(control), "the positive control: the hard limit still deletes"
+    assert await world.tombstones() == [(control, "story_frame", "hard_limit")]
 
 
-async def test_with_the_real_graph_index_an_embedded_frame_loses_its_bytes(world) -> None:
-    world.embedded = _settled_story_frames(world.engine, "a-model")
-    sha = await world.seed("s1", perceived=True)
-    await _graph_row(world, "s1", embedded=True)
+async def test_a_caption_embedding_does_not_settle_a_pending_medium(world) -> None:
+    """The caption row can hold a vector while the medium's embedding is still
+    pending; the graph records no per-medium state, so that vector is not the
+    medium's settlement and the bytes survive the early sweep."""
+    world.embedded = _production_embedded(world)
+    control = await world.seed("control", perceived=True)
+    world.clock.days(20)
+    captioned = await world.seed("captioned", perceived=True)
+    await _graph_row(world, "captioned", embedded=True)
     expiry = world.expiry()
 
-    world.clock.days(1 + KEEP)
+    world.clock.days(11)
     await expiry.tick()
 
-    assert not world.held(sha)
-    assert await world.tombstones() == [(sha, "story_frame", "embedded")]
-    assert world.deleted("embedded") == 1
+    assert world.held(captioned), "the caption's vector is not the medium's embedding"
+    assert not world.held(control), "the positive control: the hard limit still deletes"
+    assert await world.tombstones() == [(control, "story_frame", "hard_limit")]
 
 
 async def test_at_the_hard_limit_the_bytes_go_tombstoned_and_counted_unembedded(world) -> None:

@@ -318,7 +318,7 @@ def test_the_story_frame_embedded_scan_sees_every_import_form() -> None:
 
 
 def test_no_live_caller_reads_story_embedding_from_the_legacy_index() -> None:
-    """`story_frame_embedded` has no caller outside tests; graph state answers expiry."""
+    """`story_frame_embedded` has no caller outside tests and no replacement reader."""
     target = frozenset({"story_frame_embedded"})
     control = ast.parse(
         "def f():\n"

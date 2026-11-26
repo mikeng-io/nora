@@ -8,7 +8,6 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from nora.app.composition_readers import (
-    _settled_story_frames,
     social_person_rooms,
     social_person_units,
     social_unit_rooms,
@@ -18,7 +17,6 @@ from nora.app.social_perception import SocialPerception
 from nora.app.social_poller import SocialPoller
 from nora.app.summons_inbox import SummonsInbox
 from nora.domain.live import LiveMapping
-from nora.infra.embedder import fingerprint
 from nora.infra.sql.social_stream import SqlSocialStreamStore, readable_social_store
 from nora.infra.sql.source_health import SqlSourceHealthLog
 
@@ -195,7 +193,9 @@ def expiry(blobs: Any, cfg: Any, engine: Any, metrics: Any)-> ExpiryWiring:
             max_days=cfg.social.story_media_keep_max_days,
             tick_seconds=cfg.social.poll.tick_seconds,
             metrics=metrics,
-            embedded=_settled_story_frames(engine, fingerprint(cfg.memory.index.embedder_model)),
+            # ponytail: graph_search keys caption/alt text by (graph_id, unit),
+            # so it holds no per-medium embedding state and cannot settle a frame early;
+            # frames wait for story_media_keep_max_days, which expiry supports and counts.
         )
         if blobs is not None and cfg.social.story_expiry_enabled
         else None

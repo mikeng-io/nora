@@ -2,10 +2,8 @@ from __future__ import annotations
 
 import functools
 import logging
-from collections.abc import Awaitable, Callable, Mapping, Sequence
+from collections.abc import Mapping
 from typing import Any
-
-from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nora.agent.dreamer import HomeRoom
 from nora.app.gatherings import screened_area
@@ -13,7 +11,6 @@ from nora.app.startup import StartupError
 from nora.config import Config
 from nora.domain.ports import ExternalFilesSource, ReverseGeocoder, SearchProvider
 from nora.infra.google.auth import GoogleCredentials
-from nora.infra.sql.graph_search_embed import settled_story_frames
 
 """Policy- and persons-derived readers for the composition root."""
 
@@ -253,19 +250,6 @@ def social_unit_rooms(allowlist: Any)-> dict[str, tuple[tuple[str, str], ...]]:
         )
         for unit in {c.unit for c in allowlist.rooms() if c.unit}
     }
-
-
-def _settled_story_frames(
-    engine: AsyncEngine, model: str,
-) -> Callable[[Sequence[tuple[str, str]]], Awaitable[set[tuple[str, str]]]]:
-    """The Cognitive Graph's answer to which story frames' embeddings are settled."""
-
-    async def embedded(frames: Sequence[tuple[str, str]]) -> set[tuple[str, str]]:
-
-        async with engine.connect() as conn:
-            return await settled_story_frames(conn, frames, model=model)
-
-    return embedded
 
 
 def reverse_geocoder(
