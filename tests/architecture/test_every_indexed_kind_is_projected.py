@@ -27,7 +27,7 @@ ROOT = Path(__file__).resolve().parents[2]
 _MEMORY_INDEX_MODULE = "nora.infra.sql.memory_index"
 _PROJECTOR = "nora/infra/sql/memory_index.py"
 _PROJECTING_CALLS = frozenset({
-    "project", "project_episodes", "reproject_episodes", "reproject_media",
+    "project", "project_episodes", "reproject_episodes", "reproject_media", "rebuild",
 })
 _WRITE_FUNCS = frozenset({"insert", "pg_insert", "update", "delete"})
 _RAW = re.compile(
@@ -43,6 +43,11 @@ _ALLOWED_PROJECTION_FILES = frozenset({
     "nora/infra/sql/profile.py",
     "nora/subject/lexical_seed.py",
 })
+
+#: The retained sandbox replay, reached through `scripts/cognition_loop/run.py`.
+#: No other operator entry point may write the legacy index.
+_SANDBOX_REPLAY_FILES = frozenset({"scripts/memory_graph_spike.py"})
+_SCAN_ROOTS = ("nora", "scripts")
 
 
 def _projector_names(tree: ast.Module) -> tuple[set[str], set[str]]:
@@ -90,10 +95,11 @@ def _projection_calls(path: Path) -> list[tuple[str, int, str]]:
 
 def _production_projection_calls() -> list[tuple[str, int, str]]:
     found = []
-    for path in sorted((ROOT / "nora").rglob("*.py")):
-        if "migrations" in path.parts:
-            continue
-        found.extend(_projection_calls(path))
+    for root in _SCAN_ROOTS:
+        for path in sorted((ROOT / root).rglob("*.py")):
+            if "migrations" in path.parts:
+                continue
+            found.extend(_projection_calls(path))
     return found
 
 
@@ -249,13 +255,20 @@ def test_the_scan_has_positive_controls_in_the_tree() -> None:
     assert ("nora/infra/sql/profile.py", "project") in sites
     assert ("nora/app/graph_project.py", "project") in sites
     assert ("nora/app/graph_project.py", "reproject_episodes") in sites
+    assert ("scripts/memory_graph_spike.py", "rebuild") in sites
 
 
 def test_no_live_writer_projects_the_legacy_index() -> None:
+    """Operator entry points are in scope; only the named sandbox replay is excepted.
+
+    Negative control: restoring `await memory_index.reproject_media(conn, sha256)`
+    after a successful ingest in `scripts/ingest_self_asset.py` must turn this
+    test red, because that script is outside `_SANDBOX_REPLAY_FILES`.
+    """
     disallowed = sorted(
         f"{path}:{line} {name}"
         for path, line, name in _production_projection_calls()
-        if path not in _ALLOWED_PROJECTION_FILES
+        if path not in _ALLOWED_PROJECTION_FILES | _SANDBOX_REPLAY_FILES
     )
     assert not disallowed, (
         "production legacy projection returned; only deletion custody (`drop`) "

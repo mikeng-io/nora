@@ -177,6 +177,50 @@ async def test_projection_toggle_batching_pointer_identity_and_backfill(sql):
         ).first()
 
 
+async def test_backfill_reprojects_the_current_builds_episode_nodes(sql):
+    from nora.app.graph_project import graph_project
+    from nora.domain.rollup import episode_key
+    from nora.infra.sql.schema import MEMORY_NODE, ROLLUP_BUILD, ROLLUP_OUTING
+
+    unit = "generated-unit"
+    persons = ("generated-person-a", "generated-person-b")
+    start = BASE_MS
+    async with sql.engine.begin() as conn:
+        bid = (
+            await conn.execute(
+                sa.insert(ROLLUP_BUILD)
+                .values(code_version="generated", params_sha256="generated", status="current")
+                .returning(ROLLUP_BUILD.c.id)
+            )
+        ).scalar_one()
+        await insert_rollup_row(
+            conn,
+            ROLLUP_OUTING,
+            build_id=bid,
+            unit=unit,
+            persons=persons,
+            build_lineage=[],
+            valid_from_ms=start,
+            valid_to_ms=start + 100,
+            as_of_ms=start + 100,
+            lat=float(0),
+            lng=float(0),
+            district="Generated District",
+            city="Generated City",
+        )
+        assert not (await conn.execute(sa.select(MEMORY_NODE).where(
+            MEMORY_NODE.c.kind == "outing",
+        ))).all()
+    scope = ProjectionContext({"signal:generated-room": unit}, {unit: frozenset(persons)})
+    await graph_project(sql.engine, scope=scope, apply=True, rows_per_second=100000)
+    key = episode_key(f"{unit}|{','.join(persons)}", start, start + 100)
+    async with sql.engine.connect() as conn:
+        rows = (await conn.execute(sa.select(
+            MEMORY_NODE.c.source_id, MEMORY_NODE.c.state, MEMORY_NODE.c.persons,
+        ).where(MEMORY_NODE.c.kind == "outing"))).all()
+    assert rows == [(key, "live", list(persons))]
+
+
 async def test_refused_parts_are_durable(sql):
     from dataclasses import replace
 

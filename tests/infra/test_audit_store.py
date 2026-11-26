@@ -5,12 +5,16 @@ import dataclasses
 import json
 
 import pytest
-from sqlalchemy.exc import IntegrityError
+import sqlalchemy as sa
+from sqlalchemy.exc import DBAPIError, IntegrityError
 
-from nora.domain.models import DeliveryStatus, NormalizedMessage
+from nora.domain.models import DeliveryStatus, EditTarget, NormalizedMessage
+from nora.domain.observations import Observation, ReactionPayload, SourceScope
 from nora.infra.sql.audit import SqlRecordStore
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.migrations_runner import run_migrations
+from nora.infra.sql.observations import SqlObservationStore
+from nora.infra.sql.schema import MESSAGE_EDIT, PLATFORM_OBSERVATION
 
 
 def _msg(conv="g1", body="hello", ts=1) -> NormalizedMessage:
@@ -213,6 +217,53 @@ async def test_prune_all_keeps_the_window_per_conversation(make_store):
     kept = await store.recent(conversation_id="A", limit=1000)
     assert [r.body for r in kept] == ["a7", "a8", "a9"]
     assert len(await store.recent(conversation_id="B", limit=1000)) == 2
+
+
+async def test_a_failed_target_relink_rolls_back_the_edit_and_the_link(store):
+    mid = await store.append(message=_msg(body="first", ts=1))
+    later = 1000
+    observations = SqlObservationStore(store._engine)
+    observation_id = await observations.append(
+        observation=Observation(
+            object_kind="reaction",
+            scope=SourceScope(platform="signal", account_key="", conversation_id="g1"),
+            object_ref="msg:generated-edit", operation="add",
+            payload=ReactionPayload(emoji="👍"), actor_id="generated-reactor",
+            actor_status="known", target=EditTarget(sent_ts=later),
+            target_author_id="+852111", received_ms=2,
+        ),
+        event_id="generated-event", source_digest="generated-digest",
+    )
+    assert observation_id is not None
+    async with store._engine.connect() as conn:
+        assert await conn.scalar(sa.select(PLATFORM_OBSERVATION.c.target_message_id).where(
+            PLATFORM_OBSERVATION.c.id == observation_id,
+        )) is None
+    async with store._engine.begin() as conn:
+        await conn.execute(sa.text("""
+            CREATE FUNCTION reject_generated_relink() RETURNS trigger LANGUAGE plpgsql AS $$
+            BEGIN
+                RAISE EXCEPTION 'generated relink refusal';
+            END $$;
+        """))
+        await conn.execute(sa.text("""
+            CREATE TRIGGER reject_generated_relink BEFORE UPDATE ON platform_observation
+            FOR EACH ROW EXECUTE FUNCTION reject_generated_relink()
+        """))
+    try:
+        with pytest.raises(DBAPIError, match="generated relink refusal"):
+            await store.append_edit(message_id=mid, message=_msg(body="edited", ts=later))
+    finally:
+        async with store._engine.begin() as conn:
+            await conn.execute(sa.text(
+                "DROP TRIGGER reject_generated_relink ON platform_observation"
+            ))
+            await conn.execute(sa.text("DROP FUNCTION reject_generated_relink()"))
+    async with store._engine.connect() as conn:
+        assert await conn.scalar(sa.select(sa.func.count()).select_from(MESSAGE_EDIT)) == 0
+        assert await conn.scalar(sa.select(PLATFORM_OBSERVATION.c.target_message_id).where(
+            PLATFORM_OBSERVATION.c.id == observation_id,
+        )) is None
 
 
 async def test_prune_all_takes_a_pruned_messages_edits_with_it(make_store):

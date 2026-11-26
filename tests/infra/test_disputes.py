@@ -9,6 +9,7 @@ import pytest
 import sqlalchemy as sa
 
 from nora.domain.fetched_page import FetchedPage
+from nora.domain.social_stream import ItemCounts, SocialItem
 from nora.infra.sql import memory_index
 from nora.infra.sql.audit import SqlRecordStore
 from nora.infra.sql.cognitive_graph_schema import CLAIM, EDGE, FORGET_REQUEST, NORA_ACT, REGISTRY
@@ -16,8 +17,16 @@ from nora.infra.sql.cognitive_graph_store import SqlCognitiveGraph, visible_to_r
 from nora.infra.sql.fetched_pages import SqlFetchedPageStore
 from nora.infra.sql.graph_stimuli import SqlGraphStimuli
 from nora.infra.sql.item_retention import tombstone_items
-from nora.infra.sql.schema import BRIDGE_ACTION, FETCHED_PAGES, MEMORY_NODE, MESSAGE_EDIT, MESSAGES
+from nora.infra.sql.schema import (
+    BRIDGE_ACTION,
+    FETCHED_PAGES,
+    MEMORY_NODE,
+    MESSAGE_EDIT,
+    MESSAGES,
+    SOCIAL_ITEM,
+)
 from nora.memory.wire import memory_intake
+from tests.fixtures.legacy_projection import ProjectingSocialStreamStore
 from tests.infra.test_cognitive_graph_admission import _rows
 from tests.infra.test_item_registration import (
     _AT,
@@ -191,6 +200,35 @@ async def test_delete_now_keeps_blocked_targets_hidden_and_tombstones_the_others
         {"graph_id": blocked["graph_id"], "table": "bridge_action", "reason": "foreign_key"},
     ]
 
+
+
+async def test_delete_now_removes_a_social_source_and_its_legacy_node(engine):
+    registration = _registration()
+    store = ProjectingSocialStreamStore(engine, registration=registration)
+    item = SocialItem(
+        network="instagram", item_id="generated-post", account="generated-account", kind="post",
+        taken_at=_AT, expires_at=None, caption="Generated caption", alt_text=None, media=(),
+        counts=ItemCounts(likes=1),
+    )
+    assert await store.insert_item(item, person=_PERSON, origin="poll", seen_at=_AT)
+    (row,) = (await _rows(engine, SOCIAL_ITEM)).values()
+    graph_id = row["graph_id"]
+    source_id = memory_index.social_source_id(item.network, item.item_id)
+    async with engine.connect() as conn:
+        assert await conn.scalar(sa.select(sa.exists().where(
+            MEMORY_NODE.c.kind == "social", MEMORY_NODE.c.source_id == source_id,
+        )))
+    result = await memory_intake(engine, registration).forget(
+        unit=_UNIT, author=_PERSON, targets=[graph_id], at=_AT, delete_now=True,
+    )
+    assert result.tombstoned == (graph_id,)
+    assert not result.blocked
+    assert not await _rows(engine, SOCIAL_ITEM)
+    async with engine.connect() as conn:
+        assert not await conn.scalar(sa.select(sa.exists().where(
+            MEMORY_NODE.c.kind == "social", MEMORY_NODE.c.source_id == source_id,
+        )))
+    assert (await _rows(engine, REGISTRY))[graph_id]["state"] == "tombstoned"
 
 
 async def test_delete_now_hides_protected_act_and_records_the_source_as_blocked(engine):

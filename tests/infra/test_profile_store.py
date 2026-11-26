@@ -24,7 +24,7 @@ from nora.domain.profile import (
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.migrations_runner import run_migrations
 from nora.infra.sql.profile import SqlProfileStore
-from nora.infra.sql.schema import PROFILE, PROFILE_LINE
+from nora.infra.sql.schema import LESSON, MEMORY_NODE, PROFILE, PROFILE_LINE
 
 UNIT = "u1"
 KIT = "p-kit"
@@ -60,6 +60,29 @@ async def _write(env, ops, **kw):
     return await env.store.profile_write(
         account=ACCOUNT, ops=ops, citable=CITABLE, now_ms=kw.pop("now", NOW),
         written_by_session="test", apply_decay=kw.pop("apply_decay", False), **kw)
+
+
+async def test_an_indexed_verdict_projects_the_new_and_superseded_nodes(env) -> None:
+    async with env.engine.begin() as conn:
+        await conn.execute(sa.insert(LESSON).values(unit=UNIT, created_at=NOW))
+    line_id = await _guess(env, window_end=NOW + 30 * DAY)
+    indexed = SqlProfileStore(env.engine, screen=_no_offence, index=True)
+    assert await indexed.record_verdict(
+        key=ACCOUNT.key, line_id=line_id, verdict="confirmed",
+        verdict_by="test", now_ms=NOW + 30 * DAY,
+    ) == "ok"
+    async with env.engine.connect() as conn:
+        new_id = await conn.scalar(sa.select(PROFILE_LINE.c.id).where(
+            PROFILE_LINE.c.supersedes == line_id,
+        ))
+        assert new_id is not None
+        rows = (await conn.execute(sa.select(
+            MEMORY_NODE.c.source_id, MEMORY_NODE.c.state,
+        ).where(
+            MEMORY_NODE.c.kind == "profile_line",
+            MEMORY_NODE.c.source_id.in_([line_id, new_id]),
+        ))).all()
+    assert dict(rows) == {line_id: "superseded", new_id: "live"}
 
 
 async def test_a_committed_write_is_the_accounts_new_head(env) -> None:
