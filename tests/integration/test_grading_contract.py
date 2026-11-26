@@ -52,14 +52,13 @@ def load_generated(tmp_path, **kwargs):
 
 
 
-def eval_contract_flags(tmp_path, *, names, only=(), sample=1, judges=(), judge_samples=3,
-                        memory_index=False):
+def eval_contract_flags(tmp_path, *, names, only=(), sample=1, judges=(), judge_samples=3):
     from evals.scenarios import selected_cases
     cases = {f"{name}:{case.name}": {
         "input_sha256": binding.digest(binding.case_scenario(case)),
         "expected_output": "", "units": []}
         for name in names for case in selected_cases(
-            name, only=frozenset(only) if only else None, memory_index=memory_index)}
+            name, only=frozenset(only) if only else None)}
     path, sha = write_contract(
         tmp_path, entrypoint="eval", judges=judges, cases=cases,
         selection={"corpora": names, "only": sorted(only), "sample": sample,
@@ -76,14 +75,10 @@ def generated_cli_contract(tmp_path, monkeypatch):
     """
     original = binding.contract_for
     def bind(args, *, entrypoint, judges, selection):
-        import evals.__main__ as cli
-        generated = tmp_path / "config.evaluation.toml"
-        graph = args.memory_index or (
-            generated.exists() and cli.memory_index_enabled(generated.read_text()))
         flags = eval_contract_flags(
             tmp_path, names=selection["corpora"], only=selection["only"],
             sample=selection["sample"], judge_samples=selection["judge_samples"],
-            judges=judges, memory_index=graph)
+            judges=judges)
         args.grading_contract, args.grading_contract_sha256 = Path(flags[1]), flags[3]
         return original(args, entrypoint=entrypoint, judges=judges, selection=selection)
     monkeypatch.setattr(binding, "contract_for", bind)

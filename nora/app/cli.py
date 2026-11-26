@@ -4,7 +4,6 @@ the config write surface (`nora config set/get/unset/validate` — see
 `nora.app.config_cli`). Most of this module's commands only READ the record
 store; each one that writes says so where it is registered. Among them:
 `xai-login` and `openai-codex-login` (the host `secret.toml`),
-`memory rebuild` (the memory index, unless `--dry-run`),
 `lessons retire` and `lessons rollback` (one lesson revision, only with
 `--apply`), `snapshot --into` (a separate empty sandbox database), and
 `assess run-nightly` (an `assess_report` row).
@@ -45,7 +44,6 @@ import asyncio
 import json
 import os
 import sys
-from contextlib import suppress
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -66,13 +64,11 @@ from nora.domain.lessons import Lesson
 from nora.domain.models import UnattributedRow
 from nora.domain.participation_measures import Refusal
 from nora.domain.ports import ChannelDirectory
-from nora.infra.embedder import fingerprint
 from nora.infra.life360 import Life360Client, Life360DiscoveryError
 from nora.infra.sql import (
     SqlRecordStore,
     create_readonly_sql_engine,
     create_sql_engine,
-    memory_index,
     snapshot_at,
 )
 from nora.infra.sql.gatherings import SqlGatheringStore
@@ -292,39 +288,9 @@ def add_subcommands(
 
     memory = subparsers.add_parser(
         "memory", parents=[parent],
-        help="memory index maintenance (operator only)",
+        help="memory maintenance (operator only)",
     )
     memory_sub = memory.add_subparsers(dest="memory_command", required=True)
-    graph = memory_sub.add_parser("graph-project", parents=[parent],
-                                  help="project Record/Rollup relations; dry run unless --apply")
-    graph.add_argument("--apply", action="store_true")
-    graph.add_argument("--rows-per-second", type=float, default=25)
-    graph.set_defaults(func=cmd_graph_project)
-    # `memory rebuild`: WRITES
-    # the memory index through a writable engine, like `assess run-nightly`;
-    # the stores it reads are never written.
-    rebuild = memory_sub.add_parser(
-        "rebuild", parents=[parent],
-        help="re-project every store into the memory index (also its first "
-             "backfill); idempotent, refused while another rebuild runs",
-    )
-    rebuild.add_argument(
-        "--dry-run", action="store_true",
-        help="count what would be projected and dropped; write nothing",
-    )
-    # Vectors only, the projection untouched;
-    # the embedding worker backfills what this clears.
-    rebuild.add_argument(
-        "--embeddings-only", action="store_true",
-        help="clear the stored vectors (not the projection) for the embedding "
-             "worker to backfill; with --dry-run, count them",
-    )
-    rebuild.add_argument(
-        "--other-models", action="store_true",
-        help="with --embeddings-only: clear only vectors made by another model "
-             "than [memory.index] embedder_model",
-    )
-    rebuild.set_defaults(func=cmd_memory_rebuild)
     # `memory backfill-places`: WRITES the events (through
     # `GatheringStore.update`) and the geocode cache, and asks the geocoder,
     # only with --apply. See `nora.app.place_backfill`.
@@ -345,39 +311,6 @@ def add_subcommands(
         "--limit", type=int, default=10_000, help="at most this many rows per list",
     )
     places.set_defaults(func=cmd_memory_backfill_places)
-
-    # `memory unified-backfill` (27 §10, 29, 31 §6): the ONE chronological
-    # unified-memory backfill — historical sessions through the Cognition
-    # runner, oldest evidence first. Default is a dry-run census: zero
-    # writes, zero model calls. --apply requires explicit bounds.
-    unified = memory_sub.add_parser(
-        "unified-backfill", parents=[parent],
-        help="the chronological unified-memory backfill through the ONE "
-             "Cognition session (a dry-run census unless --apply)",
-    )
-    unified.add_argument(
-        "--unit", action="append",
-        help="one unit; repeatable. All units with a home room without it",
-    )
-    unified.add_argument("--from-ms", type=int, help="evidence time lower bound, epoch ms")
-    unified.add_argument("--until-ms", type=int, help="evidence time upper bound, epoch ms")
-    unified.add_argument(
-        "--batch-stimuli", type=int, default=40,
-        help="stimuli per historical session batch (default 40)",
-    )
-    unified.add_argument(
-        "--apply", action="store_true",
-        help="run the bounded historical lane; requires all three bounds",
-    )
-    unified.add_argument("--max-batches", type=int, help="at most this many batches (apply)")
-    unified.add_argument("--max-tokens", type=int, help="at most this many model tokens (apply)")
-    unified.add_argument("--max-seconds", type=float, help="at most this long, seconds (apply)")
-    unified.add_argument(
-        "--catch-up", action="store_true",
-        help="queue ONE real-clock time wake per unit whose history is "
-             "complete; a deliberate separate operation, never part of --apply",
-    )
-    unified.set_defaults(func=cmd_unified_backfill)
 
     # `assess run-nightly` (DEC-240): the Assess adaptor's deterministic
     # data-quality checks. WRITABLE engine, because `--record` (the default)
@@ -737,217 +670,10 @@ def _profile_tracing(cfg: Config) -> None:
             environment=cfg.obs.errors.environment)
 
 
-async def cmd_graph_project(args: argparse.Namespace) -> int:
-    import json
-
-    from nora.app.graph_project import graph_project, projection_context
-    cfg = _config(args)
-    if not cfg.memory.graph.enabled:
-        raise CliError("[memory.graph] enabled must be true")
-    scope = projection_context(_policy(cfg), _persons(cfg),
-                               nora_name=cfg.doctrine.display_name, produce=False)
-    engine = create_sql_engine(_database_url(cfg))
-    try:
-        result = await graph_project(engine,scope=scope,apply=args.apply,
-                                     rows_per_second=args.rows_per_second)
-    finally:
-        await engine.dispose()
-    print(json.dumps(result,sort_keys=True))
-    return 1 if args.apply and result["unprojected"] else 0
 
 
-async def cmd_unified_backfill(args: argparse.Namespace) -> int:
-    """`nora memory unified-backfill` (`nora.app.unified_backfill`): the ONE
-    chronological unified-memory backfill.
-
-    Default is a dry-run census on a READ-ONLY engine — zero writes, zero
-    model calls. `--apply` runs the bounded historical lane through the live
-    composition's session runner (`build_dependencies`, the app's own object
-    graph — nothing else wires it correctly) and REQUIRES
-    `--max-batches`/`--max-tokens`/`--max-seconds`. `--catch-up` queues one
-    real-clock `time` wake per complete unit — a separate operation, never
-    implied by `--apply`."""
-    import json
-    from datetime import UTC, datetime
-
-    from nora.app import composition_readers, unified_backfill
-    from nora.app.composition import build_dependencies
-    from nora.domain.cognition_session import Room
-    from nora.infra.sql.stimuli import SqlStimulusStore
-
-    cfg = _config(args)
-    allowlist = _policy(cfg)
-    units = args.unit or sorted(allowlist.home_rooms())
-    rooms_of_unit = lambda unit: {  # noqa: E731
-        (c.platform, cid) for c in allowlist.rooms()
-        if c.unit == unit and c.absorbed for cid in c.ids
-    }
-    room_units = {
-        (c.platform, cid): c.unit for c in allowlist.rooms() for cid in c.ids
-    }
-    unit_of = lambda platform, cid: room_units.get((platform, cid))  # noqa: E731
-    person_rooms = composition_readers.social_person_rooms(allowlist)
-    from_ms, until_ms = args.from_ms, args.until_ms
-
-    if args.apply:
-        import math
-
-        missing = [
-            n for n, v in (("--max-batches", args.max_batches),
-                           ("--max-tokens", args.max_tokens),
-                           ("--max-seconds", args.max_seconds)) if v is None
-        ]
-        if missing:
-            raise CliError(
-                f"--apply requires finite bounds: {', '.join(missing)}")
-        invalid = [
-            n for n, v in (
-                ("--max-batches", args.max_batches),
-                ("--max-tokens", args.max_tokens),
-                ("--max-seconds", args.max_seconds),
-                ("--batch-stimuli", args.batch_stimuli),
-            ) if not math.isfinite(v) or v <= 0
-        ]
-        if invalid:
-            raise CliError(
-                f"--apply requires positive finite values: {', '.join(invalid)}")
-        _profile_tracing(cfg)
-        deps = await build_dependencies(cfg, legacy_replay=True)
-        engine = create_sql_engine(_database_url(cfg))
-        try:
-            home_rooms = {
-                u: Room(c.platform, c.primary_id)
-                for u, c in allowlist.home_rooms().items()
-            }
-            result = await unified_backfill.apply(
-                engine, cfg=cfg, deps=deps, units=units,
-                home_rooms=home_rooms, rooms_of_unit=rooms_of_unit,
-                unit_of=unit_of, person_rooms=person_rooms,
-                self_ids=deps.registry.self_aliases(),
-                bounds=unified_backfill.Bounds(
-                    max_batches=args.max_batches,
-                    max_tokens=args.max_tokens,
-                    max_seconds=args.max_seconds,
-                ),
-                batch_stimuli=args.batch_stimuli,
-                from_ms=from_ms, until_ms=until_ms,
-            )
-        except ValueError as exc:
-            raise CliError(str(exc)) from exc
-        finally:
-            await engine.dispose()
-            for client in [deps.client, *deps.model_clients]:
-                with suppress(Exception):
-                    await client.close()
-            from opentelemetry import trace
-            provider = trace.get_tracer_provider()
-            if hasattr(provider, "force_flush"):
-                provider.force_flush()
-        print(json.dumps(result, sort_keys=True, default=str))
-        bad = sum(
-            u.get("failures", 0) for u in result["units"].values()
-        ) + sum(
-            u.get("uncovered_stimuli", 0) for u in result["units"].values()
-        )
-        return 1 if bad else 0
-
-    if args.catch_up:
-        if args.from_ms is not None or args.until_ms is not None:
-            raise CliError(
-                "--catch-up gates on the whole unit; a --from-ms/--until-ms "
-                "window cannot certify completion")
-        deps = await build_dependencies(cfg, legacy_replay=True)
-        engine = create_sql_engine(_database_url(cfg))
-        try:
-            live = deps.cognition_runner
-            if live is None or live.memory is None:
-                raise CliError(
-                    "catch-up requires the Cognition runner and unified "
-                    "memory lane wired ([cognition]/[dreamer] and "
-                    "[memory.graph]+[memory.graph.comprehend] enabled)")
-            grounder = unified_backfill.historical_grounder(
-                engine, cfg=cfg, deps=deps, units=units)
-            runner = unified_backfill.historical_runner(
-                live, grounder=grounder, agent_runner=live.agent_runner)
-            home_rooms = {
-                u: Room(c.platform, c.primary_id)
-                for u, c in allowlist.home_rooms().items()
-            }
-            result = await unified_backfill.catch_up(
-                engine,
-                stimulus_store=SqlStimulusStore(engine),
-                runner=runner, units=units, home_rooms=home_rooms,
-                rooms_of_unit=rooms_of_unit, unit_of=unit_of,
-                person_rooms=person_rooms,
-                self_ids=deps.registry.self_aliases(),
-                now_ms=int(datetime.now(UTC).timestamp() * 1000),
-                pending_reminds=(
-                    (lambda: deps.reminders.pending_of(cfg.agent.name))
-                    if deps.reminders is not None else None),
-            )
-        finally:
-            await engine.dispose()
-            for client in [deps.client, *deps.model_clients]:
-                with suppress(Exception):
-                    await client.close()
-        print(json.dumps(result, sort_keys=True, default=str))
-        not_queued = [
-            u for u, r in result["units"].items()
-            if r["status"] not in ("queued", "already_queued")
-        ]
-        return 1 if not_queued else 0
-
-    # Dry-run census: a READ-ONLY engine; no writes, no model calls, and no
-    # `build_dependencies` either — the census reads enumeration state, not
-    # the wired graph. `self_ids=()` means her own reactions/deletes count as
-    # enumerable here (the apply lane skips them); reported as a caveat, not
-    # hidden.
-    engine = create_readonly_sql_engine(_database_url(cfg))
-    try:
-        result = await unified_backfill.census(
-            engine, units=units, rooms_of_unit=rooms_of_unit, unit_of=unit_of,
-            person_rooms=person_rooms, self_ids=(),
-            from_ms=from_ms, until_ms=until_ms,
-        )
-    finally:
-        await engine.dispose()
-    result["dry_run"] = True
-    result["flags"] = {
-        "memory.graph.enabled": cfg.memory.graph.enabled,
-        "memory.graph.comprehend.enabled": cfg.memory.graph.comprehend.enabled,
-        "cognition.enabled": cfg.cognition.enabled,
-        "dreamer.enabled": cfg.dreamer.enabled,
-        "memory.profile.write": cfg.memory.profile.write,
-        "memory.profile.read": cfg.memory.profile.read,
-        "home_rooms": sorted(allowlist.home_rooms()),
-        "self_ids": "not resolved in dry-run; her own reaction/delete rows "
-                    "count in 'enumerated' (apply skips them)",
-    }
-    print(json.dumps(result, sort_keys=True, default=str))
-    return 0
 
 
-async def cmd_memory_rebuild(args: argparse.Namespace) -> int:
-    """`nora memory rebuild [--dry-run]`. A WRITABLE engine, like
-    `assess run-nightly`:
-    it writes the memory index (`nora.infra.sql.memory_index.rebuild`), never
-    a store. Prints counts per kind only, never an id or a text. Exit 1 when
-    a source stayed unprojected, so a script reads «incomplete» as a failure."""
-    cfg = _config(args)
-    if getattr(args, "embeddings_only", False):
-        return await _memory_rebuild_embeddings(args, cfg)
-    if getattr(args, "other_models", False):
-        raise CliError("--other-models applies only with --embeddings-only")
-    engine = create_sql_engine(_database_url(cfg))
-    try:
-        result = await memory_index.rebuild(engine, dry_run=bool(args.dry_run))
-    except memory_index.RebuildRefusedError as exc:
-        raise CliError(str(exc)) from exc
-    finally:
-        await engine.dispose()
-    for line in render_rebuild(result):
-        print(line)
-    return 1 if result.unprojected and not result.dry_run else 0
 
 
 async def cmd_memory_backfill_places(args: argparse.Namespace) -> int:
@@ -978,51 +704,8 @@ async def cmd_memory_backfill_places(args: argparse.Namespace) -> int:
     return 1 if result.venues.failed or result.geocodes.failed else 0
 
 
-async def _memory_rebuild_embeddings(args: argparse.Namespace, cfg: Config) -> int:
-    """`nora memory rebuild --embeddings-only [--other-models] [--dry-run]`
-    clears vectors, every one or only another model's, and reports counts: the
-    embedding worker (`[memory.index] embed`) backfills them on its own ticks.
-    The projection is untouched."""
-    model = fingerprint(cfg.memory.index.embedder_model)
-    keep = model if args.other_models else None
-    engine = create_sql_engine(_database_url(cfg))
-    try:
-        async with engine.begin() as conn:
-            cleared = await memory_index.clear_embeddings(
-                conn, keep_model=keep, dry_run=bool(args.dry_run),
-            )
-            after = await memory_index.embed_counts(conn, model)
-    finally:
-        await engine.dispose()
-    verb = "would clear" if args.dry_run else "cleared"
-    which = "of other models" if keep is not None else "all"
-    print(f"vectors: {verb} {cleared} ({which})")
-    print(f"embedded with {model}: {after.embedded}; waiting for the worker: {after.pending}")
-    print(
-        f"failed at least once: {after.failing}; given up after "
-        f"{memory_index.EMBED_MAX_ATTEMPTS} attempts: {after.given_up}"
-    )
-    if not cfg.memory.index.embed:
-        print("[memory.index] embed is false: nothing backfills until it is on")
-    return 0
 
 
-def render_rebuild(result: memory_index.RebuildReport) -> list[str]:
-    """One line per kind, then the queue: counts only."""
-    verb = ("would project", "would drop") if result.dry_run else ("projected", "dropped")
-    lines = [
-        f"{kind}: {verb[0]} {n}, {verb[1]} {result.dropped.get(kind, 0)}"
-        for kind, n in result.projected.items()
-    ]
-    lines += [
-        f"{kind} hubs: {verb[1]} {n}"
-        for kind, n in result.dropped.items() if kind not in result.projected
-    ]
-    if result.dry_run:
-        lines.append(f"queued now: {result.unprojected} (dry run: nothing written)")
-    else:
-        lines.append(f"unprojected: {result.unprojected}; index status complete")
-    return lines
 
 
 async def _lesson_of(store: SqlLessonStore, lesson_id: str) -> Lesson:

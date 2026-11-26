@@ -38,7 +38,7 @@ class EnabledWiring:
 
 async def enabled(
     allowlist: Any, audit: Any, cfg: Any, clock: Any,
-    cognition_context_screen: Any, cognition_memory: Any,
+    cognition_context_screen: Any,
     content_checks: Any, doctrine_store: Any, document_service: Any,
     documents_context: Any,
     dreamer_instructions: Any, engine: Any, entry_store: Any,
@@ -81,7 +81,6 @@ async def enabled(
                 allowlist=allowlist, audit=audit, cfg=cfg, clock=clock,
                 cognition_context_screen=cognition_context_screen,
                 cognition_lessons=cognition_lessons,
-                cognition_memory=cognition_memory,
                 content_checks=content_checks,
                 document_service=document_service,
                 documents_context=documents_context,

@@ -176,12 +176,6 @@ def eval_parser() -> argparse.ArgumentParser:
         ),
     )
     ap.add_argument(
-        "--memory-index", action="store_true",
-        help="enable [memory.index] read in the eval subject and select the "
-             "index-enabled routing cases. Requires the loopback embedder "
-             "and a source with its model's vectors (make eval-source).",
-    )
-    ap.add_argument(
         "--allow-long", action="store_true",
         help=f"start a run estimated over {BUDGET_MINUTES} minutes. Only when the "
              "operator asked for a full run: the host's eval lock is shared",

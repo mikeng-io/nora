@@ -212,7 +212,7 @@ def bound_selection(
     if args.sample != 1:
         raise ValueError(
             "a live-clock journey re-runs its declared world; --sample stays 1")
-    if args.memory_index or args.subject_overrides:
+    if args.subject_overrides:
         raise ValueError(
             "subject overrides cannot reach the declared journey world")
     if args.judge and len(names) == len(journey):

@@ -366,8 +366,7 @@
   "comment_blocks": 11,
   "file_lines": 1421,
   "functions": {
-   "add_subcommands": 341,
-   "cmd_unified_backfill": 169
+   "add_subcommands": 341
   },
   "internal_docstrings": 6
  },

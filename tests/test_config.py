@@ -2166,3 +2166,52 @@ def test_example_loads_with_the_memory_config_names(toml_path):
     assert cfg.memory.profile.unit.update_every_room_profile_changes == 5
     assert cfg.memory.profile.nora.update_every_replies == 100
     assert cfg.memory.profile.update_every_seconds == cfg.culture.stale_seconds == 604800
+
+
+@pytest.mark.parametrize("sections", ["host", "absent"])
+def test_retired_memory_graph_sections_load_accepted_and_ignored(toml_path, sections):
+    import tomli_w
+
+    data = tomllib.loads(toml_path.read_text())
+    if sections == "absent":
+        data["memory"].pop("graph", None)
+    else:
+        data["memory"].setdefault("graph", {})["enabled"] = True
+        data["memory"]["graph"].setdefault("comprehend", {})["enabled"] = True
+    data["honcho"] = {"enabled": False}
+    toml_path.write_text(tomli_w.dumps(data))
+
+    cfg = load(toml_path)
+
+    if sections == "absent":
+        assert cfg.memory.graph is None
+    else:
+        assert cfg.memory.graph["enabled"] is True
+        assert cfg.memory.graph["comprehend"]["enabled"] is True
+    assert cfg.memory.index.read is False
+    assert cfg.memory.index.embed_images_per_hour == 120
+
+
+def test_host_shaped_memory_index_values_load_through_the_real_loader(toml_path):
+    import tomli_w
+
+    data = tomllib.loads(toml_path.read_text())
+    data["memory"]["index"].update(
+        read=False, embed=True, embed_batch=256, embed_images_per_hour=400,
+    )
+    data["memory"]["profile"].update(write=True, read=False)
+    data["memory"].setdefault("graph", {})["enabled"] = True
+    data["memory"]["graph"].setdefault("comprehend", {})["enabled"] = True
+    data["honcho"] = {"enabled": False}
+    toml_path.write_text(tomli_w.dumps(data))
+
+    cfg = load(toml_path)
+
+    assert cfg.memory.index.read is False
+    assert cfg.memory.index.embed is True
+    assert cfg.memory.index.embed_batch == 256
+    assert cfg.memory.index.embed_images_per_hour == 400
+    assert cfg.memory.profile.write is True
+    assert cfg.memory.profile.read is False
+    assert cfg.memory.graph["enabled"] is True
+    assert cfg.memory.graph["comprehend"]["enabled"] is True

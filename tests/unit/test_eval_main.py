@@ -129,7 +129,7 @@ def test_the_run_that_held_the_lock_all_night_is_refused_unless_allowed():
     from evals.__main__ import BUDGET_MINUTES, estimate, over_budget
     from evals.scenarios import selected_cases
 
-    cases = len(selected_cases("tool_selection", memory_index=True))
+    cases = len(selected_cases("tool_selection"))
     full = estimate([(cases, False)], 3)
     assert full.minutes > BUDGET_MINUTES
     why = over_budget(full, allow_long=False)
@@ -278,7 +278,7 @@ def _journey_inputs(tmp_path):
     return argparse.Namespace(
         journey_cohort=cohort_path, services=services_path,
         service_inputs=load_services(services_path), run_budget="10",
-        sample=1, memory_index=False, subject_overrides=None, judge=None,
+        sample=1, subject_overrides=None, judge=None,
         measure="protocol")
 
 
@@ -306,7 +306,6 @@ def test_a_journey_selection_binds_the_declared_inputs(tmp_path):
     pytest.param({"services": None}, id="no-services"),
     pytest.param({"run_budget": None}, id="no-budget"),
     pytest.param({"sample": 2}, id="sampled"),
-    pytest.param({"memory_index": True}, id="subject-arm"),
     pytest.param({"subject_overrides": "x.json"}, id="subject-overrides"),
     pytest.param({"judge": "some-judge"}, id="eval-judge-on-journey-only"),
 ])

@@ -153,7 +153,7 @@ class App:
             doctrine_store=deps.doctrine_store, metrics=deps.metrics,
             started_at=started_at, llm_state=deps.llm_state,
             identity_file=self.cfg.identity_file, policy_file=self.cfg.policy_file,
-            index_state=deps.index_state, config_reload=deps.config_reload.status,
+            config_reload=deps.config_reload.status,
         )
 
     def start_platform_recovery(self, *, sleep=asyncio.sleep):

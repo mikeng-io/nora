@@ -178,10 +178,10 @@ def test_a_run_over_the_budget_is_refused_before_any_draw(
     runs: list[str] = []
     _stub(monkeypatch, tmp_path, runs)
     monkeypatch.setattr(
-        "sys.argv", ["python -m evals", "tool_selection", "--memory-index", "--sample", "3"],
+        "sys.argv", ["python -m evals", "tool_selection", "--sample", "3"],
     )
     assert m.main() == 2
-    cases = len(selected_cases("tool_selection", memory_index=True))
+    cases = len(selected_cases("tool_selection"))
     out, err = capsys.readouterr()
     assert f"estimate: {cases} cases x 3 samples x 1 arm = {cases * 3} draws" in out
     assert "over the 60-minute budget" in err
@@ -192,7 +192,7 @@ def test_allow_long_lets_the_same_run_start(monkeypatch, tmp_path, capsys, confi
     runs: list[str] = []
     _stub(monkeypatch, tmp_path, runs)
     monkeypatch.setattr("sys.argv", [
-        "python -m evals", "tool_selection", "--memory-index", "--sample", "3", "--allow-long",
+        "python -m evals", "tool_selection", "--sample", "3", "--allow-long",
     ])
     assert m.main() == 0
     assert runs == ["run"]
@@ -202,9 +202,9 @@ def test_allow_long_lets_the_same_run_start(monkeypatch, tmp_path, capsys, confi
 def test_a_narrow_run_starts_without_allow_long(monkeypatch, tmp_path, capsys, configured_main):
     runs: list[str] = []
     _stub(monkeypatch, tmp_path, runs)
-    [first, second] = [c.name for c in selected_cases("tool_selection", memory_index=True)][:2]
+    [first, second] = [c.name for c in selected_cases("tool_selection")][:2]
     monkeypatch.setattr("sys.argv", [
-        "python -m evals", "tool_selection", "--memory-index", "--sample", "3",
+        "python -m evals", "tool_selection", "--sample", "3",
         "--case", first, "--case", second,
     ])
     assert m.main() == 0

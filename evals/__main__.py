@@ -120,7 +120,7 @@ _PRINTS_INPUT = frozenset({"standing", "standing_unit"})
 
 #: What one draw costs, in seconds, for the run budget below. Unjudged is
 #: MEASURED on one corpus only: the mean draw of `tool_selection
-#: --memory-index --sample 3` on the deploy host (n=259 draws, 46 s, of which
+#: --sample 3` on the deploy host (n=259 draws, 46 s, of which
 #: a mean 15.7 s was the sandbox's index build, which a repeat draw reuses,
 #: `nora.subject.sandbox_index.IndexCache`). Other corpora and configs
 #: use the same estimate. Judged is ~211 s a draw
@@ -360,13 +360,13 @@ def _run_one(
     name: str, *, source_url: str, judge: Judge | None, sample: int,
     only: frozenset[str] | None = None, all_reasons: bool = False,
     positions: bool = False, context_receipts: list[dict] | None = None,
-    memory_index: bool = False, subject_overrides: dict[str, Any] | None = None,
+    subject_overrides: dict[str, Any] | None = None,
     contract: GradingContract | None = None, services: dict[str, Any] | None = None,
     cohort: Any = None, measurement: Measurement = PROTOCOL,
 ) -> bool:
     experiment, task = experiment_for(
         name, source_url=source_url, judge=judge, sample=sample, only=only,
-        memory_index=memory_index, overrides=subject_overrides,
+        overrides=subject_overrides,
         contract=contract, services=services,
         cohort=cohort, measurement=measurement,
     )
@@ -459,12 +459,6 @@ def _print_input(name: str, case_name: str, *, source_url: str,
     return 0
 
 
-def memory_index_enabled(config_toml: str) -> bool:
-    """`[memory.index] read` in a config's text; absent is the code
-    default, off."""
-    return bool(tomllib.loads(config_toml).get("memory", {}).get("index", {}).get("read", False))
-
-
 def embedder_model_of(config_toml: str) -> str:
     """The stated `[memory.index] embedder_model`, else the code default."""
     stated = tomllib.loads(config_toml).get("memory", {}).get("index", {}).get("embedder_model")
@@ -487,13 +481,9 @@ def graph_surface_lines(source_url: str, model_id: str) -> list[str]:
     ]
 
 
-def memory_surface_line(deployed: bool, flag: bool) -> str:
+def memory_surface_line() -> str:
     """The run header's account of which memory surface it measures, and why."""
-    if deployed:
-        return "graph ([memory.index] read = true in the deployment's config)"
-    if flag:
-        return "graph (--memory-index overrides the deployment's index setting)"
-    return "off ([memory.index] read = false; memory cases need --memory-index)"
+    return "graph (the Cognitive Graph's read surface is unconditional)"
 
 
 def main() -> int:
@@ -731,10 +721,7 @@ def _execute(args: argparse.Namespace, names: list[str], only: frozenset[str] | 
             print(f"run {RUN_ID}: {measurement.phrase} with case-owned external services")
             # Match case selection to the generated subject or its explicit
             # index override. Each case independently checks its subject.
-            deployed = Path(generated).exists() and memory_index_enabled(
-                Path(generated).read_text(encoding="utf-8"))
-            graph = deployed or args.memory_index
-            print(f"memory surface: {memory_surface_line(deployed, args.memory_index)}")
+            print(f"memory surface: {memory_surface_line()}")
             print(pseudonyms.status())
 
             if args.print_input:
@@ -747,8 +734,7 @@ def _execute(args: argparse.Namespace, names: list[str], only: frozenset[str] | 
             cohort = getattr(args, "bound_cohort", None)
             try:
                 est = estimate([
-                    (len(selected_cases(n, only=only, memory_index=graph,
-                                        cohort=cohort)),
+                    (len(selected_cases(n, only=only, cohort=cohort)),
                      bool(args.judge) and n in JUDGED_CORPORA)
                     for n in names
                 ], args.sample, args.judge_samples)
@@ -761,8 +747,7 @@ def _execute(args: argparse.Namespace, names: list[str], only: frozenset[str] | 
                 return 2
             if contract := getattr(args, "bound_contract", None):
                 contract.verify_cases({f"{n}:{c.name}": c for n in names
-                    for c in selected_cases(n, only=only, memory_index=graph,
-                                            cohort=cohort)})
+                    for c in selected_cases(n, only=only, cohort=cohort)})
 
             judge = _eval_judge(args) if args.judge else None
 
@@ -772,7 +757,7 @@ def _execute(args: argparse.Namespace, names: list[str], only: frozenset[str] | 
                     ok = _run_one(
                         name, source_url=source_url, judge=judge, sample=args.sample,
                         only=only, all_reasons=args.reasons, positions=args.positions,
-                        memory_index=graph, subject_overrides=subject_overrides,
+                        subject_overrides=subject_overrides,
                         context_receipts=(receipts if args.context_arm != "full"
                                           or args.context_report else None),
                         contract=getattr(args, "bound_contract", None),

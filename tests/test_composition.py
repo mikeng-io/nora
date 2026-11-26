@@ -1841,27 +1841,49 @@ async def test_the_senders_hold_identity_toml_as_their_direct_message_allowlist(
 
 
 
-@pytest.mark.parametrize("graph", [False, True])
-async def test_cognition_holds_the_memory_surface_the_flag_selects(cfg, tmp_path, graph):
-    """DEC-316, through the real composition: `[memory.index] read` picks
-    the session's memory verbs exactly as it picks every other occasion's.
-    The session's `wired` set (its guard's read-only set) and what it BUILDS
-    agree, and neither holds the other surface."""
+async def test_cognition_builds_graph_memory_tools_with_the_host_shape(
+    cfg, tmp_path, example_config_path,
+):
+    """The host-shaped file — `[memory.index] read=false embed=true`,
+    `[memory.graph]` and comprehend both true, `[honcho]` present — loads
+    through the real loader and the graph read tools still build: the retired
+    keys are accepted-and-ignored, never a gate on the Cognitive Graph."""
+    import tomllib
+
+    import tomli_w
+
     from nora.agent.catalog.groups import OFF_GRAPH_ONLY_TOOLS
 
+    data = tomllib.loads(example_config_path.read_text())
+    data["cognition"]["enabled"] = True
+    data["dreamer"]["enabled"] = True
+    data["memory"]["index"].update(
+        read=False, embed=True, embed_batch=256, embed_images_per_hour=400,
+    )
+    data["memory"]["profile"].update(write=True, read=False)
+    data["memory"].setdefault("graph", {})["enabled"] = True
+    data["memory"]["graph"].setdefault("comprehend", {})["enabled"] = True
+    data["honcho"] = {"enabled": False}
+    example_config_path.write_text(tomli_w.dumps(data))
+    host_cfg = load(example_config_path)
     (tmp_path / "policy.toml").write_text(_HOME_POLICY)
-    deps = await build_dependencies(override_config(
-        cfg, {**_SESSION_ON, "memory.index.read": graph},
-    ), legacy_replay=True)
+    deps = await build_dependencies(override_config(host_cfg, {
+        **_SESSION_ON,
+        "store.data_dir": tmp_path,
+        "platforms.signal.mode": "direct",
+        "platforms.signal.base_url": "http://127.0.0.1:18080",
+        "platforms.signal.account": "+85290000100",
+        "doctrine.dir": ROOT / "nora" / "doctrine",
+        "dreamer.dir": ROOT / "nora" / "dreamer",
+    }), legacy_replay=True)
     runner = deps.cognition_runner
     assert runner is not None
     unit, home = next(iter(runner._home_rooms.items()))
     built = {t.tool_name for t in runner._read_tools_for(unit, [home])}
-    on, off = (GRAPH_MEMORY_TOOLS, OFF_GRAPH_ONLY_TOOLS) if graph else (
-        OFF_GRAPH_ONLY_TOOLS, GRAPH_MEMORY_TOOLS)
-    assert ("memory_search" in built) is graph
-    assert not built & off and not runner._read_only_tools & off
-    assert built & on and runner._read_only_tools & on
+    assert {"memory_search", "memory_read"} <= built
+    assert not built & OFF_GRAPH_ONLY_TOOLS
+    assert not runner._read_only_tools & OFF_GRAPH_ONLY_TOOLS
+    assert built & GRAPH_MEMORY_TOOLS and runner._read_only_tools & GRAPH_MEMORY_TOOLS
 
 
 async def test_markdown_identity_reaches_live_tools_and_cognition_writers(cfg, tmp_path):

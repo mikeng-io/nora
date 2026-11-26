@@ -64,7 +64,7 @@ class SessionReadersWiring:
 
 async def cognition_session(
     allowlist: Any, audit: Any, cfg: Any, clock: Any,
-    cognition_context_screen: Any, cognition_lessons: Any, cognition_memory: Any,
+    cognition_context_screen: Any, cognition_lessons: Any,
     content_checks: Any, document_service: Any, documents_context: Any,
     dream_model: Any, dream_models: Any, dream_tools: Any, dreamer_instructions: Any,
     dreamer_runtime: Any, engine: Any, entry_store: Any, event_store: Any,
@@ -121,7 +121,7 @@ async def cognition_session(
     )
     cognition_runner = _session_runner(
         allowlist=allowlist, cfg=cfg, clock=clock,
-        cognition_lessons=cognition_lessons, cognition_memory=cognition_memory,
+        cognition_lessons=cognition_lessons,
         document_service=document_service, documents_context=documents_context,
         dream_model=dream_model, dream_models=dream_models,
         dream_tools=dream_tools, dreamer_instructions=dreamer_instructions,
@@ -347,7 +347,7 @@ def _session_grounder(
 
 def _session_runner(
     allowlist: Any, cfg: Any, clock: Any, cognition_lessons: Any,
-    cognition_memory: Any, document_service: Any, documents_context: Any, dream_model: Any,
+    document_service: Any, documents_context: Any, dream_model: Any,
     dream_models: Any, dream_tools: Any, dreamer_instructions: Any, dreamer_runtime: Any,
     engine: Any, entry_store: Any, grounder: Any, ledger_store: Any,
     memo_store: Any, metrics: Any, note_store: Any, observation_store: Any,
@@ -359,7 +359,6 @@ def _session_runner(
     """The runner itself; a bad objective or skill names the fault at startup."""
     try:
         cognition_runner = build_cognition_runner(
-            memory=cognition_memory,
             documents=document_service if cfg.documents.enabled else None,
             documents_context=documents_context,
             tag_trace_store=tag_trace_store,

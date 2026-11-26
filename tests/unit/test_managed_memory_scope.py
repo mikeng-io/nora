@@ -234,39 +234,21 @@ async def test_a_social_opt_out_excludes_social_items_but_keeps_enabled_and_non_
         ("social", "generated-enabled"), ("message", "generated-opted-out-chat")}
 
 
-def _graph_composition(persons, access, cfg):
+def _memory_fixture(access):
+    """The two memory-facing facts the screening test consumes."""
     from types import SimpleNamespace
 
-    from nora.memory.wire import graph as wire_graph
-    from tests.builders import override_config
-
-    allowlist = SimpleNamespace(
-        rooms=lambda: [
-            SimpleNamespace(
-                platform="signal", primary_id="generated-room-a",
-                unit=HERE.unit, persons=frozenset({PERSON}), location=False)
-        ],
-        home_rooms=lambda: frozenset(),
+    names = tuple(
+        name for person in access.persons_view().by_person.values()
+        for name in (
+            person.person_id, person.name, person.first_name, person.last_name, *person.aliases
+        )
+        if name
     )
-    cfg = override_config(cfg, {
-        "memory.graph.enabled": True, "memory.graph.comprehend.enabled": True,
-        "cognition.enabled": True,
-    })
-    return wire_graph(
-        allowlist=allowlist, cfg=cfg, content_checks=False, engine=object(),
-        media_join=SimpleNamespace(), metrics=Metrics(), persons=persons,
-        presence_circles=(),
-        registry=SimpleNamespace(self_aliases=lambda: frozenset()),
-        rosters={}, route_model=lambda occasion, model: "generated-model",
-        tier=SimpleNamespace(model="generated-model"),
-        unit_scopes=lambda: (HERE.unit,), access=access)
-
-
-async def test_graph_composition_wires_and_starts_under_the_managed_backend(example_config):
-
-    _, access, _ = await _world()
-    wired = _graph_composition(access.persons_view(), access, example_config)
-    assert wired.cognition_memory is not None
+    return SimpleNamespace(
+        records=SimpleNamespace(access=access),
+        private_names=names,
+    )
 
 
 @pytest.mark.parametrize("provider", ["web_search", "instagram_search", "x_search"])
@@ -288,7 +270,7 @@ async def test_managed_source_names_are_screened_live_before_external_reads(
 
     bindings, access, _ = await _world()
     bindings.people[PERSON] = replace(bindings.people[PERSON], display_name="Generated Person")
-    memory = _graph_composition(access.persons_view(), access, example_config).cognition_memory
+    memory = _memory_fixture(access)
     records = ManagedRecords(memory.records.access)
     state = LookupState(
         GraphFetched(), HERE.unit, 1, records, Metrics(), memory.private_names,
@@ -353,7 +335,7 @@ async def _screened_lookup(example_config, access, *, provider="web_search",
             super().__init__()
             self.access = access
 
-    memory = _graph_composition(access.persons_view(), access, example_config).cognition_memory
+    memory = _memory_fixture(access)
     state = LookupState(
         GraphFetched(), HERE.unit, 1, ManagedRecords(memory.records.access),
         Metrics(), memory.private_names, persons=persons, scopes=scopes,
@@ -524,18 +506,14 @@ async def test_a_source_person_exposed_mid_lookup_is_screened_before_the_provide
 
 
 async def test_file_graph_keeps_opt_outs_when_no_access_backend_is_supplied(example_config):
-    from nora.domain.models import PersonRef
-    from nora.persons import Persons
+    from nora.infra.sql.comprehend import SqlComprehendRecords
 
-    persons = Persons(
-        by_person={PERSON: PersonRef(
-            person_id=PERSON, name="Generated Person")},
-        index={}, _social_off=frozenset({PERSON}),
+    records = SqlComprehendRecords(
+        object(), media_join=object(), rooms_by_unit={}, persons_by_unit={},
+        social_off_ids=frozenset({PERSON}), access=None,
     )
-    wired = _graph_composition(persons, None, example_config)
-    assert wired.cognition_memory is not None
-    assert await wired.cognition_memory.records._social_off((PERSON,)) == {PERSON}
-    assert FOREIGN not in await wired.cognition_memory.records._social_off((FOREIGN,))
+    assert await records._social_off((PERSON,)) == {PERSON}
+    assert FOREIGN not in await records._social_off((FOREIGN,))
 
 
 async def test_an_opted_out_retired_identity_still_excludes_the_survivors_social_items():

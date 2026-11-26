@@ -104,7 +104,6 @@ async def _wake_outcome(
 
 #: Reads the loop depends on, open unless an arm closes them (design: the loop is open).
 OPEN_LOOP: dict[str, Any] = {
-    "memory.index.read": True,
     "memory.profile.read": True,
 }
 

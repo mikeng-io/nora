@@ -472,14 +472,9 @@ JUDGED_CORPORA = frozenset({
 JUDGE_REQUIRED = frozenset({"standing", "standing_unit", "conversational_recall"})
 
 
-#: Route tags select index-enabled (`graph`) subjects. Untagged cases run with
-#: or without the index; indexed memory cases run only on the graph surface.
+#: Memory-reading cases declare the graph surface. The surface is unconditional
+#: in composition; the tag now describes the case's need rather than an arm.
 MEMORY_SURFACES = frozenset({"graph"})
-
-#: An explicit memory-surface experiment; dependency origins remain deployment-owned.
-MEMORY_INDEX_OVERRIDES: dict[str, object] = {
-    "memory.index.read": True,
-}
 
 #: The subject overrides every `cognition_session` draw composes with: the
 #: session and its graph surface forced on, whatever the deployment's flags —
@@ -488,17 +483,14 @@ MEMORY_INDEX_OVERRIDES: dict[str, object] = {
 #: anchors`), so it reads this constant rather than carrying a second copy.
 COGNITION_SESSION_OVERRIDES: dict[str, object] = {
     "cognition.enabled": True,
-    "memory.graph.enabled": True,
-    "memory.graph.comprehend.enabled": True,
 }
 
 
 def selected_cases(
-    name: str, *, only: frozenset[str] | None = None, memory_index: bool = False,
-    cohort: Any = None,
+    name: str, *, only: frozenset[str] | None = None, cohort: Any = None,
 ) -> list[Case]:
     """The cases of corpus `name` a run draws, before sampling: `only`'s, on
-    the resolved memory surface (`experiment_for` says why each filter).
+    the unconditional graph memory surface.
     Refused (ValueError) when `only` names a case the run cannot draw."""
     cases = load_corpus(name, cohort=cohort)
     if only is not None:
@@ -515,20 +507,12 @@ def selected_cases(
                 f"or misspelt. Active: {sorted(known)}"
             )
         cases = [c for c in cases if c.name in only]
-    # Indexed memory cases exist only on the graph surface. Naming one without
-    # the index is refused, never silently dropped: that run would report a
-    # clean corpus it never drew.
-    arm = "graph" if memory_index else "off"
-    other = sorted(c.name for c in cases if c.metadata.get("memory_surface") not in (None, arm))
-    if only is not None and other:
-        raise ValueError(f"{name}: {other} need the graph memory surface; pass --memory-index")
-    cases = [c for c in cases if c.metadata.get("memory_surface") in (None, arm)]
     return cases
 
 
 def experiment_for(
     name: str, *, source_url: str, judge: Any = None, sample: int = 1,
-    only: frozenset[str] | None = None, memory_index: bool = False,
+    only: frozenset[str] | None = None,
     overrides: dict[str, Any] | None = None,
     contract: GradingContract | None = None,
     services: Mapping[str, Any] | None = None,
@@ -550,11 +534,7 @@ def experiment_for(
     answer that needs draws, and draws are what a corpus-sized bill makes
     people skimp on.
 
-    `memory_index` is the RESOLVED arm (`python -m evals` takes it from the
-    generated config's `[memory.index] read`, or `--memory-index`): it
-    selects the cases, composes the subject on the graph surface
-    (`MEMORY_INDEX_OVERRIDES`), and is checked against the composed config
-    per case (`Spec.memory_surface`).
+    The graph read surface is unconditional, so every draw composes it.
 
     A `JOURNEY_CORPORA` name selects the declared `cohort` instead of a
     yaml corpus: `Experiment` graded by `JourneyGrader`, `Spec.services`
@@ -598,7 +578,7 @@ def experiment_for(
         )
         return Experiment(cases=cases, evaluators=[JourneyGrader()]), nora_task(spec)
 
-    cases = selected_cases(name, only=only, memory_index=memory_index)
+    cases = selected_cases(name, only=only)
     if contract is not None:
         cases = [contract.bind_case(name, case) for case in cases]
     if sample > 1:
@@ -609,9 +589,8 @@ def experiment_for(
         entry=CORPUS_ENTRY[name],
         judge=judge if name in JUDGED_CORPORA else None,
         full_restore=name in FULL_RESTORE_CORPORA,
-        overrides=({**(dict(MEMORY_INDEX_OVERRIDES) if memory_index else {}),
-                   **(dict(overrides) if overrides else {})} or None),
-        memory_surface="graph" if memory_index else "off",
+        overrides=dict(overrides) if overrides else None,
+        memory_surface="graph",
     )
     grader = ToolRouteGrader() if name in ROUTED_CORPORA else MeetsGrader()
     experiment = Experiment(cases=cases, evaluators=[grader])

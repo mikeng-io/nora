@@ -571,29 +571,6 @@ async def test_census_writes_nothing_and_builds_no_runner(monkeypatch: Any):
     assert not conn.statements  # nothing was even issued
 
 
-async def test_dry_run_reports_census_without_a_profile_lane(monkeypatch, capsys, example_config):
-    import json
-    from unittest.mock import AsyncMock
-
-    from nora.__main__ import build_parser
-    from nora.app import cli
-
-    census = AsyncMock(return_value={"units": {"u1": {"enumerated": 1}}})
-    monkeypatch.setattr(ub, "census", census)
-    monkeypatch.setattr(cli, "_config", lambda args: example_config)
-    monkeypatch.setattr(cli, "_policy", lambda cfg: SimpleNamespace(home_rooms=dict, rooms=list))
-    monkeypatch.setattr(cli, "_database_url", lambda cfg: "generated")
-    monkeypatch.setattr(cli, "create_readonly_sql_engine", lambda url: AsyncMock())
-
-    args = build_parser().parse_args(["memory", "unified-backfill", "--unit", "u1"])
-    assert await args.func(args) == 0
-    census.assert_awaited_once()
-    report = json.loads(capsys.readouterr().out)
-    assert report["dry_run"] is True
-    assert report["units"] == {"u1": {"enumerated": 1}}
-    assert report["flags"]["memory.profile.write"] == example_config.memory.profile.write
-    assert report["flags"]["memory.profile.read"] == example_config.memory.profile.read
-    assert "profile_lane" not in report["flags"]
 
 
 # -- the runner variant ---------------------------------------------------------
