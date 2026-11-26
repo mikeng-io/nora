@@ -38,9 +38,8 @@ signal already present in this repo's own conventions, not a per-path guess:
   - A PARAGRAPH (not just the one line the path sits on) containing the word
     "RETIRED", "DEPRECATED", "SUPERSEDED", or "deleted", or the phrase
     "resolves in git history", is read as the same kind of deliberate
-    historical citation the superpowers exemption already covers —
-    `docs/design/decisions.md`'s own header states that a decision whose
-    subject is deleted is marked exactly this way and never rewritten.
+    historical citation the superpowers exemption already covers; an ADR is
+    such a record and is never rewritten.
   - A path that is a LITERAL (non-glob) entry in `.gitignore` is a generated
     artifact, not a moved one — `nora/version.json` is built at image time and
     is `unavailable` by design in a source checkout (ARCHITECTURE.md says so

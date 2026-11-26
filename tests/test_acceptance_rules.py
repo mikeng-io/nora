@@ -291,6 +291,8 @@ RULE_TESTS = {
     # string the table renders — a wording change to ANY music surface has to
     # land there, so the diff shows it.
     "R-84": "test_now_playing_line_carries_title_and_url",
+    "R-86": "test_r86_social_reads_are_read_only_at_three_layers",
+    "R-91": "test_a_third_memory_read_is_answered_unavailable_and_the_pass_completes",
     # R-94 (DEC-187): end-music and leave-voice are separate
     # lifecycles — `/music stop` and idle expiry end the session, but the
     # voice connection STAYS; only `/discord exit`, an emptied channel and
