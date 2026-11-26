@@ -33,6 +33,12 @@ from nora.memory.adapters.condition_matcher import SqlConditionMatcher
 from nora.memory.adapters.debrief_store import SqlDebriefStore
 from nora.memory.adapters.delivery_arbitration import SqlDeliveryHistory
 from nora.memory.adapters.graph_clock import SqlDueSchedules
+from nora.memory.adapters.graph_search import (
+    projected_graph_search_rows as projected_graph_search_rows,
+)
+from nora.memory.adapters.graph_search import rebuild_graph_search as rebuild_graph_search
+from nora.memory.adapters.graph_state import entity_anchor_aliases as entity_anchor_aliases
+from nora.memory.adapters.graph_state import unit_edges as unit_edges
 from nora.memory.adapters.graph_store import SqlCognitiveGraph
 from nora.memory.adapters.memory_intake import SqlMemoryIntake
 from nora.memory.adapters.message_graph_ids import SqlMessageGraphIds

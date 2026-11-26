@@ -18,13 +18,30 @@ def _projection(name: str, fields: tuple[str, ...]) -> str:
     )
 
 
+def _projection_sql() -> str:
+    return " UNION ALL ".join(
+        _projection(name, fields) for name, fields in SEARCHABLE_SOURCES.items()
+    )
+
+
+async def projected_graph_search_rows(
+    conn: AsyncConnection, unit: str,
+) -> tuple[tuple[str, str, str], ...]:
+    """The `(graph_id, unit, text)` rows a rebuild of `unit` decides, before
+    any worker state: the content equality an eval index reuse is checked
+    against."""
+    rows = await conn.execute(sa.text(
+        f"SELECT graph_id, unit, text FROM ({_projection_sql()}) AS source "  # noqa: S608
+        "WHERE text IS NOT NULL ORDER BY unit, graph_id"
+    ), {"unit": unit})
+    return tuple((str(r.graph_id), str(r.unit), str(r.text)) for r in rows)
+
+
 async def rebuild_graph_search(conn: AsyncConnection, unit: str) -> None:
     """Reconcile one unit in the caller's transaction, keeping vectors for unchanged text."""
     names = ", ".join(SEARCHABLE_SOURCES)
     await conn.execute(sa.text(f"LOCK TABLE {names} IN SHARE ROW EXCLUSIVE MODE"))
-    projection = " UNION ALL ".join(
-        _projection(name, fields) for name, fields in SEARCHABLE_SOURCES.items()
-    )
+    projection = _projection_sql()
     statement = sa.text(f"""
         MERGE INTO graph_search AS indexed
         USING (SELECT * FROM ({projection}) AS source WHERE text IS NOT NULL) AS expected

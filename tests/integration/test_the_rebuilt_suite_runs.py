@@ -20,6 +20,7 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
+import sqlalchemy as sa
 from strands_evals import Case
 from strands_evals.types.evaluation import EvaluationData
 
@@ -188,7 +189,9 @@ async def test_a_graph_surface_sandbox_is_indexed_from_the_sources_vectors(
     from evals.scenarios import MEMORY_INDEX_OVERRIDES
     from nora.config import MemoryIndexConfig
     from nora.infra.embedder import fingerprint
-    from nora.infra.sql import create_sql_engine, memory_index
+    from nora.infra.sql import create_sql_engine, graph_search_embed
+    from nora.infra.sql.cognitive_graph_schema import REGISTRY
+    from nora.memory.wire import rebuild_graph_search
     from nora.subject import GraphIndexRefusedError
 
     monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
@@ -201,20 +204,23 @@ async def test_a_graph_surface_sandbox_is_indexed_from_the_sources_vectors(
         memory_surface="graph",
     )
     # `_drive` raises; `nora_task` turns it into the draw's ERROR.
-    with pytest.raises(GraphIndexRefusedError, match="no vector of"):
+    with pytest.raises(GraphIndexRefusedError, match="no graph-search vector of"):
         await offline_drive(case, spec)
 
     engine = create_sql_engine(source.url)
     try:
-        await memory_index.rebuild(engine)
         async with engine.begin() as conn:
-            items = await memory_index.embed_pick(conn, limit=100, now_ms=0)
+            units = tuple(await conn.scalars(sa.select(REGISTRY.c.unit).distinct()))
+            assert units  # positive control: the snapshot carries a graph
+            for unit in units:
+                await rebuild_graph_search(conn, unit)
+            items = await graph_search_embed.pick(conn, limit=100, now_ms=0)
             assert items  # positive control: the source owes vectors
             for n, item in enumerate(items):
                 vec = [0.0] * 2048
                 vec[n] = 1.0
-                await memory_index.embed_store(
-                    conn, item, vector=vec, now_ms=1, by_bytes=False,
+                await graph_search_embed.store(
+                    conn, item, vector=vec, now_ms=1,
                     model=fingerprint(MemoryIndexConfig().embedder_model),
                 )
     finally:
@@ -226,8 +232,8 @@ async def test_a_graph_surface_sandbox_is_indexed_from_the_sources_vectors(
     assert state_of(data, NORA_ERROR) is None or "memory index" not in str(
         state_of(data, NORA_ERROR))
     line = capsys.readouterr().out
-    assert "probe/graph: memory index:" in line and "0 owed" in line, line
+    assert "probe/graph: graph search index:" in line and "0 owed" in line, line
     assert "coverage 1.000" in line, line
     # Not vacuous: nothing owed and nothing held would also read 1.000.
-    held = int(line.split("memory index: ")[1].split(" with a vector")[0])
+    held = int(line.split("graph search index: ")[1].split(" with a vector")[0])
     assert held >= len(_HISTORY.transcript), line

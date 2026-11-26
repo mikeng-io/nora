@@ -130,14 +130,14 @@
     "file": "nora/infra/sql/memory_index.py",
     "old": "            sa.update(MEMORY_NODE).where(node.id.in_(ids)).values(owed_since=value)",
     "new": "            sa.update(MEMORY_NODE).where(sa.false()).values(owed_since=value)",
-    "target": "tests/integration/test_eval_sandbox_vectors.py::test_a_sandbox_carries_the_sources_wait_so_it_is_never_kinder"
+    "target": "tests/integration/test_legacy_replay_substrate.py::test_a_sandbox_carries_the_sources_wait_so_it_is_never_kinder"
   },
   {
     "name": "review 2: an unmatched sandbox node is bounded by its own instant",
     "file": "nora/infra/sql/memory_index.py",
     "old": "        .values(owed_since=sa.func.least(node.owed_since, bound))",
     "new": "        .values(owed_since=node.owed_since)",
-    "target": "tests/integration/test_eval_sandbox_vectors.py::test_a_sandbox_carries_the_sources_wait_so_it_is_never_kinder"
+    "target": "tests/integration/test_legacy_replay_substrate.py::test_a_sandbox_carries_the_sources_wait_so_it_is_never_kinder"
   },
   {
     "name": "review 4: given-up nodes and a question with no terms is partial",
