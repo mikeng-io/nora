@@ -20,7 +20,7 @@ AMBIENT = frozenset({
     "place_info", "reaction_send", "reverse_geocode", "room_list", "room_read",
     "route", "routine_read", "saved_places", "search_gifs", "send_gif",
     "send_reply", "send_to", "transit", "version_list", "version_read",
-    "weather", "web_fetch", "web_search", "where_been", "where_is",
+    "weather", "web_fetch", "web_search", "where_been", "where_is", "who_said",
     "x_read", "x_search",
 })
 CALLED = AMBIENT | {
@@ -77,7 +77,7 @@ def test_load_tools_cannot_reach_any_retired_tool(ambient):
     agent = Agent(tools=surface.tools)
     names = sorted({
         "checkpoint_update", "memo_read", "note_read", "note_search",
-        "recall_lookups", "standing_read", "who_said",
+        "recall_lookups", "standing_read",
     })
     assert set(names) == LEGACY_ENGAGEMENT_TOOLS
     for i in range(0, len(names), 4):
@@ -86,6 +86,16 @@ def test_load_tools_cannot_reach_any_retired_tool(ambient):
         assert result["status"] == "nothing_found"
         assert result["unknown"] == asked
     assert load_onto(agent, surface.shelf, ["memory_read"])["loaded"] == ["memory_read"]
+
+
+@pytest.mark.parametrize("ambient", [False, True])
+def test_who_said_remains_loadable_on_the_engagement_surface(ambient):
+    """The attribution read is not a legacy store read: the engagement surface
+    keeps it available where granted (DEC-316)."""
+    surface = _surface(fire_turn=ambient, defer=True)
+    agent = Agent(tools=surface.tools)
+    assert "who_said" in surface.admitted
+    assert load_onto(agent, surface.shelf, ["who_said"])["loaded"] == ["who_said"]
 
 
 def test_dreamers_read_only_grant_keeps_its_legacy_sources():

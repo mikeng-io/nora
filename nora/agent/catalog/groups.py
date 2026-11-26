@@ -75,9 +75,6 @@ DOCUMENT_TOOLS: frozenset[str] = frozenset(
     {"document_publish", "document_read", "document_set_status", "document_list", "document_revise"}
 )
 
-# Offered only while the graph memory surface is off; withheld wherever it is on.
-OFF_GRAPH_ONLY_TOOLS: frozenset[str] = frozenset({"who_said"})
-
 GRAPH_MEMORY_TOOLS: frozenset[str] = frozenset({"memory_search", "memory_read", "profile_dispute"})
 
 # These tools are offered by a graph pass through its own dependencies.
@@ -88,5 +85,4 @@ LEGACY_ENGAGEMENT_TOOLS: frozenset[str] = frozenset({
     "checkpoint_update",
     "memo_read", "note_read", "note_search",
     "recall_lookups", "standing_read",
-    "who_said",
 })

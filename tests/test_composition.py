@@ -1852,8 +1852,6 @@ async def test_cognition_builds_graph_memory_tools_with_the_host_shape(
 
     import tomli_w
 
-    from nora.agent.catalog.groups import OFF_GRAPH_ONLY_TOOLS
-
     data = tomllib.loads(example_config_path.read_text())
     data["cognition"]["enabled"] = True
     data["dreamer"]["enabled"] = True
@@ -1881,8 +1879,8 @@ async def test_cognition_builds_graph_memory_tools_with_the_host_shape(
     unit, home = next(iter(runner._home_rooms.items()))
     built = {t.tool_name for t in runner._read_tools_for(unit, [home])}
     assert {"memory_search", "memory_read"} <= built
-    assert not built & OFF_GRAPH_ONLY_TOOLS
-    assert not runner._read_only_tools & OFF_GRAPH_ONLY_TOOLS
+    assert "who_said" in built
+    assert "who_said" in runner._read_only_tools
     assert built & GRAPH_MEMORY_TOOLS and runner._read_only_tools & GRAPH_MEMORY_TOOLS
 
     off_deps = await build_dependencies(override_config(host_cfg, {
@@ -1899,7 +1897,7 @@ async def test_cognition_builds_graph_memory_tools_with_the_host_shape(
     off_unit, off_home = next(iter(off_runner._home_rooms.items()))
     off_built = {t.tool_name for t in off_runner._read_tools_for(off_unit, [off_home])}
     assert {"memory_search", "memory_read"}.isdisjoint(off_built)
-    assert "who_said" in off_built, "positive control: the off-surface-only read is offered"
+    assert "who_said" in off_built, "positive control: the window-attribution read is offered"
 
 
 async def test_markdown_identity_reaches_live_tools_and_cognition_writers(cfg, tmp_path):
@@ -1915,7 +1913,7 @@ async def test_markdown_identity_reaches_live_tools_and_cognition_writers(cfg, t
     )
     (tmp_path / "policy.toml").write_text(_HOME_POLICY)
     renamed = override_config(cfg, {**_SESSION_ON, "doctrine.dir": directory})
-    deps = await build_dependencies(renamed, legacy_replay=True, include_graph_reads=False)
+    deps = await build_dependencies(renamed, legacy_replay=True)
     assert deps.cognition_runner is not None
     assert deps.cognition_runner._nora_names == frozenset({"AgentAlpha"})
     registry = deps.engagement._tool_registry
