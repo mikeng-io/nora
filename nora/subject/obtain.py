@@ -366,6 +366,22 @@ class Subject:
             await self.environment.close_subject(self)
 
 
+def surface_tool_names(subject: Subject) -> set[str]:
+    """The memory reads one ordinary tag surface would actually offer."""
+    from nora.agent.room import Room
+
+    deps = subject.deps
+    room = Room(
+        platform=subject.room[0], conversation_id=subject.room[1], roster_source=None,
+        persons=deps.persons, access=deps.access,
+    )
+    surface = deps.engagement._tool_registry.surface(
+        store=deps.audit, conversation_id=subject.room[1], conversation_type="group",
+        persons=deps.persons, deliverer=None, metrics=deps.metrics, room=room,
+    )
+    return set(surface.admitted)
+
+
 def _with(obj: Any, path: str, value: Any) -> Any:
     head, _, rest = path.partition(".")
     if rest:

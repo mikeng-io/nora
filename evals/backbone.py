@@ -95,7 +95,7 @@ from nora.subject import (
 )
 from nora.subject.effect_capture import subject_effects
 from nora.subject.eval_evidence import EvidenceError
-from nora.subject.obtain import RoomNotInPolicyError
+from nora.subject.obtain import RoomNotInPolicyError, surface_tool_names
 from nora.subject.recorded_services import RecordedServices
 from nora.subject.transport import held_states
 
@@ -1566,22 +1566,6 @@ def retain_report(evidence: Any, corpus: str, report: Any, *, experiment: Any = 
     return payload
 
 
-def _surface_tool_names(subject: Any) -> set[str]:
-    """The memory reads one ordinary tag surface would actually offer."""
-    from nora.agent.room import Room
-
-    deps = subject.deps
-    room = Room(
-        platform=subject.room[0], conversation_id=subject.room[1], roster_source=None,
-        persons=deps.persons, access=deps.access,
-    )
-    surface = deps.engagement._tool_registry.surface(
-        store=deps.audit, conversation_id=subject.room[1], conversation_type="group",
-        persons=deps.persons, deliverer=None, metrics=deps.metrics, room=room,
-    )
-    return set(surface.admitted)
-
-
 async def _drive(case: Case, spec: Spec) -> dict[str, Any]:
     from nora.subject.eval_evidence import current
 
@@ -1692,7 +1676,7 @@ async def _drive_draw(case: Case, spec: Spec, *, recording: RecordedServices) ->
                        else await obtain(drawn_subject))
             memory_checked = spec.memory_surface in {"graph", "off"}
             if memory_checked:
-                names = _surface_tool_names(subject)
+                names = surface_tool_names(subject)
                 expected = {"memory_search", "memory_read"}
                 if spec.memory_surface == "off" and not expected.isdisjoint(names):
                     raise ValueError("memory-off arm composed graph memory read tools")
