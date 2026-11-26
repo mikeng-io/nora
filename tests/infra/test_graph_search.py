@@ -12,6 +12,7 @@ from nora.infra.sql import memory_index
 from nora.infra.sql.audit import SqlRecordStore
 from nora.infra.sql.cognitive_graph_schema import CLAIM, ENTITY, GRAPH_SEARCH
 from nora.infra.sql.cognitive_graph_store import SqlCognitiveGraph
+from nora.infra.sql.embed_schedule import EMBED_MAX_ATTEMPTS
 from nora.infra.sql.item_retention import tombstone_items
 from nora.infra.sql.memory_embed import MemoryEmbedWorker
 from nora.infra.sql.schema import MEMORY_NODE, MESSAGES, PRESENCE_FIXES
@@ -25,6 +26,14 @@ MODEL_ID = "model-a.gguf@0000"
 MODEL = fingerprint(MODEL_ID)
 
 engine = graph_test_engine
+
+
+class Clock:
+    def __init__(self) -> None:
+        self.now = 1_800_000_000.0
+
+    def __call__(self) -> float:
+        return self.now
 
 
 @pytest.fixture
@@ -175,3 +184,37 @@ async def test_worker_embeds_graph_search_without_embedding_the_legacy_index(eng
     assert row.embedding_model == MODEL
     assert row.embed_input == "text"
     assert legacy.embedding is None
+
+async def test_an_unavailable_embedder_never_gives_a_node_up(engine, llama):
+    """An outage backs a graph row off, never past the cap; it embeds when the server returns."""
+    fake, url = llama
+    graph_id = await _message(engine)
+    clock = Clock()
+    w = MemoryEmbedWorker(
+        engine, LlamaEmbedder(url), model=MODEL, model_file=model_file(MODEL_ID),
+        batch=16, clock=clock,
+    )
+    assert await w.run_once() == 1
+    async with engine.begin() as conn:
+        await conn.execute(sa.update(GRAPH_SEARCH).where(
+            GRAPH_SEARCH.c.graph_id == graph_id,
+        ).values(embedding=None, embedding_model=None, embed_attempts=0))
+    fake.status, fake.healthy = 503, False
+    for _ in range(EMBED_MAX_ATTEMPTS + 2):
+        clock.now += 7 * 3600
+        assert await w.run_once() == 1, "still picked: never given up"
+    async with engine.connect() as conn:
+        row = (await conn.execute(sa.select(
+            GRAPH_SEARCH.c.embedding, GRAPH_SEARCH.c.embed_attempts,
+        ).where(GRAPH_SEARCH.c.graph_id == graph_id))).one()
+    assert row.embedding is None
+    assert row.embed_attempts < EMBED_MAX_ATTEMPTS
+    fake.status, fake.healthy = 200, True
+    clock.now += 7 * 3600
+    assert await w.run_once() == 1
+    async with engine.connect() as conn:
+        embedded = await conn.scalar(sa.select(GRAPH_SEARCH.c.embedding).where(
+            GRAPH_SEARCH.c.graph_id == graph_id,
+        ))
+    assert embedded is not None
+
