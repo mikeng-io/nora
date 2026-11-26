@@ -106,7 +106,9 @@ def exported(monkeypatch):
         provider.shutdown()
 
 
-def _model_runner(monkeypatch, actual_input=125, *, unknown=False, hang=False, started=None):
+def _model_runner(
+    monkeypatch, actual_input=125, actual_output=20, *, unknown=False, hang=False, started=None,
+):
     """A generated OpenAI provider whose answer depends on the request it received."""
     calls = []
 
@@ -136,8 +138,8 @@ def _model_runner(monkeypatch, actual_input=125, *, unknown=False, hang=False, s
         if not unknown:
             chunks.append({"id": "generated-response", "object": "chat.completion.chunk",
                 "created": 1, "model": "generated-model", "choices": [], "usage": {
-                    "prompt_tokens": actual_input, "completion_tokens": 20,
-                    "total_tokens": actual_input + 20}})
+                    "prompt_tokens": actual_input, "completion_tokens": actual_output,
+                    "total_tokens": actual_input + actual_output}})
         return httpx.Response(200, headers={"content-type": "text/event-stream"},
             text="".join("data: " + json.dumps(c) + "\n\n" for c in chunks) + "data: [DONE]\n\n")
 
@@ -179,25 +181,26 @@ async def test_the_real_runner_admits_the_boundary_then_refuses_reconciled_usage
     monkeypatch, exported,
 ):
     _enable_memory_tracing()
-    runner, calls, client = _model_runner(monkeypatch, actual_input=125)
+    runner, calls, client = _model_runner(monkeypatch, actual_input=115, actual_output=10)
     try:
         result = await _run_model(runner, 130)
     finally:
         await client.close()
     assert result.stop_reason == "limit_total_tokens"
     assert len(calls) == 1
-    assert result.total_tokens == 145
+    assert result.total_tokens == 125
 
     spans = exported.get_finished_spans()
     generations = [s for s in spans if s.name == "chat"]
     assert len(generations) == len(calls) == 1
     assert generations[0].attributes["nora.budget.estimated_input_tokens"] == 100
-    assert generations[0].attributes["gen_ai.usage.input_tokens"] == 125
+    assert generations[0].attributes["gen_ai.usage.input_tokens"] == 115
     measured, = [s for s in spans if "nora.budget.actual_input_tokens" in s.attributes]
-    assert measured.attributes["nora.budget.actual_input_tokens"] == 125
+    assert measured.attributes["nora.budget.actual_input_tokens"] == 115
     assert measured.attributes["nora.budget.estimated_input_tokens"] == 100
-    assert measured.attributes["nora.budget.input_residual_tokens"] == 15
-    assert measured.attributes["nora.budget.overshoot_tokens"] == 15
+    assert measured.attributes["nora.budget.input_residual_tokens"] == 5
+    assert measured.attributes["nora.budget.actual_output_tokens"] == 10
+    assert measured.attributes["nora.budget.overshoot_tokens"] == 0
     session, = [s for s in spans if s.name == "dream:cognition"]
     assert all(s.context.trace_id == session.context.trace_id for s in spans)
 
