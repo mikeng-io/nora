@@ -340,7 +340,7 @@ _KNOWN_DANGLING: dict[tuple[str, str], str] = {
         "re-homed into `tests/` 2026-09-18; the reference records where "
         "it lived (docs/design/evaluation Step 5)"
     ),
-    ("docs/design/13-trace-content-and-redaction.md", "evals/judge.py"): (
+    ("docs/operations/trace-redaction.md", "evals/judge.py"): (
         "re-homed into `tests/` 2026-09-18; the reference records where "
         "it lived (docs/design/evaluation Step 5)"
     ),

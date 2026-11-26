@@ -1,3 +1,11 @@
+---
+class: operations
+subject: how observability is deployed, instrumented, queried and recovered
+owns: []
+links:
+  - {to: docs/design/obs/README.md, rel: uses}
+---
+
 # Observability
 
 **The accepted observability design, the deployed instrumentation baseline, and
@@ -162,7 +170,7 @@ Check system messages, tool arguments/results, cache fields,
 errors and multi-call agents against the pinned collector/backend before enabling
 it. Existing content authorization and secret redaction remain; changing the
 backend does not decide the open field-level redaction questions in
-[the content investigation](../design/13-trace-content-and-redaction.md).
+[the content investigation](trace-redaction.md).
 No cloud export or additional content capture is implied.
 
 For retained event-only traces, open the model/tool span in Overview and read
@@ -653,7 +661,7 @@ concrete shape behind "10+ separate traces per message" in Langfuse.
 
 Strands' own `Tracer` has a **native redaction lever**
 (`OTEL_SEMCONV_STABILITY_OPT_IN=gen_ai_unredacted_attributes=<list>`), which is
-what `docs/design/13-trace-content-and-redaction.md` (still `status: open-decision`)
+what `docs/operations/trace-redaction.md` (still `status: open-decision`)
 investigates. It is **off by default**, meaning every Agent-backed model call
 — including the tag turn's own — sends its real content to the collector
 unredacted today. That is a config surface, not a per-call-site obligation:
@@ -666,7 +674,7 @@ other exit it always did (dream-screened replies, place lookups) — but no
 current call site uses it to pre-screen content bound for a trace: the two
 raw call sites below never send real content in the first place (see "What a
 raw call owes", above), so there is nothing left for it to screen there
-either. For anything Agent-backed, `docs/design/13-trace-content-and-redaction.md`'s lever is the only mechanism,
+either. For anything Agent-backed, `docs/operations/trace-redaction.md`'s lever is the only mechanism,
 and it is not yet turned on.
 
 ---
@@ -1065,13 +1073,13 @@ Recorded here so they are findings rather than surprises.
   moving onto strands.telemetry (2026-09-19).** Before this, the hand-rolled
   wrapper around those calls ran `nora.agent.security.trace_safe` on the
   prompt/completion before putting either on a span — a whole-text identifier/
-  coordinate screen, independent of `docs/design/13-trace-content-and-redaction.md`'s native-lever question. Now
+  coordinate screen, independent of `docs/operations/trace-redaction.md`'s native-lever question. Now
   that the call runs through a real Strands `Agent`, its content reaches the
   collector however Strands' own event recording writes it, with no seam left
   to substitute pre-screened text — so this content is exactly as unredacted
   as the tag turn's own Agent-backed content already was (consistent with the
   existing precedent, not a new exposure class, but a real guarantee this
-  specific call site used to have and no longer does). `docs/design/13-trace-content-and-redaction.md`'s native
+  specific call site used to have and no longer does). `docs/operations/trace-redaction.md`'s native
   lever is the only mechanism left that could restore it, for every
   Agent-backed call at once, and it is off by default.
 - **The relevance gate's prompt (every room's transcript, including rooms
@@ -1091,6 +1099,6 @@ Recorded here so they are findings rather than surprises.
   The operator was asked directly and chose to accept it, specifically to
   unblock that eval-suite gap; this was not verified by re-running the eval
   mapper against a live case and should be confirmed by whoever picks that
-  up next. `docs/design/13-trace-content-and-redaction.md`'s native redaction lever governs this content too
+  up next. `docs/operations/trace-redaction.md`'s native redaction lever governs this content too
   (`Tracer._redact` runs on both the Agent path and this raw-span path), so
   turning it on would cover both at once.

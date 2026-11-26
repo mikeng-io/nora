@@ -33,7 +33,7 @@
    "persona_write": 3
   }
  },
- "docs/design/13-trace-content-and-redaction.md": {
+ "docs/operations/trace-redaction.md": {
   "reason": "Historical design provenance; only the requested standing-ledger call sites change.",
   "matches": {
    "PERSONA": 2
