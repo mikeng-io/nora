@@ -62,14 +62,11 @@ TRAILER_RE = re.compile(
     re.I,
 )
 # Every commit names what produced it (docs/engineering/documents.md «Provenance»).
+# There is no exemption: a local hook cannot authenticate an author, and release
+# automation and the dependency bot commit on GitHub, where these hooks never run.
 PROVENANCE = ("Environment", "Agent", "Model")
-PROVENANCE_RE = re.compile(r"^(Environment|Agent|Model):[ \t]*(.*)$")
-# Release automation and the dependency bot carry no agent; they are exempt by
-# author identity, never by anything the message says.
-EXEMPT_AUTHORS = frozenset({
-    "345018755+nora-releases[bot]@users.noreply.github.com",
-    "49699333+dependabot[bot]@users.noreply.github.com",
-})
+_TRAILER_LINE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9-]*:[ \t]?.*$")
+
 SUBJECT_RE = re.compile(rf"^({TYPES_RE})(\([^)]+\))?!?: .+")
 
 # Bare `Merge pull request #N from ...` / `Merge branch ...` are GitHub's
@@ -197,17 +194,23 @@ def check_message(message: str) -> list[str]:
     return check_subject(lines[0].rstrip()) or check_body(lines[0].rstrip(), message_body(lines))
 
 
-def check_provenance(message: str, author_email: str) -> list[str]:
-    """Missing or empty provenance trailers, unless the author is an exempt bot."""
-    if author_email.strip().lower() in EXEMPT_AUTHORS:
-        return []
-    found = {}
-    for line in message.splitlines():
-        match = PROVENANCE_RE.match(line.strip())
-        if match:
-            found[match.group(1)] = match.group(2).strip()
+def trailers(message: str) -> dict[str, str]:
+    """Git's trailer block: the last paragraph, when every line in it is a trailer."""
+    lines = [x for x in message.splitlines() if not x.startswith("#")]
+    paragraphs = "\n".join(lines).strip().split("\n\n")
+    if len(paragraphs) < 2:
+        return {}
+    block = paragraphs[-1].strip().splitlines()
+    if not block or not all(_TRAILER_LINE.match(x) or x[:1] in " \t" for x in block):
+        return {}
+    return {key: value.strip() for key, _, value in (x.partition(":") for x in block if x[:1] not in " \t")}
+
+
+def check_provenance(message: str) -> list[str]:
+    """Missing or empty provenance trailers in the message's trailer block."""
+    found = trailers(message)
     return [
-        f"the `{name}:` trailer is missing or empty. Every commit ends with\n"
+        f"the `{name}:` trailer is missing or empty. Every commit ends with a trailer block\n"
         "    Environment: <ADE or IDE>, Agent: <coding agent>, Model: <exact model id>.\n"
         "    (docs/engineering/documents.md «Provenance»)"
         for name in PROVENANCE
@@ -216,8 +219,8 @@ def check_provenance(message: str, author_email: str) -> list[str]:
 
 
 def main(argv: list[str]) -> int:
-    if len(argv) != 3:
-        print("usage: check_commit_subject.py <commit-msg-file> <author-email>", file=sys.stderr)
+    if len(argv) != 2:
+        print("usage: check_commit_subject.py <commit-msg-file>", file=sys.stderr)
         return 2
     with open(argv[1], encoding="utf-8", errors="replace") as f:
         lines = f.read().splitlines()
@@ -225,7 +228,7 @@ def main(argv: list[str]) -> int:
         print("commit subject is empty.", file=sys.stderr)
         return 1
     # A merge commit whose subject is already authored passes through the same check.
-    problems = check_message("\n".join(lines)) + check_provenance("\n".join(lines), argv[2])
+    problems = check_message("\n".join(lines)) + check_provenance("\n".join(lines))
     if problems:
         print("commit subject violates the convention:", file=sys.stderr)
         print(f"    subject: {lines[0]!r}", file=sys.stderr)

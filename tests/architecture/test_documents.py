@@ -33,7 +33,10 @@ GOOD_ENGINEERING = _front("class: engineering\nsubject: how a change is checked\
         ("docs/design/thing/README.md", GOOD_DESIGN),
         ("docs/engineering/process.md", GOOD_ENGINEERING),
         ("docs/adr/0042-a-decision.md", _front("class: adr\nsubject: why x\nowns: []")),
-        ("docs/guide/x.md", _front("class: guide\nsubject: x for a reader\nowns: []\nplain: {x: y}")),
+        (
+            "docs/guide/x.md",
+            _front("class: guide\nsubject: x for a reader\nowns: []\nplain: {x: y}"),
+        ),
         ("README.md", "# Nora\n"),
         ("docs/README.md", "generated\n"),
     ],
@@ -48,23 +51,105 @@ def test_a_document_that_follows_the_rules_passes(path, text):
         ("docs/engineering/x.md", "# No frontmatter\n", "frontmatter-missing"),
         ("docs/engineering/x.md", _front("class: memo\nsubject: s\nowns: []"), "frontmatter-class"),
         ("docs/design/x/README.md", GOOD_ENGINEERING, "class-home"),
-        ("docs/engineering/x.md", _front("class: engineering\nsubject: ''\nowns: []"), "frontmatter-subject"),
-        ("docs/engineering/x.md", _front("class: engineering\nsubject: s\nowns: x"), "frontmatter-owns"),
-        ("docs/design/x/README.md", _front("class: design\nsubject: s\nowns: []"), "frontmatter-area"),
-        ("docs/engineering/x.md", _front("class: engineering\nsubject: s\nowns: []\narea: a"), "frontmatter-area"),
-        ("docs/engineering/x.md", _front("class: engineering\nsubject: s\nowns: []\nlinks: [{to: a, rel: likes}]"), "frontmatter-links"),
-        ("docs/engineering/x.md", _front("class: engineering\nsubject: s\nowns: []\nstatus: building"), "frontmatter-unknown-field"),
-        ("docs/engineering/x.md", _front("class: engineering\nsubject: s\nowns: []\nplain: {a: b}"), "frontmatter-plain"),
+        (
+            "docs/engineering/x.md",
+            _front("class: engineering\nsubject: ''\nowns: []"),
+            "frontmatter-subject",
+        ),
+        (
+            "docs/engineering/x.md",
+            _front("class: engineering\nsubject: s\nowns: x"),
+            "frontmatter-owns",
+        ),
+        (
+            "docs/design/x/README.md",
+            _front("class: design\nsubject: s\nowns: []"),
+            "frontmatter-area",
+        ),
+        (
+            "docs/engineering/x.md",
+            _front("class: engineering\nsubject: s\nowns: []\narea: a"),
+            "frontmatter-area",
+        ),
+        (
+            "docs/engineering/x.md",
+            _front("class: engineering\nsubject: s\nowns: []\nlinks: [{to: a, rel: likes}]"),
+            "frontmatter-links",
+        ),
+        (
+            "docs/engineering/x.md",
+            _front("class: engineering\nsubject: s\nowns: []\nstatus: building"),
+            "frontmatter-unknown-field",
+        ),
+        (
+            "docs/engineering/x.md",
+            _front("class: engineering\nsubject: s\nowns: []\nplain: {a: b}"),
+            "frontmatter-plain",
+        ),
         ("docs/engineering/x.md", GOOD_ENGINEERING + "Codex reviews it.\n", "vendor-name"),
         ("docs/engineering/2026-11-01-review.md", GOOD_ENGINEERING, "numbered-or-dated-name"),
         ("docs/design/03-shape.md", GOOD_DESIGN, "numbered-or-dated-name"),
         ("docs/design/loose.md", GOOD_DESIGN, "design-root"),
         ("docs/design/x/README.md", GOOD_DESIGN + "x\n" * MAX_LINES, "over-budget"),
         ("ARCHITECTURE.md", "# Architecture\n", "root-document"),
+        (
+            "docs/engineering/x.md",
+            _front("class: [engineering]\nsubject: s\nowns: []"),
+            "frontmatter-class",
+        ),
+        (
+            "docs/design/x/README.md",
+            _front("class: design\nsubject: s\nowns: []\narea: []"),
+            "frontmatter-area",
+        ),
+        (
+            "docs/engineering/x.md",
+            _front("class: engineering\nsubject: s\nowns: []\nlinks: [{to: 7, rel: uses}]"),
+            "frontmatter-links",
+        ),
+        (
+            "docs/engineering/x.md",
+            _front("class: engineering\nsubject: s\nowns: [{a: ''}]"),
+            "frontmatter-owns",
+        ),
+        ("docs/engineering/x.md", GOOD_ENGINEERING + "the codex reviews it\n", "vendor-name"),
+        (
+            "docs/engineering/x.md",
+            _front("class: engineering\nsubject: what Codex checks\nowns: []"),
+            "vendor-name",
+        ),
+        ("docs/design/diagram.png", "", "design-root"),
     ],
 )
 def test_each_rule_fails_by_name(path, text, rule):
     assert rule in check(path, text)
+
+
+def test_a_file_name_and_a_common_word_are_not_vendor_names():
+    assert (
+        check("docs/engineering/x.md", GOOD_ENGINEERING + "See `CLAUDE.md`. A database cursor.\n")
+        == []
+    )
+
+
+def test_a_link_must_name_a_repository_file():
+    from scripts.check_documents import resolves
+
+    assert resolves("docs/engineering/documents.md")
+    assert not resolves("/") and not resolves("docs") and not resolves("../outside.md")
+
+
+def test_the_census_reads_paths_with_spaces_and_non_ascii(tmp_path, monkeypatch):
+    import subprocess
+
+    import scripts.check_documents as gate
+
+    (tmp_path / "docs/engineering").mkdir(parents=True)
+    for name in ("a b.md", "café.md"):
+        (tmp_path / "docs/engineering" / name).write_text("# no frontmatter\n", encoding="utf-8")
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    monkeypatch.setattr(gate, "ROOT", tmp_path)
+    assert set(gate.census()) == {"docs/engineering/a b.md", "docs/engineering/café.md"}
 
 
 def test_a_bundle_readme_may_use_the_full_300_line_budget():
@@ -73,8 +158,7 @@ def test_a_bundle_readme_may_use_the_full_300_line_budget():
 
 def _tree() -> dict[str, str]:
     return {
-        str(p.relative_to(FIXTURE)): p.read_text(encoding="utf-8")
-        for p in FIXTURE.rglob("*.md")
+        str(p.relative_to(FIXTURE)): p.read_text(encoding="utf-8") for p in FIXTURE.rglob("*.md")
     }
 
 

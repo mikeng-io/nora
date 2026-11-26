@@ -63,10 +63,11 @@ would otherwise be flagged.
 
 from __future__ import annotations
 
-from scripts.check_documents import STAGED_TARGETS
 import re
 import subprocess
 from pathlib import Path
+
+from scripts.check_documents import STAGED_TARGETS
 
 ROOT = Path(__file__).resolve().parents[2]
 

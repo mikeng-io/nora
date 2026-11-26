@@ -634,7 +634,10 @@ def test_internal_issue_title_requires_a_populated_area_and_gap(title):
 
 # ---- provenance (docs/engineering/documents.md «Provenance»)
 
-PRODUCED = BODY.split("## Produced by")[0] + "## Produced by\n| role | Environment | Agent | Model |\n|---|---|---|---|\n"
+PRODUCED = (
+    BODY.split("## Produced by")[0]
+    + "## Produced by\n| role | Environment | Agent | Model |\n|---|---|---|---|\n"
+)
 ROWS = [
     "| builder | T3 Code | Claude Code | claude-opus-5-5 (effort high) |",
     "| builder | T3 Code | Devin | swe-2-1-medium |",
@@ -666,7 +669,8 @@ def test_a_pr_with_no_builder_is_refused():
 
 
 def test_an_unknown_role_is_refused():
-    assert any("role of builder or reviewer" in e for e in _problems([ROWS[0], "| author | a | b | c |"]))
+    problems = _problems([ROWS[0], "| author | a | b | c |"])
+    assert any("role of builder or reviewer" in e for e in problems)
 
 
 def test_the_retired_authored_by_heading_is_refused():

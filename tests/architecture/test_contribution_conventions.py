@@ -147,7 +147,7 @@ def test_commit_checker_rejects_the_measured_defect_shapes() -> None:
             # nosec: the script path and args are repo constants; `path` is a
             # tempfile this test just wrote. Nothing here is user input.
             return subprocess.run(  # noqa: S603
-                ["uv", "run", "python", str(script), path, "someone@example.com"],
+                ["uv", "run", "python", str(script), path],
                 cwd=ROOT, capture_output=True, text=True,
             ).returncode
         finally:

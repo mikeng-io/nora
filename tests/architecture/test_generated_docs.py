@@ -16,8 +16,15 @@ def _tree(root: Path) -> dict[str, str]:
 
 def test_the_views_are_derived_from_frontmatter():
     views = render(_tree(FIXTURE))
-    assert "| design | [design/platform/README.md](design/platform/README.md) |" in views["docs/README.md"]
-    assert "| [platform](platform/README.md) | how a messaging platform connects to Nora | platform | NOR-1 |" in views["docs/design/README.md"]
+    assert (
+        "| design | [design/platform/README.md](design/platform/README.md) |"
+        in views["docs/README.md"]
+    )
+    assert (
+        "| [platform](platform/README.md) | how a messaging platform connects to Nora "
+        "| platform | NOR-1 |"
+        in views["docs/design/README.md"]
+    )
     assert (
         "| bridge | the process that carries one platform's messages to and from Nora "
         "| connector | [design/platform/README.md](design/platform/README.md) |"
@@ -41,5 +48,7 @@ def test_a_changed_source_makes_its_view_stale(tmp_path):
     for path, text in render(_tree(root)).items():
         (root / path).write_text(text, encoding="utf-8")
     source = root / "docs/engineering/process.md"
-    source.write_text(source.read_text(encoding="utf-8").replace("how a change is checked", "how review works"))
+    source.write_text(
+        source.read_text(encoding="utf-8").replace("how a change is checked", "how review works")
+    )
     assert "docs/README.md" in stale(root, _tree(root))

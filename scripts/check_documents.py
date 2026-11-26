@@ -30,8 +30,14 @@ CLASS_HOME = {
 RELS = {"uses", "why", "governs", "derives"}
 FIELDS = {"class", "subject", "owns", "area", "links", "tracked_by", "plain"}
 ROOT_DOCUMENTS = {
-    "README.md", "AGENTS.md", "CLAUDE.md", "CONTRIBUTING.md", "SECURITY.md",
-    "CODE_OF_CONDUCT.md", "THIRD_PARTY_NOTICES.md", "CHANGELOG.md",
+    "README.md",
+    "AGENTS.md",
+    "CLAUDE.md",
+    "CONTRIBUTING.md",
+    "SECURITY.md",
+    "CODE_OF_CONDUCT.md",
+    "THIRD_PARTY_NOTICES.md",
+    "CHANGELOG.md",
 }
 #: Written by scripts/generate_docs_index.py, never by hand, so they carry no frontmatter.
 GENERATED = {"docs/README.md", "docs/design/README.md", "docs/glossary.md"}
@@ -47,9 +53,10 @@ STAGED_TARGETS = {
 MAX_LINES = 300
 #: Engineering policy is runtime-neutral: runtimes are in .agents/runtimes/,
 #: lanes in .agents/lanes.md.
+#: Unambiguous names match in any case; names that are also common words match capitalised.
 VENDOR = re.compile(
-    r"\b(?:Claude|Codex|Devin|Cursor|Gemini|Kimi|GPT-?\d|Sonnet|Opus|Haiku|Fable|"
-    r"Antigravity|T3 Code|OpenAI|Anthropic|DeepSeek)\b"
+    r"\b(?i:claude|codex|devin|gemini|kimi|gpt-?\d|sonnet|antigravity|t3 code|openai|"
+    r"anthropic|deepseek)\b(?!\.md)|\b(?:Cursor|Opus|Haiku|Fable)\b(?!\.md)"
 )
 _NAME = re.compile(r"^\d|\d{4}-\d\d-\d\d")
 _ADR = re.compile(r"^docs/adr/\d{4}-[a-z0-9-]+\.md$")
@@ -76,17 +83,35 @@ def owned(meta: dict) -> list[str]:
     return [str(term) for term in terms]
 
 
+def _text(value: object) -> bool:
+    return isinstance(value, str) and bool(value.strip())
+
+
+def _entry(entry: object) -> bool:
+    if isinstance(entry, dict):
+        return len(entry) == 1 and all(_text(k) and _text(v) for k, v in entry.items())
+    return _text(entry)
+
+
 def check(path: str, text: str) -> list[str]:
     """The single-file rules this document breaks, by name."""
     name = path.rsplit("/", 1)[-1]
     if "/" not in path:
         return [] if name in ROOT_DOCUMENTS else ["root-document"]
     found = []
+    if not name.endswith(".md"):
+        return ["design-root"] if path.count("/") == 2 and path.startswith("docs/design/") else []
     if _NAME.search(name) and not _ADR.match(path):
         found.append("numbered-or-dated-name")
-    if path.startswith("docs/design/") and path.count("/") == 2 and name not in {
-        "README.md", "decisions.md",
-    }:
+    if (
+        path.startswith("docs/design/")
+        and path.count("/") == 2
+        and name
+        not in {
+            "README.md",
+            "decisions.md",
+        }
+    ):
         found.append("design-root")
     if path.startswith("docs/design/") and len(text.splitlines()) > MAX_LINES:
         found.append("over-budget")
@@ -95,7 +120,7 @@ def check(path: str, text: str) -> list[str]:
     meta = frontmatter(text)
     if meta is None:
         return [*found, "frontmatter-missing"]
-    kind = meta.get("class")
+    kind = meta.get("class") if isinstance(meta.get("class"), str) else None
     if set(meta) - FIELDS:
         found.append("frontmatter-unknown-field")
     if kind not in CLASS_HOME:
@@ -105,22 +130,26 @@ def check(path: str, text: str) -> list[str]:
     subject = meta.get("subject")
     if not isinstance(subject, str) or not subject.strip() or "\n" in subject.strip():
         found.append("frontmatter-subject")
-    if not isinstance(meta.get("owns"), list) or not all(
-        isinstance(e, str) or (isinstance(e, dict) and len(e) == 1) for e in meta["owns"]
-    ):
+    if not isinstance(meta.get("owns"), list) or not all(_entry(e) for e in meta["owns"]):
         found.append("frontmatter-owns")
-    if (kind == "design") != ("area" in meta):
+    if (kind == "design") != ("area" in meta) or ("area" in meta and not _text(meta["area"])):
         found.append("frontmatter-area")
     links = meta.get("links", [])
     if not isinstance(links, list) or not all(
-        isinstance(l, dict) and set(l) == {"to", "rel"} and l["rel"] in RELS for l in links
+        isinstance(link, dict) and set(link) == {"to", "rel"} and _text(link["to"])
+        and link["rel"] in RELS
+        for link in links
     ):
         found.append("frontmatter-links")
-    if "tracked_by" in meta and not isinstance(meta["tracked_by"], str):
+    if "tracked_by" in meta and not _text(meta["tracked_by"]):
         found.append("frontmatter-tracked-by")
-    if "plain" in meta and (kind != "guide" or not isinstance(meta["plain"], dict)):
+    if "plain" in meta and (
+        kind != "guide"
+        or not isinstance(meta["plain"], dict)
+        or not all(_text(k) and _text(v) for k, v in meta["plain"].items())
+    ):
         found.append("frontmatter-plain")
-    if kind == "engineering" and VENDOR.search(_FRONT.sub("", text)):
+    if kind == "engineering" and VENDOR.search(text):
         found.append("vendor-name")
     return found
 
@@ -151,23 +180,43 @@ def tree_rules(files: dict[str, str], exists) -> dict[str, list[str]]:
     return result
 
 
+def resolves(target: str) -> bool:
+    """A link names a file in the repository, by a relative path inside it."""
+    if target.startswith("/") or ".." in Path(target).parts:
+        return False
+    return (ROOT / target).is_file()
+
+
 def documents() -> dict[str, str]:
-    """Every tracked or new Markdown document at the root and under docs/."""
-    out = subprocess.run(
-        ["git", "ls-files", "--cached", "--others", "--exclude-standard", "*.md"],  # noqa: S607
-        cwd=ROOT, check=True, capture_output=True, text=True,
-    ).stdout.split()
+    """Root Markdown and every file under docs/, tracked or new. NUL-delimited, so
+    no path is quoted or split by git."""
+    out = (
+        subprocess.run(
+            ["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard"],  # noqa: S607
+            cwd=ROOT,
+            check=True,
+            capture_output=True,
+        )
+        .stdout.decode("utf-8")
+        .split("\0")
+    )
+    chosen = (
+        p for p in out if p and (p.startswith("docs/") or ("/" not in p and p.endswith(".md")))
+    )
     return {
         path: (ROOT / path).read_text(encoding="utf-8", errors="replace")
-        for path in sorted(out)
-        if ("/" not in path or path.startswith("docs/")) and (ROOT / path).is_file()
+        if path.endswith(".md")
+        else ""
+        for path in sorted(set(chosen))
+        if (ROOT / path).is_file()
     }
 
 
 def census() -> dict[str, list[str]]:
     files = documents()
     result = {path: found for path, text in files.items() if (found := check(path, text))}
-    for path, found in tree_rules(files, lambda p: (ROOT / p).exists()).items():
+    markdown = {p: t for p, t in files.items() if p.endswith(".md")}
+    for path, found in tree_rules(markdown, resolves).items():
         result.setdefault(path, []).extend(found)
     return {path: sorted(set(found)) for path, found in result.items()}
 

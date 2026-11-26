@@ -111,7 +111,9 @@ Agent: <the coding agent>
 Model: <the exact model id>, with the effort when one is set
 ```
 
-A commit from release automation or a dependency bot names the bot instead.
+The trailers are git trailers, the message's last paragraph. No author is exempt: a local hook
+cannot authenticate one, and release automation and the dependency bot commit on GitHub, where the
+hooks do not run.
 
 ## Checks
 

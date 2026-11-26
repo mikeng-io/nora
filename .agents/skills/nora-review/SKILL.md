@@ -29,6 +29,9 @@ follows [references/council.md](references/council.md).
    `git diff <base>...<head>`. A repair re-check uses
    `git diff <previously-reviewed-head>..<head>` plus unresolved findings and
    previously unavailable required evidence, including an unchanged candidate.
+   Read back `## Produced by` (once master enforces it) and every commit's
+   provenance trailers against the actual builder and reviewer runs; a missing
+   or wrong producer is unmet.
    Check: the actual candidate matches the assignment; preserve unrelated work.
 3. **Test the claims.** Trace affected callers and failure paths to the tier's
    depth. Read actual checks/results and model inputs or runtime evidence only

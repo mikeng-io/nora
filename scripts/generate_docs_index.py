@@ -31,11 +31,24 @@ def render(files: dict[str, str]) -> dict[str, str]:
     order = list(CLASS_HOME)
     index = ["# Documentation\n", HEADER, "| class | document | subject |", "|---|---|---|"]
     for path, meta in sorted(
-        metas.items(), key=lambda item: (order.index(item[1].get("class", order[0]))
-                                         if item[1].get("class") in order else len(order), item[0])
+        metas.items(),
+        key=lambda item: (
+            order.index(item[1].get("class", order[0]))
+            if item[1].get("class") in order
+            else len(order),
+            item[0],
+        ),
     ):
-        index.append(f"| {_cell(meta.get('class'))} | [{path[5:]}]({path[5:]}) | {_cell(meta.get('subject'))} |")
-    bundles = ["# Design\n", HEADER, "| bundle | subject | code area | tracked by |", "|---|---|---|---|"]
+        index.append(
+            f"| {_cell(meta.get('class'))} | [{path[5:]}]({path[5:]}) "
+            f"| {_cell(meta.get('subject'))} |"
+        )
+    bundles = [
+        "# Design\n",
+        HEADER,
+        "| bundle | subject | code area | tracked by |",
+        "|---|---|---|---|",
+    ]
     for path, meta in sorted(metas.items()):
         parts = path.split("/")
         if len(parts) == 4 and parts[1] == "design" and parts[3] == "README.md":
@@ -50,9 +63,14 @@ def render(files: dict[str, str]) -> dict[str, str]:
     terms = []
     for path, meta in metas.items():
         for entry in meta.get("owns") or []:
-            for term, definition in (entry.items() if isinstance(entry, dict) else [(entry, "")]):
+            for term, definition in entry.items() if isinstance(entry, dict) else [(entry, "")]:
                 terms.append((str(term), definition, path))
-    glossary = ["# Glossary\n", HEADER, "| term | definition | plain word | owner |", "|---|---|---|---|"]
+    glossary = [
+        "# Glossary\n",
+        HEADER,
+        "| term | definition | plain word | owner |",
+        "|---|---|---|---|",
+    ]
     for term, definition, path in sorted(terms, key=lambda t: t[0].lower()):
         glossary.append(
             f"| {_cell(term)} | {_cell(definition)} | {_cell(plain.get(term.lower()))} "
@@ -68,7 +86,8 @@ def render(files: dict[str, str]) -> dict[str, str]:
 def stale(root: Path, files: dict[str, str]) -> list[str]:
     """Generated files present on disk that differ from their regeneration."""
     return [
-        path for path, text in render(files).items()
+        path
+        for path, text in render(files).items()
         if (root / path).exists() and (root / path).read_text(encoding="utf-8") != text
     ]
 

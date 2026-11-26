@@ -53,6 +53,4 @@ fi
 # On PASS this also records every acknowledgement the commit used
 # (NORA_PII_ACK) as a `PII-Ack: <id> (human)` trailer.
 python3 -I -S "$SCANNER" message "$1"
-# Provenance is judged by the author identity git will record, never by the message.
-author_email="$(git var GIT_AUTHOR_IDENT | sed -E 's/^.*<([^>]*)>.*$/\1/')"
-exec python3 -I -S "$CHECKER" "$1" "$author_email"
+exec python3 -I -S "$CHECKER" "$1"

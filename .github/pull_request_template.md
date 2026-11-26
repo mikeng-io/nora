@@ -33,11 +33,12 @@
 <!-- One row per builder and per reviewer: role (builder or reviewer), the ADE or
      IDE, the coding agent and the exact model id with its effort when set. A
      human writes `human` as the agent and `none` as the model. Builder and
-     reviewer differ by vendor (docs/engineering/documents.md «Provenance»). -->
+     reviewer differ by vendor (docs/engineering/documents.md «Provenance»).
+     A row reads, for example: | builder | <ADE> | <agent> | <model> (effort high) | -->
 
 | role | Environment | Agent | Model |
 |---|---|---|---|
-| builder | T3 Code | Claude Code | claude-opus-5-5 (effort high) |
+| builder |  |  |  |
 
 ## Closes
 
