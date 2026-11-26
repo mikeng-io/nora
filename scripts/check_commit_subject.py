@@ -57,8 +57,19 @@ BODY_TYPES = frozenset({"feat", "fix", "security", "perf", "change", "doctrine"}
 MIN_BODY = 20
 # Trailers are metadata, not the why. `PII-Ack` is appended by the commit-msg scanner.
 TRAILER_RE = re.compile(
-    r"^(Co-Authored-By|Claude-Session|Signed-off-by|Release-As|PII-Ack|Reviewed-by):", re.I
+    r"^(Co-Authored-By|Claude-Session|Signed-off-by|Release-As|PII-Ack|Reviewed-by"
+    r"|Environment|Agent|Model):",
+    re.I,
 )
+# Every commit names what produced it (docs/engineering/documents.md «Provenance»).
+PROVENANCE = ("Environment", "Agent", "Model")
+PROVENANCE_RE = re.compile(r"^(Environment|Agent|Model):[ \t]*(.*)$")
+# Release automation and the dependency bot carry no agent; they are exempt by
+# author identity, never by anything the message says.
+EXEMPT_AUTHORS = frozenset({
+    "345018755+nora-releases[bot]@users.noreply.github.com",
+    "49699333+dependabot[bot]@users.noreply.github.com",
+})
 SUBJECT_RE = re.compile(rf"^({TYPES_RE})(\([^)]+\))?!?: .+")
 
 # Bare `Merge pull request #N from ...` / `Merge branch ...` are GitHub's
@@ -186,9 +197,27 @@ def check_message(message: str) -> list[str]:
     return check_subject(lines[0].rstrip()) or check_body(lines[0].rstrip(), message_body(lines))
 
 
+def check_provenance(message: str, author_email: str) -> list[str]:
+    """Missing or empty provenance trailers, unless the author is an exempt bot."""
+    if author_email.strip().lower() in EXEMPT_AUTHORS:
+        return []
+    found = {}
+    for line in message.splitlines():
+        match = PROVENANCE_RE.match(line.strip())
+        if match:
+            found[match.group(1)] = match.group(2).strip()
+    return [
+        f"the `{name}:` trailer is missing or empty. Every commit ends with\n"
+        "    Environment: <ADE or IDE>, Agent: <coding agent>, Model: <exact model id>.\n"
+        "    (docs/engineering/documents.md «Provenance»)"
+        for name in PROVENANCE
+        if not found.get(name)
+    ]
+
+
 def main(argv: list[str]) -> int:
-    if len(argv) != 2:
-        print("usage: check_commit_subject.py <commit-msg-file>", file=sys.stderr)
+    if len(argv) != 3:
+        print("usage: check_commit_subject.py <commit-msg-file> <author-email>", file=sys.stderr)
         return 2
     with open(argv[1], encoding="utf-8", errors="replace") as f:
         lines = f.read().splitlines()
@@ -196,7 +225,7 @@ def main(argv: list[str]) -> int:
         print("commit subject is empty.", file=sys.stderr)
         return 1
     # A merge commit whose subject is already authored passes through the same check.
-    problems = check_message("\n".join(lines))
+    problems = check_message("\n".join(lines)) + check_provenance("\n".join(lines), argv[2])
     if problems:
         print("commit subject violates the convention:", file=sys.stderr)
         print(f"    subject: {lines[0]!r}", file=sys.stderr)

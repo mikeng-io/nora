@@ -41,7 +41,7 @@ check_one() {  # $1 = sha
   local sha="$1" msgfile
   msgfile="$(mktemp)"
   git log -1 --format=%B "$sha" > "$msgfile"
-  if ! python3 -I -S "$CHECKER" "$msgfile"; then
+  if ! python3 -I -S "$CHECKER" "$msgfile" "$(git log -1 --format=%ae "$sha")"; then
     echo "  offending commit: $sha" >&2
     failed=1
   fi

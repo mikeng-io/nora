@@ -77,10 +77,61 @@ def test_the_hook_entry_point_applies_the_body_rule(tmp_path):
         path = tmp_path / "msg.txt"
         path.write_text(text, encoding="utf-8")
         return subprocess.run(  # noqa: S603 -- fixed repo script and a tempfile
-            [sys.executable, str(ROOT / "scripts/check_commit_subject.py"), str(path)],
+            [sys.executable, str(ROOT / "scripts/check_commit_subject.py"), str(path), HUMAN],
             capture_output=True,
             text=True,
         ).returncode
 
     assert run("fix: a thing\n") == 1
-    assert run(f"fix: a thing\n\n{WHY}\n") == 0
+    assert run(f"fix: a thing\n\n{WHY}\n") == 1, "a body without provenance is still refused"
+    assert run(_message(TRAILERS)) == 0
+
+
+# ---- provenance (docs/engineering/documents.md «Provenance»)
+
+HUMAN = "someone@example.com"
+TRAILERS = {"Environment": "T3 Code", "Agent": "Claude Code", "Model": "claude-opus-5-5 (effort high)"}
+
+
+def _message(trailers: dict[str, str]) -> str:
+    lines = "\n".join(f"{name}: {value}" for name, value in trailers.items())
+    return f"fix(scope): do a thing\n\n{WHY}\n\n{lines}\n"
+
+
+def test_a_commit_naming_its_environment_agent_and_model_passes():
+    assert checker.check_provenance(_message(TRAILERS), HUMAN) == []
+
+
+@pytest.mark.parametrize("name", checker.PROVENANCE)
+@pytest.mark.parametrize("value", [None, "", "   "])
+def test_a_missing_or_empty_trailer_is_refused_by_name(name, value):
+    trailers = dict(TRAILERS)
+    if value is None:
+        del trailers[name]
+    else:
+        trailers[name] = value
+    problems = checker.check_provenance(_message(trailers), HUMAN)
+    assert len(problems) == 1 and f"`{name}:`" in problems[0]
+
+
+@pytest.mark.parametrize("bot", sorted(checker.EXEMPT_AUTHORS))
+def test_release_automation_and_the_dependency_bot_are_exempt_by_identity(bot):
+    assert checker.check_provenance("chore(main): release 1.2.3\n", bot) == []
+
+
+def test_a_human_whose_message_claims_a_bot_is_still_refused():
+    claimed = "chore(deps): bump x\n\nSigned-off-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>\n"
+    assert len(checker.check_provenance(claimed, HUMAN)) == 3
+
+
+def test_trailers_do_not_count_towards_the_body():
+    assert checker.check_message("fix: a thing\n\n" + "\n".join(f"{k}: {v}" for k, v in TRAILERS.items()))
+
+
+def test_the_hook_entry_point_requires_the_author_identity(tmp_path):
+    msg = tmp_path / "msg"
+    msg.write_text(_message(TRAILERS))
+    assert checker.main(["check", str(msg)]) == 2
+    assert checker.main(["check", str(msg), HUMAN]) == 0
+    msg.write_text(_message({}))
+    assert checker.main(["check", str(msg), HUMAN]) == 1
