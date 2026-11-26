@@ -109,6 +109,11 @@ def eval_parser() -> argparse.ArgumentParser:
              "gets chosen by budget instead of by the question.",
     )
     ap.add_argument(
+        "--memory-surface", choices=("graph", "off"), default="graph",
+        help="eval-only subject-composition arm: graph memory reads, or the "
+             "same cases with memory_search/memory_read absent",
+    )
+    ap.add_argument(
         "--print-input", metavar="CASE",
         help="render CASE's model input (the standing fold's system and user "
              "prompt) and print it, calling no model — run on each arm and "

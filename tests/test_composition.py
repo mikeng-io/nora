@@ -1885,6 +1885,22 @@ async def test_cognition_builds_graph_memory_tools_with_the_host_shape(
     assert not runner._read_only_tools & OFF_GRAPH_ONLY_TOOLS
     assert built & GRAPH_MEMORY_TOOLS and runner._read_only_tools & GRAPH_MEMORY_TOOLS
 
+    off_deps = await build_dependencies(override_config(host_cfg, {
+        **_SESSION_ON,
+        "store.data_dir": tmp_path / "off",
+        "platforms.signal.mode": "direct",
+        "platforms.signal.base_url": "http://127.0.0.1:18080",
+        "platforms.signal.account": "+85290000100",
+        "doctrine.dir": ROOT / "nora" / "doctrine",
+        "dreamer.dir": ROOT / "nora" / "dreamer",
+    }), legacy_replay=True, include_graph_reads=False)
+    off_runner = off_deps.cognition_runner
+    assert off_runner is not None
+    off_unit, off_home = next(iter(off_runner._home_rooms.items()))
+    off_built = {t.tool_name for t in off_runner._read_tools_for(off_unit, [off_home])}
+    assert {"memory_search", "memory_read"}.isdisjoint(off_built)
+    assert "who_said" in off_built, "positive control: the off-surface-only read is offered"
+
 
 async def test_markdown_identity_reaches_live_tools_and_cognition_writers(cfg, tmp_path):
     import shutil
@@ -1899,7 +1915,7 @@ async def test_markdown_identity_reaches_live_tools_and_cognition_writers(cfg, t
     )
     (tmp_path / "policy.toml").write_text(_HOME_POLICY)
     renamed = override_config(cfg, {**_SESSION_ON, "doctrine.dir": directory})
-    deps = await build_dependencies(renamed, legacy_replay=True)
+    deps = await build_dependencies(renamed, legacy_replay=True, include_graph_reads=False)
     assert deps.cognition_runner is not None
     assert deps.cognition_runner._nora_names == frozenset({"AgentAlpha"})
     registry = deps.engagement._tool_registry

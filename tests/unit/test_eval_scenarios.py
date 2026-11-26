@@ -566,16 +566,20 @@ def test_the_judge_is_handed_the_lesson_and_the_cases_behaviour():
     assert varied_lessons({"lessons": ["say less"]}) == ()
 
 
-def test_memory_cases_are_on_the_unconditional_graph_surface(monkeypatch):
-    """The composed surface no longer has an off arm; service URLs remain bound separately."""
+def test_memory_arms_are_explicit_and_draw_the_same_cases(monkeypatch):
+    """The eval-only control arm is selected without a production config switch;
+    both arms draw the same eligible cases."""
     from evals import scenarios
 
     captured: list = []
     monkeypatch.setattr(scenarios, "nora_task", lambda spec: captured.append(spec))
-    scenarios.experiment_for("tool_selection", source_url="x")
-    scenarios.experiment_for("tool_selection", source_url="x")
-    assert [spec.memory_surface for spec in captured] == ["graph", "graph"]
+    on, _ = scenarios.experiment_for("tool_selection", source_url="x", memory_surface="graph")
+    off, _ = scenarios.experiment_for("tool_selection", source_url="x", memory_surface="off")
+    assert [spec.memory_surface for spec in captured] == ["graph", "off"]
     assert all(spec.overrides is None for spec in captured)
+    assert {case.name for case in on.cases} == {case.name for case in off.cases}
+    with pytest.raises(ValueError, match="memory surface"):
+        scenarios.experiment_for("tool_selection", source_url="x", memory_surface="legacy")
 
 
 def test_indexed_memory_cases_run_on_the_graph_surface():
@@ -612,6 +616,8 @@ def test_the_run_header_names_the_unconditional_graph_surface() -> None:
 
     line = memory_surface_line()
     assert line.startswith("graph") and "unconditional" in line
+    off = memory_surface_line("off")
+    assert off.startswith("off") and "eval-only" in off and "unconditional" in off
 
 
 def test_exchanges_are_written_privately_only_when_asked(tmp_path, monkeypatch):

@@ -472,8 +472,8 @@ JUDGED_CORPORA = frozenset({
 JUDGE_REQUIRED = frozenset({"standing", "standing_unit", "conversational_recall"})
 
 
-#: Memory-reading cases declare the graph surface. The surface is unconditional
-#: in composition; the tag now describes the case's need rather than an arm.
+#: Memory-reading cases declare the graph surface. Production composition is
+#: unconditional; the eval-only control arm may deliberately withhold it.
 MEMORY_SURFACES = frozenset({"graph"})
 
 #: The subject overrides every `cognition_session` draw composes with: the
@@ -512,7 +512,7 @@ def selected_cases(
 
 def experiment_for(
     name: str, *, source_url: str, judge: Any = None, sample: int = 1,
-    only: frozenset[str] | None = None,
+    only: frozenset[str] | None = None, memory_surface: str = "graph",
     overrides: dict[str, Any] | None = None,
     contract: GradingContract | None = None,
     services: Mapping[str, Any] | None = None,
@@ -534,7 +534,8 @@ def experiment_for(
     answer that needs draws, and draws are what a corpus-sized bill makes
     people skimp on.
 
-    The graph read surface is unconditional, so every draw composes it.
+    Production's graph read surface is unconditional; `memory_surface="off"`
+    is the eval-only counterfactual measuring memory's contribution.
 
     A `JOURNEY_CORPORA` name selects the declared `cohort` instead of a
     yaml corpus: `Experiment` graded by `JourneyGrader`, `Spec.services`
@@ -578,6 +579,8 @@ def experiment_for(
         )
         return Experiment(cases=cases, evaluators=[JourneyGrader()]), nora_task(spec)
 
+    if memory_surface not in {"graph", "off"}:
+        raise ValueError(f"unknown eval memory surface {memory_surface!r}")
     cases = selected_cases(name, only=only)
     if contract is not None:
         cases = [contract.bind_case(name, case) for case in cases]
@@ -590,7 +593,7 @@ def experiment_for(
         judge=judge if name in JUDGED_CORPORA else None,
         full_restore=name in FULL_RESTORE_CORPORA,
         overrides=dict(overrides) if overrides else None,
-        memory_surface="graph",
+        memory_surface=memory_surface,
     )
     grader = ToolRouteGrader() if name in ROUTED_CORPORA else MeetsGrader()
     experiment = Experiment(cases=cases, evaluators=[grader])

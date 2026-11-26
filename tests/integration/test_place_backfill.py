@@ -1,8 +1,10 @@
 """`nora memory backfill-places` (`nora.app.place_backfill`) on Postgres: the
 venues and cached geocodes resolved before 0118 are given their areas through
-the stores' own write paths, the event's venue is then placed in the memory
-index, a dry run asks and writes nothing, and a second run finds nothing left
-to ask. The geocoders are fakes that count what they are asked."""
+the stores' own write paths. One unguarded path is the positive control that
+the pinned legacy projection still writes its memory edges; the production
+command's guarded engine is measured separately below. A dry run asks and
+writes nothing, and a second run finds nothing left to ask. The geocoders are
+fakes that count what they are asked."""
 
 from __future__ import annotations
 
@@ -125,3 +127,42 @@ async def test_a_cached_geocodes_area_is_screened_before_it_is_written(clean_pg_
         district=_AREA.district,
     )
     await engine.dispose()
+
+
+async def test_the_cli_engine_projection_guard_leaves_legacy_edges_unwritten(
+    clean_pg_url, example_config, monkeypatch,
+):
+    """The production command's engine carries `legacy_memory_projection=False`;
+    the venue write still lands, and the legacy memory index is neither read
+    nor reprojected. The unguarded test above is the positive control."""
+    run_migrations(clean_pg_url)
+    seed_engine = create_sql_engine(clean_pg_url)
+    events = SeededGatheringStore(seed_engine)
+    event = await events.create(_event("place-1"))
+
+    from argparse import Namespace
+
+    from nora.app import cli
+    from nora.infra.geocode import GoogleGeocoder
+    from tests.builders import override_config
+
+    cfg = override_config(example_config, {"route.enabled": True})
+    monkeypatch.setenv("GOOGLE_MAPS_API_KEY", "test-key")
+    monkeypatch.setattr(cli, "_config", lambda args: cfg)
+
+    async def area_of_place(self, place_id: str):
+        return _AREA if place_id == "place-1" else None
+
+    monkeypatch.setattr(GoogleGeocoder, "area_of_place", area_of_place)
+    rc = await cli.cmd_memory_backfill_places(Namespace(
+        config="", apply=True, per_second=1000.0, limit=10_000,
+    ))
+    assert rc == 0
+    got = await events.get(event.id)
+    assert got is not None and (got.venue_district, got.venue_city) == (_AREA.district, _AREA.city)
+    async with seed_engine.connect() as conn:
+        rows = (await conn.execute(sa.select(MEMORY_EDGE.c.src_id).where(
+            MEMORY_EDGE.c.rel == "located_in",
+        ))).all()
+    assert rows == []
+    await seed_engine.dispose()

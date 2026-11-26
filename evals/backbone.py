@@ -1566,6 +1566,22 @@ def retain_report(evidence: Any, corpus: str, report: Any, *, experiment: Any = 
     return payload
 
 
+def _surface_tool_names(subject: Any) -> set[str]:
+    """The memory reads one ordinary tag surface would actually offer."""
+    from nora.agent.room import Room
+
+    deps = subject.deps
+    room = Room(
+        platform=subject.room[0], conversation_id=subject.room[1], roster_source=None,
+        persons=deps.persons, access=deps.access,
+    )
+    surface = deps.engagement._tool_registry.surface(
+        store=deps.audit, conversation_id=subject.room[1], conversation_type="group",
+        persons=deps.persons, deliverer=None, metrics=deps.metrics, room=room,
+    )
+    return set(surface.admitted)
+
+
 async def _drive(case: Case, spec: Spec) -> dict[str, Any]:
     from nora.subject.eval_evidence import current
 
@@ -1670,9 +1686,18 @@ async def _drive_draw(case: Case, spec: Spec, *, recording: RecordedServices) ->
                 environment=environment, overrides=spec.overrides,
                 identity=spec.identity if spec.identity is not None else _deployment_identity(),
                 policy=spec.policy if spec.policy is not None else _deployment_policy(), now=now,
+                graph_memory=spec.memory_surface != "off",
             )
             subject = (await obtain(drawn_subject, legacy_replay=True) if port.legacy_replay
                        else await obtain(drawn_subject))
+            memory_checked = spec.memory_surface in {"graph", "off"}
+            if memory_checked:
+                names = _surface_tool_names(subject)
+                expected = {"memory_search", "memory_read"}
+                if spec.memory_surface == "off" and not expected.isdisjoint(names):
+                    raise ValueError("memory-off arm composed graph memory read tools")
+                if spec.memory_surface == "graph" and not expected <= names:
+                    raise ValueError("graph arm did not compose its memory read tools")
             if spec.judge is not None:
                 spec = dataclasses.replace(spec, judge=spec.judge.bind(subject.cfg))
             from nora.subject.eval_evidence import current, fingerprint

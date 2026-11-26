@@ -360,13 +360,13 @@ def _run_one(
     name: str, *, source_url: str, judge: Judge | None, sample: int,
     only: frozenset[str] | None = None, all_reasons: bool = False,
     positions: bool = False, context_receipts: list[dict] | None = None,
-    subject_overrides: dict[str, Any] | None = None,
+    memory_surface: str = "graph", subject_overrides: dict[str, Any] | None = None,
     contract: GradingContract | None = None, services: dict[str, Any] | None = None,
     cohort: Any = None, measurement: Measurement = PROTOCOL,
 ) -> bool:
     experiment, task = experiment_for(
         name, source_url=source_url, judge=judge, sample=sample, only=only,
-        overrides=subject_overrides,
+        memory_surface=memory_surface, overrides=subject_overrides,
         contract=contract, services=services,
         cohort=cohort, measurement=measurement,
     )
@@ -428,7 +428,8 @@ def _run_one(
 
 
 def _print_input(name: str, case_name: str, *, source_url: str,
-                 services: dict[str, RecordedServices] | None = None) -> int:
+                 services: dict[str, RecordedServices] | None = None,
+                 memory_surface: str = "graph") -> int:
     """Print the declared entry's rendered input under its case-owned services.
 
     This rendering probe has no behavioral verdict and does not run a journey.
@@ -449,6 +450,7 @@ def _print_input(name: str, case_name: str, *, source_url: str,
     result = nora_task(Spec(
         source_url=source_url, entry=corpus_entry(name),
         full_restore=name in FULL_RESTORE_CORPORA, services=services,
+        memory_surface=memory_surface,
     ))(case)
     state = {e.name: e.state for e in result.get("environment_state") or ()}
     shown = state.get(NORA_SHOWN) or ""
@@ -481,8 +483,10 @@ def graph_surface_lines(source_url: str, model_id: str) -> list[str]:
     ]
 
 
-def memory_surface_line() -> str:
-    """The run header's account of which memory surface it measures, and why."""
+def memory_surface_line(surface: str = "graph") -> str:
+    """The run header's account of which eval memory arm it measures, and why."""
+    if surface == "off":
+        return "off (eval-only control arm; production graph reads stay unconditional)"
     return "graph (the Cognitive Graph's read surface is unconditional)"
 
 
@@ -720,14 +724,15 @@ def _execute(args: argparse.Namespace, names: list[str], only: frozenset[str] | 
             measurement = getattr(args, "bound_measurement", None) or PROTOCOL
             print(f"run {RUN_ID}: {measurement.phrase} with case-owned external services")
             # Match case selection to the generated subject or its explicit
-            # index override. Each case independently checks its subject.
-            print(f"memory surface: {memory_surface_line()}")
+            # memory-surface arm. Each case independently checks its subject.
+            print(f"memory surface: {memory_surface_line(args.memory_surface)}")
             print(pseudonyms.status())
 
             if args.print_input:
                 return _print_input(names[0], args.print_input, source_url=source_url,
                                     services=(args.service_inputs.corpora.get(names[0])
-                                          if args.service_inputs else None))
+                                          if args.service_inputs else None),
+                                    memory_surface=args.memory_surface)
             # THE BUDGET, before any draw (and before the graph surface's
             # checks): the size of what this run would draw, and a refusal over
             # `BUDGET_MINUTES` unless the operator asked for it.
@@ -757,6 +762,7 @@ def _execute(args: argparse.Namespace, names: list[str], only: frozenset[str] | 
                     ok = _run_one(
                         name, source_url=source_url, judge=judge, sample=args.sample,
                         only=only, all_reasons=args.reasons, positions=args.positions,
+                        memory_surface=args.memory_surface,
                         subject_overrides=subject_overrides,
                         context_receipts=(receipts if args.context_arm != "full"
                                           or args.context_report else None),

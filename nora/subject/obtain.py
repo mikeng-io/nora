@@ -301,6 +301,11 @@ class SubjectSpec:
     #: unmarked world — every boundary exactly as composed.
     circle: CircleOverlay | None = None
 
+    #: WHETHER THE COGNITIVE GRAPH'S READ TOOLS ARE COMPOSED. Production never
+    #: sets this false; it is the eval-only control arm for measuring memory's
+    #: contribution, not a configuration switch.
+    graph_memory: bool = True
+
     #: WHERE THE CONTROLLED `sendReaction` ENDPOINT IS. `circle.reaction_wire`
     #: binds a draw-owned RPC address per case; `obtain` points the composed
     #: adapter's `SignalReactor` at it, so the REAL reactor meets the
@@ -497,6 +502,7 @@ async def obtain(spec: SubjectSpec, *, legacy_replay: bool = False) -> Subject:
     # Semantic time is controlled; operational leases and deadlines advance.
     deps = await build_dependencies(
         cfg, clock=clock, operational_clock=wall_clock, legacy_replay=legacy_replay,
+        include_graph_reads=spec.graph_memory,
     )
     subject = None
     try:
