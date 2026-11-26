@@ -1,5 +1,6 @@
 """Exercise the write-time and rebuilt index with generated PostgreSQL rows."""
 
+import logging
 from dataclasses import replace
 
 import pytest
@@ -214,11 +215,9 @@ async def test_an_unavailable_embedder_never_gives_a_node_up(engine, llama):
     fake.status, fake.healthy = 200, True
     clock.now += 7 * 3600
     assert await w.run_once() == 1
-    async with engine.connect() as conn:
-        embedded = await conn.scalar(sa.select(GRAPH_SEARCH.c.embedding).where(
-            GRAPH_SEARCH.c.graph_id == graph_id,
-        ))
-    assert embedded is not None
+    row = await _graph_row(engine, graph_id)
+    assert row["embedding"] is not None
+    assert (row["embed_attempts"], row["embed_error"]) == (0, None)
 
 
 
@@ -243,20 +242,53 @@ async def test_the_worker_refuses_a_wrong_model_then_embeds_the_configured_one(e
     assert row["embedding"] is not None and row["embedding_model"] == MODEL
 
 
+async def test_a_restart_clears_only_stale_model_vectors_and_reembeds_them(engine, llama):
+    fake, url = llama
+    stale_id = await _message(engine, "embedded by the old model")
+    current_id = await _message(engine, "embedded by the current model")
+    stale_vector = [-0.5] + [0.0] * 2047
+    current_vector = [0.5] + [0.0] * 2047
+    old_model = fingerprint("model-b.gguf@1111")
+    async with engine.begin() as conn:
+        await conn.execute(sa.update(GRAPH_SEARCH).where(
+            GRAPH_SEARCH.c.graph_id == stale_id,
+        ).values(embedding=stale_vector, embedding_model=old_model,
+                 embedded_at=1, embed_input="text"))
+        await conn.execute(sa.update(GRAPH_SEARCH).where(
+            GRAPH_SEARCH.c.graph_id == current_id,
+        ).values(embedding=current_vector, embedding_model=MODEL,
+                 embedded_at=1, embed_input="text"))
+
+    assert await worker(engine, url).run_once() == 1
+
+    stale = await _graph_row(engine, stale_id)
+    current = await _graph_row(engine, current_id)
+    assert fake.calls == 1
+    assert stale["embedding_model"] == MODEL
+    assert list(stale["embedding"]) != stale_vector
+    assert (stale["embed_attempts"], stale["embed_error"]) == (0, None)
+    assert list(current["embedding"]) == current_vector
+    assert current["embedding_model"] == MODEL
+
+
 async def test_an_outage_stops_the_batch_backs_off_immediately_and_a_rejection_continues(
-    engine, llama,
+    engine, llama, caplog,
 ):
     fake, url = llama
-    first = await _message(engine, "generated outage one")
-    second = await _message(engine, "generated outage two")
+    first = await _message(engine, "a private sentence one")
+    second = await _message(engine, "a private sentence two")
     metrics, clock = Metrics(), Clock()
     w = worker(engine, url, metrics=metrics, clock=clock)
 
     fake.status, fake.healthy = 503, False
-    assert await w.run_once() == 1
+    with caplog.at_level(logging.DEBUG):
+        assert await w.run_once() == 1
     assert fake.calls == 1
     rows = [await _graph_row(engine, row_id) for row_id in (first, second)]
     assert sorted(row["embed_attempts"] for row in rows) == [0, 1]
+    failed = max(rows, key=lambda row: row["embed_attempts"])
+    assert failed["embed_error"].startswith("unavailable:")
+    assert "private" not in caplog.text and "private" not in failed["embed_error"]
     assert metrics.get("nora_memory_embed_total", outcome="unavailable") == 1
 
     assert await w.run_once() == 1
@@ -306,9 +338,12 @@ async def test_truncation_is_counted_only_when_the_vector_is_stored(
 ):
     _fake, url = llama
     long_id = await _message(engine, "x" * 9000)
+    short_id = await _message(engine, "a short message")
     metrics = Metrics()
-    assert await worker(engine, url, metrics=metrics).run_once() == 1
+    assert await worker(engine, url, metrics=metrics).run_once() == 2
     assert (await _graph_row(engine, long_id))["embedding"] is not None
+    assert (await _graph_row(engine, short_id))["embedding"] is not None
+    assert metrics.get("nora_memory_embed_total", outcome="ok") == 2
     assert metrics.get("nora_memory_embed_truncated_total", kind="graph_search") == 1
 
     changed_id = await _message(engine, "y" * 9000)

@@ -159,5 +159,33 @@
     "old": "        except Exception as exc:\n            if self._memory is not None and not replay:",
     "new": "        except Exception as exc:\n            if False:",
     "target": "tests/unit/test_cognition_session_failures.py::test_a_failed_session_leaves_inputs_pending_even_after_a_saved_reading"
+  },
+  {
+    "name": "both reservation callbacks are registered with the real hook registry",
+    "file": "nora/agent/token_reservation.py",
+    "old": "        registry.add_callback(BeforeModelCallEvent, self.before)\n        registry.add_callback(AfterModelCallEvent, self.after)",
+    "new": "        pass",
+    "target": "tests/unit/test_token_reservation.py::test_the_real_runner_admits_the_boundary_then_refuses_reconciled_usage"
+  },
+  {
+    "name": "a restart clears stale graph vectors and keeps the current model",
+    "file": "nora/infra/sql/graph_search_embed.py",
+    "old": "        row.embedding.is_not(None), row.embedding_model.is_distinct_from(keep_model),",
+    "new": "        row.embedding.is_not(None), sa.false(),",
+    "target": "tests/infra/test_graph_search.py::test_a_restart_clears_only_stale_model_vectors_and_reembeds_them"
+  },
+  {
+    "name": "graph embed failure state and logs never carry the input text",
+    "file": "nora/infra/sql/memory_embed.py",
+    "old": "            await self._failed(item, f\"unavailable:{exc}\", counts=False)",
+    "new": "            await self._failed(item, f\"unavailable:{exc}:{item.text}\", counts=False)",
+    "target": "tests/infra/test_graph_search.py::test_an_outage_stops_the_batch_backs_off_immediately_and_a_rejection_continues"
+  },
+  {
+    "name": "a recovered graph embedding clears its retry bookkeeping",
+    "file": "nora/infra/sql/graph_search_embed.py",
+    "old": "        embedding=vector, embedding_model=model, embedded_at=now_ms,\n        embed_attempts=0, embed_error=None, embed_input=\"text\",",
+    "new": "        embedding=vector, embedding_model=model, embedded_at=now_ms,\n        embed_error=None, embed_input=\"text\",",
+    "target": "tests/infra/test_graph_search.py::test_an_unavailable_embedder_never_gives_a_node_up"
   }
 ]
