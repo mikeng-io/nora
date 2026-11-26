@@ -773,8 +773,8 @@ class TagContext:
     source_reads_failed: bool = False
     source_events_more: int = 0
     source_objects_more: int = 0
-    # `retained_sources` is the retained lane (docs/design/conversation/
-    # README.md): `RetainedSource`s — the room's open notes'
+    # `retained_sources` is the retained lane (docs/design/platform/
+    # observations.md): `RetainedSource`s — the room's open notes'
     # curated `object_refs` resolved NOW, each with its CURRENT folded head or
     # an explicit unresolved marker. An object an ongoing matter tracks stays in
     # view after the recency page above would have evicted it; the state is
