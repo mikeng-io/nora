@@ -219,27 +219,28 @@ def _chosen(path: str) -> bool:
 
 
 def changed(args: list[str]) -> list[str]:
-    """Added, copied, modified or renamed documents: staged, or since a base ref."""
+    """Added, copied or modified documents, staged or since a base ref; an exact move is not."""
     rng = ["--cached"] if args == ["--staged"] else [args[1], "HEAD"]
 
     def names(kinds: str) -> set[str]:
-        out = subprocess.run(
-            ["git", "diff", "-z", "--name-only", f"--diff-filter={kinds}", *rng],  # noqa: S607
+        # -M100%: an exact rename is a move, not new content, so it is not judged.
+        out = subprocess.run(  # noqa: S603 - git with fixed arguments
+            ["git", "diff", "-z", "--name-only", "-M100%", f"--diff-filter={kinds}", *rng],  # noqa: S607
             cwd=ROOT, check=True, capture_output=True,
         ).stdout.decode("utf-8").split("\0")
         return {p for p in out if p and _chosen(p)}
 
     # A root document is judged only when it is new: editing one a later unit
     # moves into docs/ is not adding a root document.
-    added = names("ACR")
-    return sorted(p for p in names("ACMR") if "/" in p or p in added)
+    added = names("AC")
+    return sorted(p for p in names("ACM") if "/" in p or p in added)
 
 
 def staged_text(path: str) -> str:
     """A path's content as staged, so the hook judges what is being committed."""
     if not path.endswith(".md"):
         return ""
-    done = subprocess.run(
+    done = subprocess.run(  # noqa: S603 - git with fixed arguments
         ["git", "show", f":{path}"], cwd=ROOT, capture_output=True,  # noqa: S607
     )
     return done.stdout.decode("utf-8", errors="replace") if done.returncode == 0 else ""
