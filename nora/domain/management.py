@@ -1,5 +1,5 @@
 """The private management boundary's typed operation contract
-(`docs/design/managed-identity-access/management.md`).
+(`docs/design/people/authority.md`).
 
 Standard library only — same rule as the rest of `nora/domain`
 (`nora/domain/__init__.py`).
@@ -54,7 +54,7 @@ class TargetKind(Enum):
 
 class ScopeKind(Enum):
     """The topology's three levels
-    (`docs/design/room-topology/10-topology.md`), ordered by containment."""
+    (`docs/design/people/authority.md`), ordered by containment."""
 
     WORKSPACE = "workspace"
     UNIT = "unit"

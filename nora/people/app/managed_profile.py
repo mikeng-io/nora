@@ -1,4 +1,4 @@
-"""The holder's global display-name update (`docs/design/managed-identity-access/management.md`).
+"""The holder's global display-name update (`docs/design/people/authority.md`).
 
 Kratos owns the authoritative descriptive profile; the SQL
 `managed_person.display_name` row is the projection every consumer reads.

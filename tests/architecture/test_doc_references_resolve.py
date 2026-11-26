@@ -260,13 +260,6 @@ _KNOWN_DANGLING: dict[tuple[str, str], str] = {
     ),
 
     (
-        "docs/design/online-status/04-consumers.md",
-        "scripts/render_release_notes.py",
-    ): (
-        "deleted 2026-10-16 with the manual release scheme and the upgrade "
-        "note (DEC-314, ADR 0024). A design record keeps naming it as it was."
-    ),
-    (
         "docs/adr/0020-documents-are-json-specs-the-portal-renders.md",
         "deploy/drop/rendering.py",
     ): (
@@ -372,7 +365,7 @@ _KNOWN_DANGLING: dict[tuple[str, str], str] = {
     ("voice-lab/docs/audit-brief-kimi-integration.md", "nora/platform/discord/voice_session.py"): (
         "a 2026-09 audit brief moved in from the voice-lab repo; it proposes where "
         "stage-1 TTS+ducking WOULD live. The file was never created (the voice "
-        "channel went the sidecar route, docs/design/voice-channel/receive.md) — the brief is a "
+        "channel went the sidecar route, docs/design/voice/README.md) — the brief is a "
         "historical record of the proposal, not a link to fix"
     ),
     ("docs/design/discord-integration/00-overview.md", "deploy/watchdog.sh"): (
@@ -402,33 +395,6 @@ _KNOWN_DANGLING: dict[tuple[str, str], str] = {
     ): (
         "migration was renumbered/renamed before landing (0003_presence_places.py today), "
         "same shape as 0017_events.py's own documented renumbering"
-    ),
-    ("docs/design/event-abstraction/02-naming-rename.md", "nora/infra/sql/events.py"): (
-        "naming-rename plan; shipped as nora/domain/events.py instead"
-    ),
-    ("docs/design/event-abstraction/02-naming-rename.md", "nora/testing/events.py"): (
-        "naming-rename plan; no such fake module was built"
-    ),
-    ("docs/design/event-abstraction/02-naming-rename.md", "tests/test_events_domain.py"): (
-        "naming-rename plan's proposed test names; shipped as tests/unit/test_standing_event.py"
-    ),
-    ("docs/design/event-abstraction/02-naming-rename.md", "tests/test_events_service.py"): (
-        "naming-rename plan's proposed test names; shipped as tests/unit/test_standing_event.py"
-    ),
-    ("docs/design/event-abstraction/02-naming-rename.md", "tests/test_event_tools.py"): (
-        "naming-rename plan's proposed test names; shipped as tests/unit/test_standing_event.py"
-    ),
-    ("docs/design/event-abstraction/02-naming-rename.md", "tests/test_web_events.py"): (
-        "naming-rename plan's proposed test names; shipped as tests/unit/test_standing_event.py"
-    ),
-    (
-        "docs/design/event-abstraction/02-naming-rename.md",
-        "tests/contract/test_event_store_contract.py",
-    ): (
-        "naming-rename plan's proposed contract suite; not built under this name"
-    ),
-    ("docs/design/event-abstraction/04-dispatch-and-batching.md", "tests/test_events.py"): (
-        "same event-abstraction planning-doc-vs-shipped-name drift as 02-naming-rename.md"
     ),
     ("docs/adr/0020-documents-are-json-specs-the-portal-renders.md",
      "nora/compute/smith/page_shell.py"): (

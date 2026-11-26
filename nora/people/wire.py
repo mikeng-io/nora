@@ -173,7 +173,7 @@ def lineage(allowlist, cfg, persons, access=None) -> LineageWiring:
 
 
 # ---------------------------------------------------------------------------
-# Managed identity (`docs/design/managed-identity-access/`): reached only through `nora.people`.
+# Managed identity (`docs/design/people/README.md`): reached only through `nora.people`.
 # ---------------------------------------------------------------------------
 
 

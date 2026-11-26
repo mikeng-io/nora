@@ -1,5 +1,5 @@
 """Managed-to-file export — the operator-controlled preparation half of the
-file-backend handoff (`docs/design/managed-identity-access/identity.md` «Backend
+file-backend handoff (`docs/design/people/identity.md` «Backend
 selection and lifecycle», `docs/engineering/managed-identity-export.md`).
 
 This is the inverse boundary of `managed_admission`: that command admitted

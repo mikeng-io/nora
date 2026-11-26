@@ -54,7 +54,7 @@ Character tier.
 - **alias** — a nickname the *operator* wrote in `identity.toml` (阿豹妹,
   峰哥). Trusted, because a human on disk authored it.
 - **display name** — what someone set on their own Signal profile.
-  **Untrusted** — anyone can set it to anything, which is why docs/design/10-identity-and-policy-schema.md §1.3
+  **Untrusted** — anyone can set it to anything, which is why docs/design/people/identity.md
   forbids an alias or display name ever resolving a *sender*. Resolving a
   lookup *target* is a different, safe operation.
 - **unmapped sender** — an account with no person in `identity.toml`. Reported
@@ -102,7 +102,7 @@ is why `nora/infra`'s two clients have opposite error contracts.
   `postgresql+asyncpg://`) — the record store's read/write seam. This store IS
   the record (hot + deeper above), not an audit log beside it.
   `FakeRecordStore` (`nora.testing`) is its contract-bound double. The store
-  is one `nora` PostgreSQL database (docs/design/cognition/loop.md) that presence (docs/design/self-awareness/presence.md) will
+  is one `nora` PostgreSQL database (docs/design/cognition/loop.md) that presence (docs/design/presence/README.md) will
   share.
 
 - **`load_transcript`** — reads durable transcript rows from the record

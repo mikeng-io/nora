@@ -346,7 +346,7 @@ def build_tool_specs(
     # `computer_capture`/`computer_cancel` `unavailable`.
     computer_admission: Any = None,
     browser_manager: Any = None,
-    # The canonical-DM scope resolver (`docs/design/private-dm/admission.md`):
+    # The canonical-DM scope resolver (`docs/design/people/direct-messages.md`):
     # `(platform, conversation_id)` → the DM scope id (the `(person, anchor
     # unit)` binding), hashed here to the workspace key. `None` — DM admission
     # is not wired — leaves DM-turn computer calls `unavailable`; never a

@@ -154,7 +154,7 @@ class Identifier:
         if self.kind == DISPLAY_NAME_KIND:
             raise UnmatchableIdentifierError(
                 "display_name is never matchable "
-"(docs/design/10-identity-and-policy-schema.md §1.3): Signal "
+"(docs/design/people/identity.md): Signal "
                 "profile names, WhatsApp push names and Telegram display "
                 "names are user-controlled and spoofable. They may be shown "
                 "to the operator and rendered in a transcript, but never "
@@ -164,7 +164,7 @@ class Identifier:
         if allowed is None:
             raise UnmatchableIdentifierError(
                 f"unknown platform {self.platform!r} — no id-kind vocabulary "
-                "is declared for it (docs/design/10-identity-and-policy-schema.md §3.1)"
+                "is declared for it (docs/design/people/identity.md)"
             )
         if self.kind not in allowed:
             raise UnmatchableIdentifierError(

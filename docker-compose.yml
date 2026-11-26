@@ -561,7 +561,7 @@ services:
       - TAVILY_API_KEY=${TAVILY_API_KEY:-}
       - EXA_API_KEY=${EXA_API_KEY:-}
       #   STEAM_WEB_API_KEY   — the `online_now` Steam half ([online],
-      #   docs/design/online-status/, PR #252). Same OPTIONAL posture: `[online]
+      #   docs/design/presence/README.md, PR #252). Same OPTIONAL posture: `[online]
       #   enabled` AND this key present turns the Steam arms on; unset logs
       #   "online enabled but STEAM_WEB_API_KEY is unset" and everything
       #   stays `unavailable`. Must be passed explicitly — Compose does not
@@ -606,7 +606,7 @@ services:
       #   crash-loop, not a degraded feature. Left `:-` so a deployment with
       #   Discord DISABLED still starts without it.
       - DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN:-}
-      # Voice reply closure (docs/design/voice-channel/audio.md): the TTS provider key
+      # Voice reply closure (docs/design/voice/README.md): the TTS provider key
       # must reach the nora DAEMON container — Compose does not pass through
       # unlisted vars, and without it composition.py logs "no speaker is
       # wired; voice answers stay text-only" (found live 2026-09-16 while
@@ -974,7 +974,7 @@ services:
   # lives in this repo" shape.
   #
   # Two engines behind one OpenAI-compatible /v1/audio/transcriptions
-  # (decision: docs/design/voice-channel/receive.md, 2026-09-15):
+  # (decision: docs/design/voice/README.md, 2026-09-15):
   # the DEFAULT is JackyHoCL whisper-large-v3-turbo-cantonese-noise-detection
   # (transformers, fp32 CPU) — the only A/B engine that kept both `RV` and
   # `discord` intact on real Discord voice audio, Hant + punctuation out of
@@ -1041,7 +1041,7 @@ services:
       retries: 3
 
   # voice-sidecar — stage 2 of the voice-channel design
-  # (docs/design/voice-channel/receive.md): a Node receive-only sidecar
+  # (docs/design/voice/README.md): a Node receive-only sidecar
   # (@discordjs/voice + libdave, Discord's own stack) that joins a Discord
   # voice channel, DAVE-decrypts per-user Opus, decodes to PCM, and forwards
   # {user_id, pcm} over a local TCP seam to the FUTURE Python wake gate
@@ -1096,7 +1096,7 @@ services:
       # above).
       - HOST=0.0.0.0
       # Audio-controller durable desired-state + event callback
-      # (docs/design/voice-channel/audio.md). Both match the defaults in
+      # (docs/design/voice/README.md). Both match the defaults in
       # src/service.mjs; pinned here so the posture is explicit. The state
       # lives on the NAMED volume below, not a host bind mount (B-1: a bind
       # mount MASKS the image's chown of /var/lib/audio-controller — a fresh
@@ -1132,7 +1132,7 @@ services:
       retries: 3
 
   # voice-wake — stage 3 of the voice-channel design
-  # (docs/design/voice-channel/README.md): the Python wake gate, and the ONLY
+  # (docs/design/voice/README.md): the Python wake gate, and the ONLY
   # consumer of the sidecar's seam. Per-user PCM in, openWakeWord 「喂 Nora」
   # detection (the v3 ONNX is baked into the image), utterance collection,
   # transcription via the local `stt` service, and the TRANSCRIPT forwarded
@@ -1239,7 +1239,7 @@ volumes:
   # inside the container) — pins the ~3.2GB noise-detection whisper download
   # (the DEFAULT model since 2026-09-15) the same way.
   stt-huggingface-cache:
-  # audio-controller's desired-state file (docs/design/voice-channel/audio.md).
+  # audio-controller's desired-state file (docs/design/voice/README.md).
   # Named (not a bind mount) so the volume inherits the image's
   # `chown node:node /var/lib/audio-controller` on first use (B-1).
   audio-controller-state:

@@ -60,7 +60,7 @@ sentry = [
     "sentry-sdk==2.44.0",
 ]
 
-# Makes `nora groups` and `nora persons pending` — the commands docs/design/10-identity-and-policy-schema.md §6,
+# Makes `nora groups` and `nora persons pending` — the commands docs/design/people/identity.md,
 # policy.example.toml and `nora.policy`'s own error messages all name — real
 # commands rather than shorthand for `python -m nora …`. Same entry point, so
 # the container's `python -m nora` CMD is unaffected.
@@ -220,7 +220,7 @@ forbidden_modules = ["aiohttp", "strands", "sqlalchemy", "pydantic", "prometheus
 name = "the room policy is composed in, never imported by a lower layer"
 type = "forbidden"
 # `resolve_voice_room` (nora/web/voice.py) and `resolve_music_channel`
-# (nora/platform/discord/music_notify.py, docs/design/voice-channel/music.md) are both
+# (nora/platform/discord/music_notify.py, docs/design/voice/music.md) are both
 # threaded as `Callable[[str], str | None]` rather than as the `Policy` itself,
 # each justified in a docstring by "this layer must not learn that nora.policy
 # exists". Both were true and neither was enforced — the same "a neutrality
