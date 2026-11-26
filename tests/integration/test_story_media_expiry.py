@@ -258,8 +258,7 @@ async def _graph_row(
     world: World, item_id: str, *, embedded: bool = False, attempts: int = 0,
     error: str | None = None,
 ) -> None:
-    """The frame's registered searchable row, as its source write and the
-    graph worker leave it; unembedded by default."""
+    """The frame's registered searchable row; unembedded by default."""
     graph_id = f"item:generated-{item_id}"
     unit = "friends"
     async with world.engine.begin() as conn:
