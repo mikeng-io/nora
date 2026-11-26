@@ -31,8 +31,8 @@ is present only where policy admits her.
 - A room is a channel, qualified by guild and channel. Policy is deny by
   default across platforms: a channel is ambient only when explicitly admitted,
   however much the bot's role can see.
-- A sender is a Discord user id, resolved to a person through the identity
-  mapping; a display name never authenticates. A Discord account with no
+- A sender is a Discord user id, resolved to a person through
+  [identity](../people/identity.md). A Discord account with no
   identity binding is not admitted, in a room or at any login that relies on
   identity.
 - A direct message is a room like any other, with the scope rules in

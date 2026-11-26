@@ -26,8 +26,8 @@ that mode every message is lost.
 
 ## Identity and admission inputs
 
-- A sender arrives as a Signal account identifier and resolves to a person only
-  through the identity mapping; a display name never does. An unresolved sender
+- A sender arrives as a Signal account identifier and resolves to a person
+  through [identity](../people/identity.md). An unresolved sender
   matches nobody.
 - Rooms are Signal groups, admitted by policy; a direct conversation is admitted
   only for an allowed sender. The admission projection carries the enabled

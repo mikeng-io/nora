@@ -91,10 +91,8 @@ stop, delete and health. A new provider is an adapter that passes the runtime co
   is good for one session's remaining budget, and the relay's allowlist, not the harness, decides
   which model answers.
 - **The relay is reached on the public side,** behind the host's existing public entry, so no private
-  range is opened. The private-range deny holds against addresses written as literals but not against
-  a public name that resolves privately, so a worker could reach a host service that way; what keeps
-  it from calling a model unpaid is that the gateway needs a key the computer does not hold, not the
-  network.
+  range is opened; the computer's egress rules are [computer](../computer/README.md)'s. A worker
+  cannot call a model unpaid because the gateway needs a key the computer does not hold.
 - **Permissions are answered by code,** by request kind, never by a model and never by a person
   mid-run: a read or write inside the scope is allowed; a command inside the computer is allowed, the
   computer and the scope's owner being the boundary; the network is allowed as far as the egress

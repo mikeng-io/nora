@@ -332,7 +332,7 @@ def test_interrupted_copy_is_held_for_reconciliation_without_retiring_any_source
     assert all((root / old).exists() for old in mapping)
 
 
-GATE_RUNBOOK = ROOT / "docs/design/computer/README.md"
+GATE_RUNBOOK = ROOT / "docs/engineering/computer-unit-migration.md"
 NORA_COMPUTER = ROOT / "deploy/computer/nora-computer"
 REAL_STATUS_LINE = "sandbox=running computerd=healthy egress=ok endpoint=http://172.17.0.1:18765"
 UNHEALTHY_LINES = [

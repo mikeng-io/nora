@@ -34,8 +34,8 @@ design, not a configuration of this bridge.
   that can name one account. The bridge keeps the mapping in both directions and
   carries whichever forms it knows for senders, mentions, quoted participants
   and Nora's own aliases; one is never formatted as the other.
-- A person resolves through the identity mapping, never a display name. An
-  unresolved raw address matches nobody and fails closed.
+- A person resolves through [identity](../people/identity.md). An unresolved raw
+  address matches nobody and fails closed.
 - A group's identity is the native group chat; a direct conversation uses the
   resolved phone chat when known and the raw LID chat otherwise. Addresses are
   normalised once before policy matching, so two spellings never make two rooms

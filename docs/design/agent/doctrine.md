@@ -76,8 +76,8 @@ schema's, because the model must know to choose a tool before it can load anythi
   invents a value for it on every call.
 - **A person is named, never an id.** A lookup resolves the name among the people of this room, and
   a person outside the room is indistinguishable from one who does not exist.
-- **Scope is enforced at assembly, never at egress.** By the time text exists the disclosure is
-  already made; a guard on the way out cannot unsay what the prompt should not have held.
+- **Assembly holds only what scope allows** ([boundaries](../cognition/boundaries.md)): a guard on
+  the way out cannot unsay what the prompt should not have held.
 
 ## Cost
 

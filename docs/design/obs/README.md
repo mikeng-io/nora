@@ -85,4 +85,4 @@ its trace is not evidence.
 
 ## Build identity
 
-What version she is running is answered by [agent](../agent/README.md).
+What version she is running is answered by [agent](../agent/version.md).

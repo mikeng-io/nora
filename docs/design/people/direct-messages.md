@@ -17,14 +17,12 @@ admitted and kept continuous across a person's accounts.
 
 ## Admission
 
-A DM needs an eligible identity, a supported platform and a home unit that lists
-that identity.
+A DM needs an eligible identity, a supported platform, and the identity listed in
+the primary unit.
 
-- The sender and the direct peer each resolve to the same identity through
-  authored identifiers. A display name, profile name or text claim never matches.
-- The home unit is chosen by the operator; Nora infers it only when exactly one
-  unit lists the person. Zero or several, or an unknown peer, refuse before
-  anything is recorded or run.
+- The sender and the direct peer each resolve to the same identity
+  ([identity](identity.md)). An unknown peer, or an identity the primary unit does
+  not list, is refused before anything is recorded or run.
 - A platform is admitted by being supported for DMs, not by having a parser or a
   send route. Unsupported media is refused before custody.
 - A platform can be opted out per identity, which applies to inbound work and to
@@ -32,8 +30,8 @@ that identity.
 
 ## One scope across accounts
 
-A **DM scope** is the identity paired with its home unit. Every admitted account
-of that identity on every admitted platform shares it.
+A **DM scope** is the identity paired with the primary unit. Every admitted
+account of that identity on every admitted platform shares it.
 
 - One transcript interleaves platform-marked lines from all linked accounts in
   arrival order. Independent per-platform pages are never joined and presented as
@@ -51,10 +49,6 @@ of that identity on every admitted platform shares it.
   inside the transport.
 
 ## Change and revocation
-
-Changing the home unit selects a different scope. Earlier messages, files and
-queued work stay with their original scope, and what was already said in a unit
-stays in that unit under ordinary correction and retirement.
 
 Revoking a grant or opting a platform out stops private reads and later sends. It
 does not erase what was already disclosed. A person's request to forget or dispute

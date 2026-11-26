@@ -73,19 +73,17 @@ The operator rules all five in scope, none out.
 
 | control | owner |
 |---|---|
-| unit as the read boundary, origin scope, exposure, location consent, the three-state tool result, credential and doctrine leak protection that always runs | [boundaries](../cognition/boundaries.md) |
+| unit as the read boundary, origin scope, exposure, location consent, credential and doctrine leak protection that always runs | [boundaries](../cognition/boundaries.md) |
+| the three-state tool result | [agent](../agent/tools.md) |
 | deny-by-default policy, which refuses to start when it allows nothing: who may talk to her, and where | [people](../people/README.md) |
 | sign-in, the roster re-check on every request, one-time codes | [web](../web/README.md) |
 | sandbox egress rules and credentials by broker only | [computer](../computer/README.md) |
 
 ## Accepted risk
 
-- **Content checks are off by default.** The phone, UUID and coordinate content
-  vetoes, the place and person-name screens and the location audience subset are
-  disabled by operator ruling ([ADR 0030](../../adr/0030-content-filters-are-disabled-by-default-and-reversible.md)).
-  A finding that only says such a check is off is accepted. Credential blocking,
-  doctrine leak protection, admission, unit scope and location consent are not
-  accepted away.
+- **Disabled content checks.** A finding that only reports a content check that is
+  off by default ([boundaries](../cognition/boundaries.md)) is accepted. The
+  protections that always run are not accepted away.
 - **Host, operator and container-daemon compromise**, and the operator's own
   configuration files.
 - **Development-only paths**, unless they are reachable in the production image.

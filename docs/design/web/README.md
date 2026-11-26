@@ -33,8 +33,8 @@ time. Its look is [appearance](../appearance/README.md), desk register.
 
 Only people on the roster get in. Two ways in lead to the same identity: a
 Discord account, or a one-time code Nora sends to the person's own chat account.
-An account that is not on the roster is refused. One identity has many accounts,
-and a display name never authenticates ([people](../people/README.md)).
+An account that is not on the roster is refused; accounts resolve through
+[identity](../people/identity.md).
 
 The session is checked against the roster on every request, not once at sign-in:
 removing a person from the roster ends their access at once. One-time codes are

@@ -43,8 +43,9 @@ loop of its own.
 - **Resolution is not authorisation.** Resolution says which account or item
   the input names: several matches are ambiguous, none is nothing found, an
   unreadable index is unavailable. Authorisation says whether this read may
-  happen in this turn and room. A display name is never an account, and the
-  model never supplies or sees a platform account id.
+  happen in this turn and room. Accounts resolve through
+  [identity](../people/identity.md), and the model never supplies or sees a
+  platform account id.
 - **Search is not read.** A search returns candidates for a later read and
   never reads their content. Namesakes and impostors are normal: Nora shows
   alternatives or asks, and never picks by headline.

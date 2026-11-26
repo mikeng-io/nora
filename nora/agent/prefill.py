@@ -494,8 +494,8 @@ def _transcript_block(
     but it makes the tag unreadable for nothing.
     """
     rows = render_transcript(ctx.transcript, display_name=display_name, now=now)
-    # The typed source events of the same window (docs/design/platform-
-    # observations/observations.md): `<source_event>` elements INTERLEAVED into the
+    # The typed source events of the same window (docs/design/platform/
+    # observations.md): `<source_event>` elements INTERLEAVED into the
     # transcript at their own time — a vote between two messages reads
     # between them, not as an appendix after the last word. They are not
     # messages and take no `#n` handle (a reply cannot name one). Each
@@ -913,8 +913,8 @@ def _standing_block(
 ) -> ContextBlock | None:
     """The shared account and freshly read source objects in ONE Standing block."""
     block = render_shared_state(ctx.shared, now_ms=int((now or local_now()).timestamp() * 1000))
-    # The room's folded source-object heads (docs/design/platform-
-    # observations/observations.md), typed rows under the SAME Standing presentation: the open poll,
+    # The room's folded source-object heads (docs/design/platform/
+    # observations.md), typed rows under the SAME Standing presentation: the open poll,
     # the pin set, the member count — each with its ordering and coverage
     # flags so a gapped or partial state never reads as settled truth.
     if ctx.source_objects:
