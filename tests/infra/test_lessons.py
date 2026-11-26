@@ -19,9 +19,11 @@ import nora.app.cli as cli
 from nora.agent.dream_screen import offence
 from nora.domain.culture import Citable
 from nora.domain.lessons import LESSON_MAX_ACTIVE
+from nora.infra.sql import memory_index
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.lessons import SqlLessonStore
 from nora.infra.sql.migrations_runner import run_migrations
+from nora.infra.sql.schema import MEMORY_NODE
 from nora.language.lesson_book import LessonBook
 
 UNIT = "friends"
@@ -238,10 +240,24 @@ async def test_the_cli_shows_and_rolls_back_legacy_revisions(env, monkeypatch, c
         established_by="operator", record_head=111,
     )
 
+    async def projection():
+        async with env.engine.connect() as conn:
+            return (await conn.execute(sa.select(
+                MEMORY_NODE.c.text, MEMORY_NODE.c.state,
+            ).where(MEMORY_NODE.c.kind == "lesson", MEMORY_NODE.c.source_id == lid))).one()
+
+    async with env.engine.begin() as conn:
+        await memory_index.project(conn, "lesson", lid)
+    before = await projection()
+    assert before.state == "retired"
     rc, out = await _cli(monkeypatch, env, cli.cmd_lessons_rollback, capsys, lesson_id=lid,
                          to=1, apply=True)
     assert rc == 0 and json.loads(out)["revision"] == 3
     assert len(await env.book.active(unit=UNIT)) == 1
+    assert await projection() == before
+    async with env.engine.begin() as conn:
+        await memory_index.project(conn, "lesson", lid)
+    assert (await projection()).state == "live"
     rc, out = await _cli(monkeypatch, env, cli.cmd_lessons_rollback, capsys, lesson_id=lid,
                          to=9, apply=True)
     assert rc == 1 and json.loads(out)["status"] == "refused"

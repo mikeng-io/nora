@@ -29,9 +29,7 @@ from nora.domain.rollup import Citation, episode_key
 from nora.infra.sql import memory_index
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.geocode_cache import SqlGeocodeCacheStore
-from nora.infra.sql.memo import SqlMemoStore
-from nora.infra.sql.mobility import SqlMobilityStore
-from nora.infra.sql.rollups import SqlRollupStore, UnitRooms
+from nora.infra.sql.rollups import UnitRooms
 from nora.infra.sql.schema import (
     MEMORY_EDGE,
     MEMORY_NODE,
@@ -50,6 +48,11 @@ from nora.infra.sql.schema import (
 )
 from nora.infra.sql.stimuli import SqlStimulusStore
 from nora.testing.stimuli import InMemoryStimulusStore
+from tests.fixtures.legacy_projection import (
+    ProjectingMemoStore,
+    ProjectingMobilityStore,
+    ProjectingRollupStore,
+)
 
 _HKT = ZoneInfo("Asia/Hong_Kong")
 _MIN = 60_000
@@ -91,7 +94,7 @@ def _ts(ms: int) -> datetime:
     return datetime.fromtimestamp(ms // 1000, tz=UTC) + timedelta(milliseconds=ms % 1000)
 
 
-async def _seed(engine, mobility: SqlMobilityStore, *, polls_fail_at: int | None = None) -> None:
+async def _seed(engine, mobility, *, polls_fail_at: int | None = None) -> None:
     fid = 1
 
     async def fix(person, ts, at, address=None):
@@ -178,9 +181,9 @@ async def _seed(engine, mobility: SqlMobilityStore, *, polls_fail_at: int | None
 
 
 def _runner(engine, stimuli=None, events=None, areas=None) -> RollupRunner:
-    rollups = SqlRollupStore(engine)
+    rollups = ProjectingRollupStore(engine)
     return RollupRunner(
-        mobility=SqlMobilityStore(engine), rollups=rollups, config=CFG,
+        mobility=ProjectingMobilityStore(engine), rollups=rollups, config=CFG,
         unit_rollups=UnitRollups(
             store=rollups, config=UNITS, units=(UNIT,), people=PEOPLE,
             stimuli=stimuli, events=events, clock=lambda: 0.0, areas=areas,
@@ -211,10 +214,10 @@ async def _presence_rows(engine, build_id: int) -> dict:
 
 async def test_every_rollup_recomputes_identically_from_the_record(clean_pg_url):
     engine = create_sql_engine(clean_pg_url)
-    mobility = SqlMobilityStore(engine)
+    mobility = ProjectingMobilityStore(engine)
     await _seed(engine, mobility)
     runner = _runner(engine)
-    rollups = SqlRollupStore(engine)
+    rollups = ProjectingRollupStore(engine)
     a = await rollups.create_build(code_version=CODE_VERSION, params_sha256=runner.params)
     ticks = [*range(_START + 6 * _H, _WATERMARK, 47 * _MIN), _WATERMARK]
     for through in ticks:
@@ -311,7 +314,7 @@ async def test_unquoted_answers_are_counted_as_follows_on_the_right_send(clean_p
         await message(9500, person="b", body="hi", mentions={"nora"})   # 500 s, her account
         await message(4 * 3600, person="b", body="later")               # the Record's clock
 
-    rollups = SqlRollupStore(engine)
+    rollups = ProjectingRollupStore(engine)
     unit_rollups = UnitRollups(
         store=rollups, config=UNITS, units=(UNIT,), people=PEOPLE, clock=lambda: 0.0,
     )
@@ -356,10 +359,10 @@ async def test_a_forgotten_persons_message_is_no_longer_a_reply_target_in_the_ti
     message person "a" sent, and rebuild fresh: the replies that quoted them
     must be GONE from the tie rollup, not merely relabelled."""
     engine = create_sql_engine(clean_pg_url)
-    mobility = SqlMobilityStore(engine)
+    mobility = ProjectingMobilityStore(engine)
     await _seed(engine, mobility)
     runner = _runner(engine)
-    rollups = SqlRollupStore(engine)
+    rollups = ProjectingRollupStore(engine)
 
     before = await rollups.create_build(code_version=CODE_VERSION, params_sha256=runner.params)
     await runner.run(build_id=before, through_ms=_WATERMARK)
@@ -388,10 +391,10 @@ async def test_a_forgotten_persons_message_is_no_longer_a_reply_target_in_the_ti
 
 async def test_a_citation_resolves_by_overlap_after_a_rebuild_switches_the_pointer(clean_pg_url):
     engine = create_sql_engine(clean_pg_url)
-    mobility = SqlMobilityStore(engine)
+    mobility = ProjectingMobilityStore(engine)
     await _seed(engine, mobility)
     runner = _runner(engine)
-    rollups = SqlRollupStore(engine)
+    rollups = ProjectingRollupStore(engine)
     first = await runner.rebuild(through_ms=_t(1, 12))
     assert (await rollups.current_build()).id == first
     outing = Citation("outing", "friends|a,b", _t(0, 20), _t(0, 20))
@@ -417,10 +420,10 @@ async def test_a_citation_resolves_by_overlap_after_a_rebuild_switches_the_point
 
 async def test_ensure_build_rebuilds_a_build_of_other_code_and_keeps_its_own(clean_pg_url):
     engine = create_sql_engine(clean_pg_url)
-    mobility = SqlMobilityStore(engine)
+    mobility = ProjectingMobilityStore(engine)
     await _seed(engine, mobility)
     runner = _runner(engine)
-    rollups = SqlRollupStore(engine)
+    rollups = ProjectingRollupStore(engine)
     # A build the previous code made (on a deployment, migration 0071's
     # `legacy` build holding the wall-clock rows).
     await mobility._seed_build_for_test(current=True)
@@ -438,7 +441,7 @@ async def test_ensure_build_rebuilds_a_build_of_other_code_and_keeps_its_own(cle
 
 async def _stimuli_at(engine, *, through: int, polls_fail_at: int | None = None,
                       events=None) -> InMemoryStimulusStore:
-    mobility = SqlMobilityStore(engine)
+    mobility = ProjectingMobilityStore(engine)
     await _seed(engine, mobility, polls_fail_at=polls_fail_at)
     sink = InMemoryStimulusStore()
     runner = _runner(engine, stimuli=sink, events=events)
@@ -458,7 +461,7 @@ async def test_a_colocation_start_and_an_arrival_are_raised_once(clean_pg_url):
     match migration 0071's partial index, which an in-memory sink never
     checks."""
     engine = create_sql_engine(clean_pg_url)
-    mobility = SqlMobilityStore(engine)
+    mobility = ProjectingMobilityStore(engine)
     await _seed(engine, mobility)
     runner = _runner(engine, stimuli=SqlStimulusStore(engine), events=_Pub())
     build = await runner.ensure_build(through_ms=_START)
@@ -485,7 +488,7 @@ async def test_a_deviation_is_raised_only_on_healthy_sources(clean_pg_url, outag
     absence). Silence here is a synthetic third day with no fixes at home
     and no message, so the span is day 2."""
     engine = create_sql_engine(clean_pg_url)
-    mobility = SqlMobilityStore(engine)
+    mobility = ProjectingMobilityStore(engine)
     await _seed(engine, mobility, polls_fail_at=_t(1, 3) if outage else None)
     # Day 1 without messages or home: delete them from the Record the unit reads.
     async with engine.begin() as conn:
@@ -516,10 +519,10 @@ async def test_a_run_with_nothing_new_rewrites_no_settled_row(clean_pg_url):
     row's `as_of_ms` is its own newest evidence, so a later run whose Record
     adds only polls changes nothing that has settled."""
     engine = create_sql_engine(clean_pg_url)
-    mobility = SqlMobilityStore(engine)
+    mobility = ProjectingMobilityStore(engine)
     await _seed(engine, mobility)
     runner = _runner(engine)
-    rollups = SqlRollupStore(engine)
+    rollups = ProjectingRollupStore(engine)
     build = await runner.rebuild(through_ms=_WATERMARK)
     count = (
         "SELECT count(*) FROM row_history WHERE table_name IN ("
@@ -602,10 +605,10 @@ async def _seed_with_outing_talk(engine, mobility) -> int:
 
 async def test_a_switch_replaces_the_episode_nodes_and_keeps_what_cites_them(clean_pg_url):
     engine = create_sql_engine(clean_pg_url)
-    mobility = SqlMobilityStore(engine)
+    mobility = ProjectingMobilityStore(engine)
     talk = await _seed_with_outing_talk(engine, mobility)
     runner = _runner(engine)
-    rollups = SqlRollupStore(engine)
+    rollups = ProjectingRollupStore(engine)
     first = await runner.rebuild(through_ms=_t(1, 12))
 
     outings = await _episode_nodes(engine, "outing")
@@ -649,7 +652,7 @@ async def test_a_switch_replaces_the_episode_nodes_and_keeps_what_cites_them(cle
     assert await _episode_nodes(engine, "trip")
 
     # A memo cites the outing by the key `rollup_read` showed it under.
-    memo = await SqlMemoStore(engine).create(
+    memo = await ProjectingMemoStore(engine).create(
         unit="friends", platform=ROOM[0], conversation_id=ROOM[1], title="pub night",
         body="…", citations=[f"rollup(outing|{key})"], mode="told",
         established_by="a", model=None, now_ms=_t(1, 12),
@@ -674,10 +677,10 @@ async def test_a_switch_replaces_the_episode_nodes_and_keeps_what_cites_them(cle
 
 async def test_a_build_still_building_has_no_episode_nodes(clean_pg_url):
     engine = create_sql_engine(clean_pg_url)
-    mobility = SqlMobilityStore(engine)
+    mobility = ProjectingMobilityStore(engine)
     await _seed(engine, mobility)
     runner = _runner(engine)
-    rollups = SqlRollupStore(engine)
+    rollups = ProjectingRollupStore(engine)
     building = await rollups.create_build(code_version=CODE_VERSION, params_sha256=runner.params)
     await runner.run(build_id=building, through_ms=_WATERMARK)
     assert await rollups.rows(table=ROLLUP_OUTING, build_id=building)  # positive control
@@ -691,10 +694,10 @@ async def test_a_build_still_building_has_no_episode_nodes(clean_pg_url):
 
 async def test_the_delete_half_of_the_diff_drops_the_outing_node(clean_pg_url):
     engine = create_sql_engine(clean_pg_url)
-    mobility = SqlMobilityStore(engine)
+    mobility = ProjectingMobilityStore(engine)
     await _seed_with_outing_talk(engine, mobility)
     runner = _runner(engine)
-    rollups = SqlRollupStore(engine)
+    rollups = ProjectingRollupStore(engine)
     build = await runner.rebuild(through_ms=_WATERMARK)
     assert len(await _episode_nodes(engine, "outing")) == 2
     assert await _edges(engine, rel="during")
@@ -711,10 +714,10 @@ async def test_the_delete_half_of_the_diff_drops_the_outing_node(clean_pg_url):
 async def test_a_tick_on_the_current_build_projects_what_it_folds(clean_pg_url):
     """An explicit legacy index receives fold writes and retains queued work."""
     engine = create_sql_engine(clean_pg_url)
-    mobility = SqlMobilityStore(engine)
+    mobility = ProjectingMobilityStore(engine)
     await _seed(engine, mobility)
     runner = _runner(engine)
-    rollups = SqlRollupStore(engine)
+    rollups = ProjectingRollupStore(engine)
     build = await runner.rebuild(through_ms=_t(1, 12))
     before = {k: set(await _episode_nodes(engine, k)) for k in ("outing", "stay", "trip")}
     async with engine.begin() as conn:  # a projection some process queued
@@ -792,7 +795,7 @@ async def test_a_switch_that_fails_abandons_the_build(clean_pg_url, monkeypatch)
     """A rebuild whose switch raises leaves no build `building` forever: the
     switch rolled back whole, and the build is abandoned."""
     engine = create_sql_engine(clean_pg_url)
-    mobility = SqlMobilityStore(engine)
+    mobility = ProjectingMobilityStore(engine)
     await _seed(engine, mobility)
     runner = _runner(engine)
 
@@ -827,11 +830,11 @@ async def test_an_outing_is_located_in_the_cached_area_of_its_place(clean_pg_url
     index places it there: outing -> district -> city. The area is a public
     name and never a street (the cached address is not copied)."""
     engine = create_sql_engine(clean_pg_url)
-    mobility = SqlMobilityStore(engine)
+    mobility = ProjectingMobilityStore(engine)
     await _seed(engine, mobility)
     cache = await _cache_an_area_at_the_pub(engine)
     build = await _runner(engine, areas=cache).rebuild(through_ms=_WATERMARK)
-    rows = await SqlRollupStore(engine).rows(table=ROLLUP_OUTING, build_id=build)
+    rows = await ProjectingRollupStore(engine).rows(table=ROLLUP_OUTING, build_id=build)
     assert rows and all(r["saved_place_id"] is None for r in rows)
     assert {(r["district"], r["city"]) for r in rows} == {("旺角 / Mong Kok", "九龍 / Kowloon")}
     keys = _outing_keys(rows)
@@ -858,12 +861,12 @@ async def test_an_outing_at_a_saved_place_has_no_area_even_where_one_is_cached(c
     never placed, though the cache holds an area within reach (the positive
     control) and the same outing elsewhere would be."""
     engine = create_sql_engine(clean_pg_url)
-    mobility = SqlMobilityStore(engine)
+    mobility = ProjectingMobilityStore(engine)
     await _seed_with_outing_talk(engine, mobility)
     cache = await _cache_an_area_at_the_pub(engine)
     assert await cache.area_within(lat=PUB[0], lng=PUB[1], radius_m=UNITS.colocation_radius_m)
     build = await _runner(engine, areas=cache).rebuild(through_ms=_WATERMARK)
-    rows = await SqlRollupStore(engine).rows(table=ROLLUP_OUTING, build_id=build)
+    rows = await ProjectingRollupStore(engine).rows(table=ROLLUP_OUTING, build_id=build)
     assert rows and all(r["saved_place_id"] for r in rows)
     assert {(r["district"], r["city"]) for r in rows} == {(None, None)}
     assert await _edges(engine, rel="located_in") == set()

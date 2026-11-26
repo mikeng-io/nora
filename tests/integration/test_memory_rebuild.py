@@ -1,7 +1,8 @@
-"""`nora memory rebuild` equals live projection.
+"""`nora memory rebuild` equals explicit projection.
 
-One database is seeded across every indexed kind THROUGH THE STORES, so the
-index is what live writes projected: messages with an attachment, an edit and
+One database is seeded across every indexed kind through explicit projection
+doubles, so the index is what the retained projector writes: messages with an
+attachment, an edit and
 a reading; a note through a revision and a supersession; a memo, a lesson, an
 event with a venue and an RSVP; culture and Character accounts; and the
 current Rollup build's outings, stays and trips (`test_rollup_builds`' seed,
@@ -30,14 +31,8 @@ from nora.domain.media import MediaBlob
 from nora.domain.models import NormalizedMessage
 from nora.domain.notes import NoteSupersedeReason
 from nora.infra.sql import memory_index
-from nora.infra.sql.audit import SqlRecordStore
-from nora.infra.sql.culture import SqlCultureStore
 from nora.infra.sql.engine import create_sql_engine
-from nora.infra.sql.lessons import SqlLessonStore
-from nora.infra.sql.media_objects import SqlMediaObjectStore
-from nora.infra.sql.memo import SqlMemoStore
 from nora.infra.sql.mobility import SqlMobilityStore
-from nora.infra.sql.notes import SqlNoteStore
 from nora.infra.sql.schema import (
     MEMORY_EDGE,
     MEMORY_INDEX_STATE,
@@ -46,6 +41,15 @@ from nora.infra.sql.schema import (
 )
 from nora.subject.sandbox import sandbox_as_of
 from tests.fixtures.gatherings import SeededGatheringStore
+from tests.fixtures.legacy_projection import (
+    ProjectingCultureStore,
+    ProjectingLessonStore,
+    ProjectingMediaObjectStore,
+    ProjectingMemoStore,
+    ProjectingNoteStore,
+    ProjectingRecordStore,
+    ProjectingRollupStore,
+)
 from tests.integration.test_rollup_builds import (
     _WATERMARK,
     ROOM,
@@ -109,18 +113,18 @@ async def _seed_everything(engine: Any) -> dict[str, Any]:
             .order_by(MEMORY_NODE.c.source_id).limit(1)
         )).scalars().all()
 
-    record = SqlRecordStore(engine)
+    record = ProjectingRecordStore(engine)
     blob = MediaBlob(sha256=_SHA, media_type="image/jpeg", size=10)
     shown = await record.append(message=_message("look at this", ts=1000, blobs=(blob,)),
                                 person_id="member-a")
     said = await record.append(message=_message("dinner friday?", ts=1100),
                                person_id="member-b")
     await record.append_edit(message_id=said, message=_message("dinner saturday?", ts=1200))
-    assert await SqlMediaObjectStore(engine).comprehend(
+    assert await ProjectingMediaObjectStore(engine).comprehend(
         sha256=_SHA, title="Menu", description="A noodle menu.", content="", model="m",
     ) is True
 
-    notes = SqlNoteStore(engine)
+    notes = ProjectingNoteStore(engine)
 
     async def note(title: str) -> Any:
         return await notes.create(
@@ -142,12 +146,12 @@ async def _seed_everything(engine: Any) -> dict[str, Any]:
         expected_head=revision.id,
     )
 
-    memo = await SqlMemoStore(engine).create(
+    memo = await ProjectingMemoStore(engine).create(
         unit=_UNIT, platform=ROOM[0], conversation_id=ROOM[1], title="pub night",
         body="the usual place", citations=(str(talk), str(said), f"rollup(outing|{outing})"),
         mode="told", established_by="cognition", model=None, now_ms=40,
     )
-    await SqlLessonStore(engine).create(
+    await ProjectingLessonStore(engine).create(
         unit=_UNIT, body="ask before booking", citations=(str(said),), written_at=50,
         established_by="lessons",
     )
@@ -165,7 +169,7 @@ async def _seed_everything(engine: Any) -> dict[str, Any]:
         event_id=event.id, person_id="member-d", response=RSVPResponse.YES,
         responded_at=now,
     ))
-    culture = SqlCultureStore(engine)
+    culture = ProjectingCultureStore(engine)
     for key in (unit_culture_key(_UNIT), character_key(_UNIT, "member-b"), "g1"):
         await culture.append(
             key=key, body=f"account of {key}", written_at=60, established_by="dreamer",
@@ -231,7 +235,7 @@ async def test_the_final_pass_drops_what_a_batch_raced(clean_pg_url):
     the final pass removes both."""
     engine = create_sql_engine(clean_pg_url)
     try:
-        record = SqlRecordStore(engine)
+        record = ProjectingRecordStore(engine)
         mid = await record.append(message=_message("gone soon", ts=1000), person_id="member-a")
         keep = await record.append(message=_message("stays", ts=1100), person_id="member-a")
         async with engine.begin() as conn:
@@ -269,8 +273,8 @@ async def test_status_runs_never_building_complete_and_counts_what_stayed_queued
 ):
     engine = create_sql_engine(clean_pg_url)
     try:
-        await SqlRecordStore(engine).append(message=_message("hi", ts=1000), person_id="a")
-        lesson = await SqlLessonStore(engine).create(
+        await ProjectingRecordStore(engine).append(message=_message("hi", ts=1000), person_id="a")
+        lesson = await ProjectingLessonStore(engine).create(
             unit=_UNIT, body="ask first", citations=("1",), written_at=5, established_by="lessons",
         )
         assert await _status(engine) == ("never", 0, 0)
@@ -303,7 +307,7 @@ async def test_status_runs_never_building_complete_and_counts_what_stayed_queued
 async def test_a_second_rebuild_is_refused_while_one_holds_the_lock(clean_pg_url):
     engine = create_sql_engine(clean_pg_url)
     try:
-        await SqlRecordStore(engine).append(message=_message("hi", ts=1000), person_id="a")
+        await ProjectingRecordStore(engine).append(message=_message("hi", ts=1000), person_id="a")
         holder = await engine.connect()
         try:
             assert (await holder.execute(sa.select(
@@ -337,7 +341,7 @@ async def test_a_second_rebuild_is_refused_while_one_holds_the_lock(clean_pg_url
 async def test_a_restored_sandbox_reads_never(clean_pg_url, pg_template):
     engine = create_sql_engine(clean_pg_url)
     try:
-        await SqlRecordStore(engine).append(message=_message("hi", ts=1000), person_id="a")
+        await ProjectingRecordStore(engine).append(message=_message("hi", ts=1000), person_id="a")
         await memory_index.rebuild(engine)
         assert (await _status(engine)).status == "complete"
         async with engine.connect() as conn:
@@ -370,7 +374,7 @@ async def test_a_hub_being_attached_survives_a_concurrent_orphan_drop(clean_pg_u
     hub."""
     engine = create_sql_engine(clean_pg_url)
     try:
-        record = SqlRecordStore(engine)
+        record = ProjectingRecordStore(engine)
         m1 = await record.append(message=_message("only", ts=1000), person_id="P")
         m2 = await record.append(message=_message("other", ts=1100), person_id="Q")
         a = await engine.connect()
@@ -400,7 +404,7 @@ async def test_opposing_reattributions_do_not_deadlock(clean_pg_url):
     Postgres deadlock would raise; a hang would time out)."""
     engine = create_sql_engine(clean_pg_url)
     try:
-        record = SqlRecordStore(engine)
+        record = ProjectingRecordStore(engine)
         m1 = await record.append(message=_message("one", ts=1000), person_id="P")
         m2 = await record.append(message=_message("two", ts=1100), person_id="Q")
         both_open = asyncio.Barrier(2)
@@ -426,7 +430,6 @@ async def test_opposing_reattributions_do_not_deadlock(clean_pg_url):
 async def test_a_person_known_only_through_a_stay_leaves_with_the_build(clean_pg_url):
     """A build switch that drops the only episode about a person drops that
     person's hub too, live, as a rebuild from empty would."""
-    from nora.infra.sql.rollups import SqlRollupStore
     from nora.infra.sql.schema import PRESENCE_STAYS, ROLLUP_BUILD
 
     engine = create_sql_engine(clean_pg_url)
@@ -446,7 +449,7 @@ async def test_a_person_known_only_through_a_stay_leaves_with_the_build(clean_pg
             await memory_index.reproject_episodes(conn)
         assert ("person", "solo") in {(n[0], n[1]) for n in (await _index(engine))[0]}
 
-        await SqlRollupStore(engine).switch_build(build_id=new)
+        await ProjectingRollupStore(engine).switch_build(build_id=new)
         live = await _index(engine)
         assert live == (set(), set())
         await memory_index.rebuild(engine)

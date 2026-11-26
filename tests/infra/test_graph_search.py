@@ -5,6 +5,7 @@ from dataclasses import replace
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from nora.infra.sql import memory_index
 from nora.infra.sql.audit import SqlRecordStore
 from nora.infra.sql.cognitive_graph_schema import CLAIM, ENTITY, GRAPH_SEARCH
 from nora.infra.sql.cognitive_graph_store import SqlCognitiveGraph
@@ -124,6 +125,11 @@ async def test_rebuild_matches_incremental_after_revision_hide_and_tombstone(eng
 async def test_worker_embeds_graph_search_without_embedding_the_legacy_index(engine, llama):
     _, url = llama
     graph_id = await _message(engine)
+    async with engine.begin() as conn:
+        row_id = await conn.scalar(sa.select(MESSAGES.c.id).where(
+            MESSAGES.c.graph_id == graph_id,
+        ))
+        await memory_index.project(conn, "message", row_id)
     search_row = GRAPH_SEARCH.c.graph_id == graph_id
     async with engine.connect() as conn:
         graph_before = (await conn.execute(sa.select(GRAPH_SEARCH.c.embedding).where(

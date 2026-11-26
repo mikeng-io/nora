@@ -23,7 +23,6 @@ import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nora.domain.memo import Memo, MemoRevision, MemoWithdrawnError, StaleMemoError
-from nora.infra.sql import memory_index
 from nora.infra.sql.schema import MEMO, MEMO_REVISION
 from nora.infra.sql.tag_traces import body_turn_lineage
 
@@ -132,7 +131,6 @@ class SqlMemoStore:
                     written_at=now_ms, established_by=established_by, model=model,
                 ).returning(*MEMO_REVISION.c)
             )).one()
-            await memory_index.project(conn, "memo", str(memo_id))
             memo = Memo(
                 id=memo_id, unit=unit, platform=platform,
                 conversation_id=conversation_id, created_at=now_ms,
@@ -174,7 +172,6 @@ class SqlMemoStore:
                         written_at=now_ms, established_by=established_by, model=model,
                     ).returning(*MEMO_REVISION.c)
                 )).one()
-                await memory_index.project(conn, "memo", memo_id)
                 revision = replace(_revision(row), lineage=lineage)
                 if receipt is not None:
                     await receipt(conn, revision)

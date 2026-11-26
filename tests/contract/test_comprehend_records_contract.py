@@ -194,14 +194,14 @@ async def test_sql_source_reader_joins_the_reply_parent_and_refuses_another_unit
 
     from nora.domain.memory_graph import WorkItem
     from nora.domain.models import NormalizedMessage, Quote
-    from nora.infra.sql.audit import SqlRecordStore
+    from tests.fixtures.legacy_projection import ProjectingRecordStore
 
     async def enrich(rows, **kw):
         return tuple(rows)
 
     records.media_join = SimpleNamespace(enrich=enrich)
     records.rooms_by_unit = {UNIT: [("signal", "generated-room")]}
-    record = SqlRecordStore(engine)
+    record = ProjectingRecordStore(engine)
     msg = NormalizedMessage(
         "signal",
         "generated-room",

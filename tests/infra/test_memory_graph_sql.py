@@ -8,7 +8,6 @@ import sqlalchemy as sa
 
 from nora.domain.memory_graph import Walk, pointer_entity
 from nora.domain.models import NormalizedMessage
-from nora.infra.sql.audit import SqlRecordStore
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.graph_projection import ProjectionContext, form_batch
 from nora.infra.sql.memory_graph import WALK_SQL, SqlMemoryGraph, walk_parameters
@@ -20,6 +19,11 @@ from nora.infra.sql.schema import (
 from nora.obs.metrics import Metrics
 from tests.contract.test_memory_graph_contract import PERSON, load
 from tests.contract.test_memory_graph_contract import _graph_db as _graph_db
+from tests.fixtures.legacy_projection import (
+    ProjectingMediaObjectStore,
+    ProjectingRecordStore,
+    ProjectingSocialStreamStore,
+)
 from tests.infra.rollup_fixtures import insert_rollup_row
 
 BASE_MS = int(datetime(2026, 1, 1, tzinfo=UTC).timestamp() * 1000)
@@ -90,7 +94,7 @@ async def test_projection_toggle_batching_pointer_identity_and_backfill(sql):
     from nora.app.graph_project import graph_project
 
     engine = sql.engine
-    store = SqlRecordStore(engine)
+    store = ProjectingRecordStore(engine)
 
     def message(i):
         return NormalizedMessage(
@@ -173,6 +177,50 @@ async def test_projection_toggle_batching_pointer_identity_and_backfill(sql):
         ).first()
 
 
+async def test_backfill_reprojects_the_current_builds_episode_nodes(sql):
+    from nora.app.graph_project import graph_project
+    from nora.domain.rollup import episode_key
+    from nora.infra.sql.schema import MEMORY_NODE, ROLLUP_BUILD, ROLLUP_OUTING
+
+    unit = "generated-unit"
+    persons = ("generated-person-a", "generated-person-b")
+    start = BASE_MS
+    async with sql.engine.begin() as conn:
+        bid = (
+            await conn.execute(
+                sa.insert(ROLLUP_BUILD)
+                .values(code_version="generated", params_sha256="generated", status="current")
+                .returning(ROLLUP_BUILD.c.id)
+            )
+        ).scalar_one()
+        await insert_rollup_row(
+            conn,
+            ROLLUP_OUTING,
+            build_id=bid,
+            unit=unit,
+            persons=persons,
+            build_lineage=[],
+            valid_from_ms=start,
+            valid_to_ms=start + 100,
+            as_of_ms=start + 100,
+            lat=float(0),
+            lng=float(0),
+            district="Generated District",
+            city="Generated City",
+        )
+        assert not (await conn.execute(sa.select(MEMORY_NODE).where(
+            MEMORY_NODE.c.kind == "outing",
+        ))).all()
+    scope = ProjectionContext({"signal:generated-room": unit}, {unit: frozenset(persons)})
+    await graph_project(sql.engine, scope=scope, apply=True, rows_per_second=100000)
+    key = episode_key(f"{unit}|{','.join(persons)}", start, start + 100)
+    async with sql.engine.connect() as conn:
+        rows = (await conn.execute(sa.select(
+            MEMORY_NODE.c.source_id, MEMORY_NODE.c.state, MEMORY_NODE.c.persons,
+        ).where(MEMORY_NODE.c.kind == "outing"))).all()
+    assert rows == [(key, "live", list(persons))]
+
+
 async def test_refused_parts_are_durable(sql):
     from dataclasses import replace
 
@@ -199,7 +247,7 @@ async def test_projection_failure_keeps_source_and_requeues(sql):
             {"signal:generated-room": "generated-unit"}, {"generated-unit": frozenset()}
         )
     )
-    store = SqlRecordStore(sql.engine, metrics=sql.metrics)
+    store = ProjectingRecordStore(sql.engine, metrics=sql.metrics)
     async with sql.engine.begin() as conn:
         await conn.execute(sa.text("ALTER TABLE legacy_relation RENAME TO faulted_relation"))
     try:
@@ -241,8 +289,6 @@ async def test_projection_failure_keeps_source_and_requeues(sql):
 async def test_social_and_late_media_produce_pending_work(sql):
     from nora.domain.media import MediaBlob
     from nora.domain.social_stream import MediaItem, SocialItem
-    from nora.infra.sql.media_objects import SqlMediaObjectStore
-    from nora.infra.sql.social_stream import SqlSocialStreamStore
 
     sql.engine.update_execution_options(
         memory_graph=ProjectionContext(
@@ -251,7 +297,7 @@ async def test_social_and_late_media_produce_pending_work(sql):
         )
     )
     sha = "de" * 32
-    await SqlRecordStore(sql.engine).append(
+    await ProjectingRecordStore(sql.engine).append(
         message=NormalizedMessage(
             "signal",
             "generated-room",
@@ -264,7 +310,7 @@ async def test_social_and_late_media_produce_pending_work(sql):
             media_blobs=(MediaBlob(sha256=sha, media_type="image/jpeg", size=10),),
         )
     )
-    media = SqlMediaObjectStore(sql.engine)
+    media = ProjectingMediaObjectStore(sql.engine)
     assert await media.comprehend(
         sha256=sha,
         title="Generated title",
@@ -272,7 +318,7 @@ async def test_social_and_late_media_produce_pending_work(sql):
         content="",
         model="generated-model",
     )
-    social = SqlSocialStreamStore(sql.engine)
+    social = ProjectingSocialStreamStore(sql.engine)
     now = datetime(2026, 1, 1, tzinfo=UTC)
     item = SocialItem(
         network="instagram",
@@ -320,7 +366,7 @@ async def test_rollup_projection_and_closed_episode_work_are_atomic(sql):
         memory_graph=ProjectionContext({"signal:generated-room": unit}, {unit: frozenset(persons)})
     )
     start = BASE_MS
-    await SqlRecordStore(sql.engine).append(
+    await ProjectingRecordStore(sql.engine).append(
         message=NormalizedMessage(
             "signal",
             "generated-room",
@@ -423,6 +469,7 @@ async def test_register_writers_enqueue_their_own_committed_revisions(sql):
     from nora.domain.note_body import Shown, ShownMessage
     from nora.domain.reminders import Reminder, ReminderState
     from nora.domain.standing_ledger import LedgerOp
+    from nora.infra.sql import memory_index
     from nora.infra.sql.reminders import SqlReminderStore
     from nora.infra.sql.standing_ledger import SqlStandingLedger
 
@@ -434,7 +481,7 @@ async def test_register_writers_enqueue_their_own_committed_revisions(sql):
             {f"signal:{room}": unit}, {unit: persons}, metrics=sql.metrics
         )
     )
-    mid = await SqlRecordStore(sql.engine).append(
+    mid = await ProjectingRecordStore(sql.engine).append(
         message=NormalizedMessage(
             "signal",
             room,
@@ -467,6 +514,8 @@ async def test_register_writers_enqueue_their_own_committed_revisions(sql):
         now_ms=(BASE_MS + 10),
     )
     assert result.status == "ok", result.refusal
+    async with sql.engine.begin() as conn:
+        await memory_index.project(conn, "decision", result.entry.id, metrics=sql.metrics)
     now = datetime(2026, 1, 1, tzinfo=UTC)
     reminder = Reminder(
         id=uuid4(),
@@ -483,7 +532,11 @@ async def test_register_writers_enqueue_their_own_committed_revisions(sql):
     )
     reminders = SqlReminderStore(sql.engine)
     await reminders.create(reminder)
+    async with sql.engine.begin() as conn:
+        await memory_index.project(conn, "reminder", str(reminder.id), metrics=sql.metrics)
     assert await reminders.cancel(reminder.id, conversation_id=room)
+    async with sql.engine.begin() as conn:
+        await memory_index.project(conn, "reminder", str(reminder.id), metrics=sql.metrics)
     async with sql.engine.begin() as conn:
         work = (await conn.execute(sa.select(LEGACY_MEMORY_WORK_ITEM))).mappings().all()
     assert [r["source_kind"] for r in work].count("decision") == 1
@@ -599,7 +652,7 @@ async def test_projected_pointers_use_authored_display_names(sql, tmp_path):
     people, rooms = LivePersons(load_persons(identity)), LivePolicy(load_policy(policy))
     scope = projection_context(rooms, people, nora_name="Generated Nora")
     sql.engine.update_execution_options(memory_graph=scope)
-    store = SqlRecordStore(sql.engine)
+    store = ProjectingRecordStore(sql.engine)
     for i, pid in enumerate(("generated_a", "generated_b")):
         await store.append(
             message=NormalizedMessage(

@@ -40,8 +40,6 @@ from nora.domain.profile import (
 )
 from nora.domain.rollup import episode_key
 from nora.infra.sql import memory_index
-from nora.infra.sql.audit import SqlRecordStore
-from nora.infra.sql.culture import SqlCultureStore
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.graph_projection import ProjectionContext
 from nora.infra.sql.memory_graph import SqlMemoryGraph
@@ -56,6 +54,7 @@ from nora.infra.sql.schema import (
     ROLLUP_BUILD,
 )
 from tests.fixtures.gatherings import SeededGatheringStore
+from tests.fixtures.legacy_projection import ProjectingCultureStore, ProjectingRecordStore
 
 pytestmark = pytest.mark.asyncio
 
@@ -120,7 +119,7 @@ async def engine(_db: str) -> AsyncIterator[Any]:
 
 
 async def _said(engine: Any, *, person: str = "member-b", room: str = "g1") -> str:
-    store = SqlRecordStore(engine)
+    store = ProjectingRecordStore(engine)
     mid = await store.append(
         message=NormalizedMessage(
             "signal", room, "group", "+1", "P", 1000, "hi", {},
@@ -131,7 +130,7 @@ async def _said(engine: Any, *, person: str = "member-b", room: str = "g1") -> s
 
 
 async def _unit_proven(engine: Any) -> None:
-    await SqlCultureStore(engine).append(
+    await ProjectingCultureStore(engine).append(
         key=unit_culture_key(_UNIT), body="the unit", written_at=10,
         established_by="dreamer",
     )
@@ -205,7 +204,7 @@ async def test_a_profile_line_is_reachable_from_its_subject(engine):
 async def test_a_character_is_reachable_from_its_subject(engine):
     mid = await _said(engine)
     await _unit_proven(engine)
-    await SqlCultureStore(engine).append(
+    await ProjectingCultureStore(engine).append(
         key=character_key(_UNIT, "member-b"), body="the dreamer",
         written_at=10, established_by="dreamer", citations=(mid,),
     )
@@ -362,7 +361,7 @@ async def test_an_event_revision_replaces_and_cancellation_retires(engine):
 async def test_the_backfill_projects_and_counts_them(engine):
     mid = await _said(engine)
     await _line(engine, cite=mid)
-    await SqlCultureStore(engine).append(
+    await ProjectingCultureStore(engine).append(
         key=character_key(_UNIT, "member-b"), body="the dreamer",
         written_at=10, established_by="dreamer", citations=(mid,),
     )
@@ -452,7 +451,7 @@ async def test_person_scoped_evidence_restricts_or_refuses_never_widens(engine):
     mid = await _said(engine, person="member-b", room="g1")
     stay = await _stay(engine, person="member-a")
     await _unit_proven(engine)
-    store = SqlCultureStore(engine)
+    store = ProjectingCultureStore(engine)
     await store.append(
         key=character_key(_UNIT, "member-b"), body="the dreamer",
         written_at=10, established_by="dreamer",
@@ -557,7 +556,7 @@ async def test_a_citation_only_eligible_in_another_unit_refuses_the_unit(engine)
     mid = await _said(engine, person="member-b", room="other")
     stay = await _stay(engine, person="member-a")
     await _unit_proven(engine)
-    await SqlCultureStore(engine).append(
+    await ProjectingCultureStore(engine).append(
         key=character_key("u", "member-a"), body="generated conclusion",
         written_at=10, established_by="dreamer",
         citations=(mid, f"rollup(stay|{stay})"))

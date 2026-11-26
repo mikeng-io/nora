@@ -46,7 +46,6 @@ from nora.domain.observations import (
     to_row_reactions,
 )
 from nora.domain.ports import RoomActivity
-from nora.infra.sql import memory_index
 from nora.infra.sql.item_registration import (
     SqlItemRegistration,
     epoch_ms,
@@ -468,9 +467,6 @@ class SqlRecordStore:
             # projection one atomic commit (design/platform-bridges/03-ownership-and-recovery.md).
             if tx_hook is not None:
                 await tx_hook(conn, row_id)
-            # Its node, attachments and edges in the same transaction; a failure
-            # queues the projection and never costs the message.
-            await memory_index.project(conn, "message", row_id, metrics=self._metrics)
         return row_id
 
     async def recent(
@@ -870,8 +866,6 @@ class SqlRecordStore:
                     conversation_id=original.conversation_id),
                 platform_message_id=None, sent_ts=message.timestamp,
                 sender_id=original.sender_id)
-            # The node's text is the newest edit's.
-            await memory_index.project(conn, "message", message_id, metrics=self._metrics)
 
     async def append_reaction(
         self, *, message_id: int, message: NormalizedMessage, person_id: str | None,
@@ -907,7 +901,6 @@ class SqlRecordStore:
                 PLATFORM_OBJECT_STATE.c.source_kind == "reaction",
                 PLATFORM_OBJECT_STATE.c.state == "live", target_link,
             ).values(updated_at=at, asserted_at=at))
-            await memory_index.project(conn, "message", message_id, metrics=self._metrics)
         return row_id
 
     async def append_delete(
@@ -939,10 +932,6 @@ class SqlRecordStore:
                 .where(MESSAGES.c.id == message_id, MESSAGES.c.hidden_at.is_(None))
                 .values(hidden_at=now_ms)
             )
-            if result.rowcount:
-                # A hidden message is never a hit: its node, its attachments'
-                # nodes and their edges go in the hide's own write.
-                await memory_index.project(conn, "message", message_id, metrics=self._metrics)
         return bool(result.rowcount)
 
     async def aclose(self) -> None:
@@ -996,11 +985,6 @@ class SqlRecordStore:
         stmt = sa.update(MESSAGES).where(MESSAGES.c.id == row_id).values(**values)
         async with self._engine.begin() as conn:
             await conn.execute(stmt)
-            # Only the platform's timestamp is indexed (the node's `at_ms`);
-            # the delivery status is not, so a status-only close projects
-            # nothing.
-            if ts is not None:
-                await memory_index.project(conn, "message", row_id, metrics=self._metrics)
 
     async def unattributed(self, *, limit: int) -> list[UnattributedRow]:
         """Audited rows still attributed to nobody, OLDEST FIRST.
@@ -1061,8 +1045,6 @@ class SqlRecordStore:
         stmt = sa.update(MESSAGES).where(MESSAGES.c.id == row_id).values(person_id=person_id)
         async with self._engine.begin() as conn:
             await conn.execute(stmt)
-            # The attribution is the `authored_by` and `shared_by` edges.
-            await memory_index.project(conn, "message", row_id, metrics=self._metrics)
 
     async def room_activity(
         self, *, conversation_id: str, since_ts: int,

@@ -9,8 +9,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
 from nora.domain.mobility import Stay, Trip
-from nora.domain.rollup import FoldState, episode_key, lineage_json, presence_lineage, stay_to_json
-from nora.infra.sql import memory_index
+from nora.domain.rollup import FoldState, lineage_json, presence_lineage, stay_to_json
 from nora.infra.sql.aggregate_writes import AggregateWrites
 from nora.infra.sql.cognitive_graph_store import RowData
 from nora.infra.sql.schema import (
@@ -97,16 +96,6 @@ class MobilityWrites:
                     },
                 )
             await self._save_state(conn, build=build, subject_id=subject_id, state=state)
-            # The memory index's nodes, when this is the current build (a
-            # rebuild's folds write a build still `building`, which has none).
-            for kind, spans in (("stay", stays), ("trip", trips)):
-                await memory_index.project_episodes(
-                    conn,
-                    build,
-                    kind,
-                    [episode_key(x.subject_id, x.started_ts, x.ended_ts) for x in spans],
-                    metrics=self._metrics,
-                )
 
     async def _save_state(
         self, conn: AsyncConnection, *, build: int, subject_id: str, state: FoldState,

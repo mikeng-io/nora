@@ -176,7 +176,6 @@ def build_collector(
         except Exception as exc:  # noqa: BLE001 — bounded startup error
             raise PresenceStartupError(f"migration failed ({type(exc).__name__})") from None
         engine = create_sql_engine(database_url)
-        engine.update_execution_options(legacy_memory_projection=False)
     registration = SqlItemRegistration(
         RegistrationScope(policy, persons, access=access),
         RuntimeRevisions(cfg.model_dump(), policy, persons),
@@ -257,7 +256,6 @@ async def open_collector(cfg: Config) -> AsyncIterator[PresenceDependencies]:
         raise PresenceStartupError(
             f"managed presence setup failed ({type(exc).__name__})") from None
     engine = create_sql_engine(database_url)
-    engine.update_execution_options(legacy_memory_projection=False)
     try:
         async with ClientSession() as session:
             try:

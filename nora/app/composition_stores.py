@@ -93,7 +93,6 @@ def database(allowlist: Any, cfg: Any, metrics: Any, persons: Any)-> DatabaseWir
     # `PresenceStore`'s own docstring asks for. `audit.aclose()` (in
     # `nora.__main__.App.shutdown`) disposes it for both; `PresenceStore.aclose` is…
     engine = create_sql_engine(database_url)
-    engine.update_execution_options(legacy_memory_projection=False)
     engine.update_execution_options(item_registration=SqlItemRegistration(
         RegistrationScope(allowlist, persons),
         RuntimeRevisions(cfg.model_dump(), allowlist, persons),

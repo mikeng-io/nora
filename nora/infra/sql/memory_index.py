@@ -1,8 +1,8 @@
 """The memory index's one writer: `project`, `reproject_media`, `drop`.
 
-Store writes and offline rebuilds share the projector. The live service
-disables new legacy projections. An explicit projection runs in a savepoint,
-beside its source write. A failure queues the source without undoing its write.
+The live service writes no new legacy projections; explicit replay, recovery
+and offline rebuilds share this projector. An explicit projection runs in a
+savepoint. A failure queues the source without undoing a write already made.
 
 `project` re-reads a source and upserts its node and edges; `drop` removes
 retired sources. `nora.infra.sql.memory_read` reads the standalone index.
@@ -58,8 +58,8 @@ skipped.
 CURRENT build, keyed by its citation `(subject, interval)`
 (`nora.domain.rollup.episode_key`), never by its row id: a rebuild that
 recomputes the same happening keeps the key, so a memo's `cites` edge reaches
-it again. A build still `building` has no nodes; `switch_build` drops the old
-build's and projects the new one's in its own transaction. An episode's
+it again. A build still `building` has no nodes; an explicit episode
+reprojection drops the old build's and projects the new one's. An episode's
 `cites` edges INTO it belong to the entry that cites it and outlive the node
 (a dangling edge drops itself at the hop's join, 0105); its `during` edges
 belong to the episode, and are rewritten with it.
@@ -123,9 +123,8 @@ rebuild writes them, so a live delete and a rebuild agree; a hop joins
 `memory_node`, so a dangling edge drops itself at the read.
 
 **`rebuild`** walks every source through `project` and
-`reproject_episodes`, the functions live writes call, so a rebuild equals
-live projection by construction; `index_status` is what a reader needs
-to tell `ok` from `partial`.
+`reproject_episodes`; `index_status` is what a reader needs to tell `ok`
+from `partial`.
 """
 
 from __future__ import annotations
@@ -266,10 +265,6 @@ INDEXED_WRITES: dict[str, str] = {
 _METRIC = "nora_memory_projection_total"
 
 
-def _projection_enabled(conn: AsyncConnection) -> bool:
-    return bool(conn.engine.get_execution_options().get("legacy_memory_projection", True))
-
-
 async def project(
     conn: AsyncConnection, kind: str, source_id: str | int, *,
     metrics: Any = None, strict: bool = False,
@@ -277,8 +272,6 @@ async def project(
     """Upsert `kind`'s node for `source_id` and its column edges, or drop
     them when the source is hidden or gone. A message brings its attachments
     with it, so an attachment is never projected on its own."""
-    if not _projection_enabled(conn):
-        return
     sid = str(source_id)
     await _guarded(conn, kind, [sid], lambda: _PROJECTORS[kind](conn, sid), metrics, strict=strict)
 
@@ -289,8 +282,6 @@ async def reproject_media(
     """Copy the reading of `sha256` into every attachment of those bytes. A
     reading that lands before its message is ingested is copied by that
     message's own `project` instead; this is the reading landing after."""
-    if not _projection_enabled(conn):
-        return
     await _guarded(conn, "media", [sha256], lambda: _reproject_media(conn, sha256), metrics)
 
 
@@ -1323,8 +1314,6 @@ async def project_episodes(
     The build's row is read FOR SHARE: `switch_build` updates it, so a
     projection of the build being switched out lands before the switch drops
     its nodes, never after."""
-    if not _projection_enabled(conn):
-        return
     wanted = list(dict.fromkeys(keys))
     if not wanted:
         from nora.infra.sql.graph_projection import project_rollups
@@ -1346,13 +1335,11 @@ async def project_episodes(
 
 
 async def reproject_episodes(conn: AsyncConnection, *, metrics: Any = None) -> None:
-    """`switch_build`, after the pointer moved in the same transaction: every
-    episode node of the build switched out is dropped, unless the new build
-    holds the same happening under the same key, and every episode of the new
-    build is projected. A failure queues every key involved, so the next
-    drain finishes the switch one key at a time."""
-    if not _projection_enabled(conn):
-        return
+    """Explicit episode projection after a build switch: every episode node
+    of the build switched out is dropped, unless the new build holds the same
+    happening under the same key, and every episode of the new build is
+    projected. A failure queues every key involved, so the next drain finishes
+    the switch one key at a time."""
     for kind in _EPISODES:
         try:
             async with conn.begin_nested():
@@ -1618,8 +1605,6 @@ async def drain_queue(conn: AsyncConnection, *, limit: int = 500, metrics: Any =
     node: `switch_build` takes that row and then writes nodes, so a drain
     that wrote a hub node and then waited on the build row could deadlock
     with it. With no build yet, there is nothing to lock."""
-    if not _projection_enabled(conn):
-        return 0
     with contextlib.suppress(_NoCurrentBuildError):
         await _current_build(conn)
     # Concurrent explicit drains take disjoint unlocked rows.
@@ -2097,8 +2082,8 @@ async def rebuild(
     engine: AsyncEngine, *, dry_run: bool = False, batch: int = REBUILD_BATCH,
     metrics: Any = None,
 ) -> RebuildReport:
-    """`nora memory rebuild`, and the first deployment's backfill: every source through the SAME
-    projector a live write calls, so a rebuild equals live projection by construction.
+    """`nora memory rebuild`, and the first deployment's backfill: every source
+    through the retained projector.
 
     1. `building`, under `REBUILD_LOCK_KEY` (refused if another holds it).
     2. Every row of every kind, `batch` per transaction, in key order.

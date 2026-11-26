@@ -8,9 +8,9 @@ from psycopg import sql
 
 from nora.domain.media import MediaBlob
 from nora.domain.models import NormalizedMessage
-from nora.infra.sql.audit import SqlRecordStore
 from nora.infra.sql.engine import create_sql_engine
 from tests.conftest import _pg_database
+from tests.fixtures.legacy_projection import ProjectingRecordStore
 from tests.infra.pg_baseline import PgBaseline
 
 
@@ -60,7 +60,7 @@ async def test_record_reuse_resets_committed_state(
         "generated record", {},
         media_blobs=(MediaBlob(sha256='a' * 64, media_type='image/png', size=1, filename=None),),
     )
-    store = SqlRecordStore(create_sql_engine(record_pg_url))
+    store = ProjectingRecordStore(create_sql_engine(record_pg_url))
     try:
         assert await store.append(message=message, person_id="generated-person") == 1
         await store.append_edit(message_id=1, message=message)

@@ -1,6 +1,6 @@
-"""The Notebook's projection into the memory index: every note, memo, lesson,
-event and culture or Character write keeps its entry's node and edges, in the
-store's own transaction, at the scope the store itself reads it by.
+"""The Notebook's projection into the memory index: explicit projection
+doubles seed every note, memo, lesson, event and culture or Character entry's
+node and edges at the scope the projector reads them by.
 
 Module-scoped database per `test_memory_projection_record.py`'s pattern (one
 migrated database, truncated between tests)."""
@@ -22,13 +22,8 @@ from nora.domain.gatherings import RSVP, Gathering, GatheringStatus, RSVPRespons
 from nora.domain.models import NormalizedMessage
 from nora.domain.notes import Note, NoteSupersedeReason
 from nora.infra.sql import memory_index
-from nora.infra.sql.audit import SqlRecordStore
-from nora.infra.sql.culture import SqlCultureStore
 from nora.infra.sql.engine import create_sql_engine
-from nora.infra.sql.lessons import SqlLessonStore
-from nora.infra.sql.memo import SqlMemoStore
 from nora.infra.sql.migrations_runner import run_migrations
-from nora.infra.sql.notes import SqlNoteStore
 from nora.infra.sql.schema import (
     CULTURE_REVISION,
     MEMORY_EDGE,
@@ -39,6 +34,13 @@ from nora.infra.sql.schema import (
 )
 from nora.subject.knowledge import _seed_note_with_id
 from tests.fixtures.gatherings import SeededGatheringStore
+from tests.fixtures.legacy_projection import (
+    ProjectingCultureStore,
+    ProjectingLessonStore,
+    ProjectingMemoStore,
+    ProjectingNoteStore,
+    ProjectingRecordStore,
+)
 
 pytestmark = pytest.mark.asyncio
 
@@ -90,7 +92,7 @@ async def engine(_db: str) -> AsyncIterator[Any]:
 
 async def _said(engine: Any, body: str = "dinner on friday?") -> str:
     """A message in the room, so the Record can name `g1`'s room key."""
-    mid = await SqlRecordStore(engine).append(
+    mid = await ProjectingRecordStore(engine).append(
         message=NormalizedMessage(
             "signal", "g1", "group", "+10000000001", "Member A", 1000, body, {},
         ),
@@ -125,7 +127,7 @@ async def _citations(engine: Any, revision_id: str) -> list[str]:
         )).scalar_one())
 
 
-async def _note(store: SqlNoteStore, title: str, body: str, now_ms: int = 10) -> Note:
+async def _note(store: ProjectingNoteStore, title: str, body: str, now_ms: int = 10) -> Note:
     return await store.create(
         unit=_UNIT, title=title, description="an open question",
         uncertainty="not settled", closing_condition="someone confirms",
@@ -136,7 +138,7 @@ async def _note(store: SqlNoteStore, title: str, body: str, now_ms: int = 10) ->
 
 async def test_a_note_is_projected_through_its_revisions_and_retirement(engine):
     await _said(engine)
-    store = SqlNoteStore(engine)
+    store = ProjectingNoteStore(engine)
     note = await _note(store, "Friday dinner", "- where to eat [1]")
     event_id = str(uuid4())
     async with engine.begin() as conn:
@@ -194,7 +196,7 @@ async def test_a_note_is_projected_through_its_revisions_and_retirement(engine):
 
 
 async def test_a_merge_projects_the_survivor_and_the_folded_duplicate(engine):
-    store = SqlNoteStore(engine)
+    store = ProjectingNoteStore(engine)
     survivor = await _note(store, "Trip plan", "- dates [1]")
     duplicate = await _note(store, "Trip plans", "- budget [1]")
     await store.merge_into(
@@ -218,7 +220,7 @@ async def test_a_note_cites_what_its_head_revision_cites(engine):
     that stops citing a message takes its edge away; a merge's folded body
     cites what both notes rested on."""
     first, second = await _said(engine), await _said(engine, "or saturday?")
-    store = SqlNoteStore(engine)
+    store = ProjectingNoteStore(engine)
     note = await _note(
         store, "Weekend dinner",
         f"## Decided\n## Open\n- which day [{first}, rollup(outing|x|a/b)]",
@@ -263,6 +265,8 @@ async def test_a_seeded_sandbox_note_is_projected(engine):
     await _seed_note_with_id(
         engine, note=note, body="- seeded body [1]", established_by="seed", written_at=5,
     )
+    async with engine.begin() as conn:
+        await memory_index.project(conn, "note", note.id)
     node = (await _nodes(engine))[("note", note.id)]
     assert (node.unit, node.text) == (_UNIT, "Seeded question\n- seeded body [1]")
     assert await _citations(engine, note.head_revision_id) == ["1"]
@@ -271,7 +275,7 @@ async def test_a_seeded_sandbox_note_is_projected(engine):
 
 async def test_a_memo_cites_messages_and_is_retired_when_withdrawn(engine):
     mid = await _said(engine)
-    store = SqlMemoStore(engine)
+    store = ProjectingMemoStore(engine)
     memo = await store.create(
         unit=_UNIT, platform="signal", conversation_id="g1", title="Wifi",
         body="the code is on the fridge", citations=(mid, "rollup(outing|x|a/b)"),
@@ -301,7 +305,7 @@ async def test_a_memo_cites_messages_and_is_retired_when_withdrawn(engine):
 
 async def test_a_lesson_cites_messages_and_is_retired(engine):
     mid = await _said(engine)
-    store = SqlLessonStore(engine)
+    store = ProjectingLessonStore(engine)
     lesson = await store.create(
         unit=_UNIT, body="ask before booking", citations=(mid, "response:7"),
         written_at=10, established_by="lessons",
@@ -393,7 +397,7 @@ async def test_a_venue_is_located_in_its_district_and_city_and_goes_when_nothing
     venue with no area (resolved before 0118) leaves the chain alone. When no
     event names the venue any more, it goes, and the district and city with
     it: nothing else lies in them. A rebuild from empty writes exactly what
-    live projection wrote."""
+    explicit projection wrote."""
     await _said(engine)
     store = SeededGatheringStore(engine)
     first = await store.create(_event(
@@ -436,7 +440,7 @@ async def test_a_venue_is_located_in_its_district_and_city_and_goes_when_nothing
 
 
 async def _live_then_rebuilt(engine: Any) -> tuple[Any, Any]:
-    """The index as live writes left it, and as a rebuild from empty writes it."""
+    """The index as explicit projection left it, and as a rebuild from empty writes it."""
     live = {k: n.text for k, n in (await _nodes(engine)).items()}, await _all_edges(engine)
     async with engine.begin() as conn:
         await conn.execute(sa.delete(MEMORY_EDGE))
@@ -513,7 +517,7 @@ async def test_an_event_with_no_unit_is_scoped_to_its_room(engine):
 
 async def test_culture_and_character_accounts_take_their_keys_scope(engine):
     mid = await _said(engine)
-    store = SqlCultureStore(engine)
+    store = ProjectingCultureStore(engine)
     person_key = character_key(_UNIT, "member-b")
     for key in ("g1", unit_culture_key(_UNIT), nora_character_key(_UNIT), person_key):
         await store.append(
@@ -558,7 +562,7 @@ async def test_an_old_room_keyed_person_account_is_never_indexed(engine):
     a unit scope would show it in every room of the unit."""
     await _said(engine)
     old_key = "g1#character:member-b"
-    await SqlCultureStore(engine).append(
+    await ProjectingCultureStore(engine).append(
         key=old_key, body="an old per-room account", written_at=10, established_by="dreamer",
     )
     nodes = await _nodes(engine)
@@ -572,7 +576,7 @@ async def test_a_room_keyed_account_with_no_trace_of_its_room_is_never_indexed(e
     says it is a room; nothing says it is a unit either, and only a proven
     unit is indexed."""
     old_key = "g9#character:member-b"
-    await SqlCultureStore(engine).append(
+    await ProjectingCultureStore(engine).append(
         key=old_key, body="an orphaned per-room account", written_at=10,
         established_by="dreamer",
     )
@@ -584,7 +588,7 @@ async def test_a_character_accounts_exclude_persons_is_copied(engine):
     """`culture_revision.exclude_persons` exists (`0073_lineage`) but
     `SqlCultureStore.append` never sets it, so a written account's node holds
     `[]`; a head that does carry one has it copied onto the node."""
-    store = SqlCultureStore(engine)
+    store = ProjectingCultureStore(engine)
     await store.append(
         key=unit_culture_key(_UNIT), body="the unit", written_at=5, established_by="dreamer",
     )
@@ -606,11 +610,11 @@ async def test_a_failed_notebook_projection_queues_and_the_entry_stands(engine, 
         raise RuntimeError("index down")
 
     monkeypatch.setitem(memory_index._PROJECTORS, "lesson", broken)
-    lesson = await SqlLessonStore(engine).create(
+    lesson = await ProjectingLessonStore(engine).create(
         unit=_UNIT, body="still written", citations=("1",), written_at=10,
         established_by="lessons",
     )
-    assert (await SqlLessonStore(engine).get(lesson_id=str(lesson.id))) is not None
+    assert (await ProjectingLessonStore(engine).get(lesson_id=str(lesson.id))) is not None
     async with engine.connect() as conn:
         queued = (await conn.execute(sa.select(
             MEMORY_PROJECTION_QUEUE.c.kind, MEMORY_PROJECTION_QUEUE.c.source_id,

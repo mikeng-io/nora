@@ -758,17 +758,6 @@ async def project_register(conn: AsyncConnection, kind: str, sid: str) -> None:
         await work(conn, (kind, sid), row["unit"], [sid, row["revision"]], instant(row["as_of"]))
 
 
-async def register_arrival(
-    conn: AsyncConnection, kind: str, sid: object, *, metrics: Any = None
-) -> None:
-    if context(conn) is not None:
-        from nora.infra.sql import memory_index
-
-        # Use the source projection's savepoint, retry queue and counter. These
-        # Register kinds have no search-index node; this only produces work.
-        await memory_index.project(conn, kind, str(sid), metrics=metrics)
-
-
 async def during(
     conn: AsyncConnection,
     owner: str,

@@ -14,6 +14,7 @@ from nora.analytics.units import UnitConfig
 from nora.config import ConfigError, load
 from nora.domain.fetched_page import FetchedPage
 from nora.domain.observations import Observation, PollPayload, SourceScope
+from nora.domain.social_stream import ItemCounts, SocialItem
 from nora.infra.sql.audit import SqlRecordStore
 from nora.infra.sql.cognitive_graph_schema import (
     CLAIM,
@@ -40,6 +41,7 @@ from nora.infra.sql.schema import (
     PLATFORM_OBSERVATION,
     PRESENCE_FIXES,
     ROW_HISTORY,
+    SOCIAL_ITEM,
     SOURCE_HEALTH,
 )
 from nora.memory.adapters.act_store import SqlActStore
@@ -49,6 +51,7 @@ from nora.memory.domain.conditions import decode_condition
 from nora.memory.domain.registration import ITEM_SOURCES, PROTECTED_ITEM_SOURCES
 from nora.memory.wire import condition_matcher
 from nora.obs.metrics import Metrics
+from tests.fixtures.legacy_projection import ProjectingRecordStore, ProjectingSocialStreamStore
 from tests.infra.rollup_fixtures import RollupFixture
 from tests.infra.test_absence import _END, _SIX_HOURS, _START, _silent_span
 from tests.infra.test_act_envelope import PASS
@@ -126,7 +129,7 @@ async def _registry(engine, graph_id, unit=_UNIT):
 
 async def test_configured_horizon_tombstones_only_old_rows_and_keeps_citation(engine):
     await _health(engine, "signal", "up")
-    store = SqlRecordStore(
+    store = ProjectingRecordStore(
         engine, registration=_registration(), max_per_conversation=None, horizons={"messages": 1},
     )
     writer = _Writer(engine, _registration())
@@ -377,9 +380,33 @@ async def test_expiry_covers_both_people_on_an_observation(engine):
     assert {r["identity"] for r in coverage} == {_PERSON, other}
 
 
+async def test_social_retention_removes_the_source_and_its_legacy_node(engine):
+    store = ProjectingSocialStreamStore(engine, registration=_registration())
+    item = SocialItem(
+        network="instagram", item_id="generated-post", account="generated-account", kind="post",
+        taken_at=_AT, expires_at=None, caption="Generated caption", alt_text=None, media=(),
+        counts=ItemCounts(likes=1),
+    )
+    assert await store.insert_item(item, person=_PERSON, origin="poll", seen_at=_AT)
+    (row,) = (await _rows(engine, SOCIAL_ITEM)).values()
+    source_id = f"{item.network}:{item.item_id}"
+    async with engine.connect() as conn:
+        assert await conn.scalar(sa.select(sa.exists().where(
+            MEMORY_NODE.c.kind == "social", MEMORY_NODE.c.source_id == source_id,
+        )))
+    async with engine.begin() as conn:
+        assert await tombstone_items(conn, SOCIAL_ITEM)
+    async with engine.connect() as conn:
+        assert not await conn.scalar(sa.select(sa.exists().where(
+            MEMORY_NODE.c.kind == "social", MEMORY_NODE.c.source_id == source_id,
+        )))
+    assert not await _rows(engine, SOCIAL_ITEM)
+    assert (await _registry(engine, row["graph_id"]))["state"] == "tombstoned"
+
+
 async def test_retention_rolls_back_if_the_memory_index_cannot_drop_a_message(engine):
     writer = _Writer(engine, _registration())
-    store = SqlRecordStore(engine, registration=writer.registration, max_per_conversation=0)
+    store = ProjectingRecordStore(engine, registration=writer.registration, max_per_conversation=0)
     message_id = await store.append(message=writer._message(), person_id=_PERSON)
     row = (await _rows(engine, MESSAGES))[message_id]
     async with engine.begin() as conn:

@@ -8,16 +8,15 @@ the rows that still name no area, so a re-run asks only what is left:
   lookup per distinct place id (`GoogleGeocoder.area_of_place`, by Google's
   own id, no coordinate out), screened like a live resolution
   (`nora.app.gatherings.screened_area`, R-28), written through
-  `GatheringStore.update` as a revision, projected into the memory index in
-  the same transaction.
+  `GatheringStore.update` as a revision.
 - **Cached geocodes** (`SqlGeocodeCacheStore.without_area`): the cached
   coordinate asked again of the configured reverse geocoder
   (`area_for`), the areas screened (R-28) and written beside the
   address. These are coordinates a `where_is` question already sent to
   the same geocoder (DEC-69's collector egress); nothing new is located.
   An outing takes its area from this cache at the next Rollup tick
-  (`nora.analytics.units`), which recomputes every outing and re-projects
-  the ones that changed; an outing at a saved place still takes none
+  (`nora.analytics.units`), which recomputes every outing; an outing at a
+  saved place still takes none
   (R-35).
 
 A dry run by default: it counts the work lists and calls nothing. `--apply`

@@ -2,8 +2,8 @@
 node of every path (the decision index's scope row).
 
 One migrated database for the module, truncated between tests. Messages,
-memos and hides go THROUGH THE STORES, so the index is what live writes
-projected; the shapes no store projects yet (a `mentions` edge, a stay with
+memos and hides go through explicit projection doubles, so the index is what
+the retained projector writes; the shapes no projector writes yet (a `mentions` edge, a stay with
 its presence lineage, a place hub) are written into the index directly, the
 way a later projector will write them.
 
@@ -41,21 +41,23 @@ from nora.domain.lineage import LiveRoom, RenderRoom, RoomFacts
 from nora.domain.memory_index import EMBEDDED_KINDS
 from nora.domain.models import NormalizedMessage
 from nora.domain.social_stream import MediaItem, SocialItem
-from nora.infra.sql.audit import SqlRecordStore
 from nora.infra.sql.engine import create_sql_engine
-from nora.infra.sql.memo import SqlMemoStore
 from nora.infra.sql.memory_read import SqlMemoryIndex
 from nora.infra.sql.migrations_runner import run_migrations
-from nora.infra.sql.notes import SqlNoteStore
 from nora.infra.sql.schema import (
     MEMORY_EDGE,
     MEMORY_INDEX_STATE,
     MEMORY_NODE,
     MEMORY_PROJECTION_QUEUE,
 )
-from nora.infra.sql.social_stream import SqlSocialStreamStore
 from nora.obs.metrics import Metrics
 from nora.testing.memory_index import FakeQueryEmbedder, bag_of_words
+from tests.fixtures.legacy_projection import (
+    ProjectingMemoStore,
+    ProjectingNoteStore,
+    ProjectingRecordStore,
+    ProjectingSocialStreamStore,
+)
 
 NOW = 1_790_000_000_000
 MODEL = "model-a.gguf@0000+fmt1"
@@ -118,7 +120,7 @@ async def engine(_db: str) -> AsyncIterator[Any]:
 
 
 async def _say(engine: Any, room: str, body: str, person: str, ts: int = NOW - 3_600_000) -> str:
-    mid = await SqlRecordStore(engine).append(
+    mid = await ProjectingRecordStore(engine).append(
         message=NormalizedMessage("signal", room, "group", f"sender-{person}", person, ts,
                                   body, {}),
         person_id=person,
@@ -127,7 +129,7 @@ async def _say(engine: Any, room: str, body: str, person: str, ts: int = NOW - 3
 
 
 async def _memo(engine: Any, unit: str, room: str, title: str, cites: list[str]) -> str:
-    memo = await SqlMemoStore(engine).create(
+    memo = await ProjectingMemoStore(engine).create(
         unit=unit, platform="signal", conversation_id=room, title=title,
         body="## Kept\n- " + title + " [" + cites[0] + "]", citations=tuple(cites),
         mode="told", established_by="cognition:" + unit, model="m", now_ms=NOW - 1000,
@@ -262,7 +264,7 @@ async def test_c_a_note_is_reached_from_a_message_it_cites(engine: Any, seeds: s
     other message it rests on."""
     seed = await _say(engine, "b", "ramen crawl tonight", "kit")
     target = await _say(engine, "b2", "bring cash for the stall", "rin")
-    note = await SqlNoteStore(engine).create(
+    note = await ProjectingNoteStore(engine).create(
         unit="u1", title="night out", description="where the crawl ends",
         uncertainty="the last stop", closing_condition="someone names it",
         established_in="b", body=f"## Decided\n## Open\n- last stop [{seed}, {target}]",
@@ -314,7 +316,7 @@ async def test_f_a_hidden_message_is_never_a_hit(engine: Any, seeds: str) -> Non
     gone = await _say(engine, "b", "ramen crawl secret spot", "kit")
     kept = await _say(engine, "b", "ramen crawl again", "rin")
     memo = await _memo(engine, "u1", "b", "crawl plans", [gone])
-    await SqlRecordStore(engine).hide_message(message_id=int(gone), now_ms=NOW)
+    await ProjectingRecordStore(engine).hide_message(message_id=int(gone), now_ms=NOW)
     found = await _search(engine, seeds=seeds, query="ramen crawl")
     assert ("message", kept) in _keys(found)
     assert ("message", gone) not in _keys(found)
@@ -424,10 +426,9 @@ async def test_a_named_person_seeds_only_where_this_room_lists_them(
 
 
 async def _post(engine: Any, *, caption: str, location: str, alt: str) -> None:
-    """Kit's post, written THROUGH the store, so the index holds what the
-    live projection wrote."""
+    """Kit's post, written through the explicit projection double."""
     taken = datetime.fromtimestamp((NOW - 7_200_000) / 1000, tz=UTC)
-    assert await SqlSocialStreamStore(engine).insert_item(
+    assert await ProjectingSocialStreamStore(engine).insert_item(
         SocialItem(
             network="instagram", item_id="9001", account="10000001", kind="post",
             taken_at=taken, expires_at=None, caption=caption, alt_text=alt,

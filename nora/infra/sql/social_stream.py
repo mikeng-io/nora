@@ -41,12 +41,9 @@ whose person has `social = false` (`opted_out`, given at construction) and an
 item with a `gone` or `hidden` state row. The poller's own dedupe
 and marker reads are the writer's state and are not filtered.
 
-**The memory index follows every write** (design/cognition-loop/observation.md):
-`insert_item`, `record_state` and `record_perception` each project the item
-(`nora.infra.sql.memory_index.project`, kind `social`) inside their own
-transaction, so a new item is searchable, a gone or hidden one stops being,
-and a perception landing re-reads its media's readings. The opt-out is not
-projected: the index's read leaves those items out.
+**The retained memory-index projector reads these rows explicitly.** A write
+here appends only the stream's own rows; replay and recovery substrate can
+project them afterwards. An opt-out still never enters the index's read.
 
 There is ONE implementation and therefore no port and no fake, for the reason
 `nora.infra.sql.otp` gives: every test points this class at a real throwaway
@@ -80,10 +77,9 @@ from nora.domain.social_stream import (
     RecordedItem,
     cursor_is_bad,
 )
-from nora.infra.sql import memory_index
 from nora.infra.sql.blob_refs import held_elsewhere
 from nora.infra.sql.item_registration import SqlItemRegistration
-from nora.infra.sql.memory_index import current_place, social_source_id
+from nora.infra.sql.memory_index import current_place
 from nora.infra.sql.schema import (
     BLOB_TOMBSTONE,
     EVENTS,
@@ -659,9 +655,6 @@ class SqlSocialStreamStore(SocialItemWrites):
                 network=network, item_id=item_id, person=person, units=list(units),
                 origin=origin, outcome=outcome, calls=calls, at=at, reason=reason,
             ))
-            await memory_index.project(
-                conn, "social", social_source_id(network, item_id), metrics=self._metrics,
-            )
 
     async def settled_reads(
         self, *, require_perceived: bool, units: Mapping[str, tuple[str, ...]],
