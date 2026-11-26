@@ -523,7 +523,7 @@ async def fold_unit(
     tz: tzinfo | None = None,
 ) -> None:
     """The ONE unit-scoped materialization after a completed Cognition loop
-    (design/notebook-memory-types/20-standing.md §3-4): the same tools-less
+    (docs/design/notebook-memory-types/20-standing.md §3-4): the same tools-less
     updater contract as `run`, writing into the scoped Standing Ledger at
     `scope="unit"` — never into a room Standing row, never a copy of the
     whole session Record into every bound room.
@@ -1092,7 +1092,7 @@ async def run(
                         prior.i_owe if prior is not None else None),
                     # Exclusions are code-derived, never model-asserted:
                     # the prior's gate, plus every exclusion the retained
-                    # Record itself carries (design/notebook-memory-types/20-standing.md:
+                    # Record itself carries (docs/design/notebook-memory-types/20-standing.md:
                     # updater source requirements derived by code), plus any the output
                     # names — unioned, never narrowed.
                     # Exclusions are code-derived, never model-asserted:

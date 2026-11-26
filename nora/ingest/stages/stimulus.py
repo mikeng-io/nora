@@ -186,7 +186,7 @@ async def run_observation(
     wiring: Wiring, metrics: Any,
     recorded_at_ms: int | None = None,
 ) -> tuple[str, int | None, str | None]:
-    """The ONE source-event stimulus family (design/platform-observations
+    """The ONE source-event stimulus family (docs/design/platform-observations
     05): one `observation` stimulus per admitted `platform_observation` row
     of a NON-message kind (poll, room, membership, pin, artifact,
     message_metadata). A row's id IS its dedupe key —

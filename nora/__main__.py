@@ -161,7 +161,7 @@ class App:
         """Spawn the background re-resolution of every platform degraded at
         startup (`AdapterRegistry.recover_forever`) — the one spawn `run`
         makes, so a promoted platform needs no restart
-        (design/platform-bridges/platform-liveness.md)."""
+        (docs/design/platform-bridges/platform-liveness.md)."""
         return self.deps.background.spawn(
             self.deps.registry.recover_forever(sleep=sleep))
 

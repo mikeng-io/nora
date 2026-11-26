@@ -1,5 +1,5 @@
 """`AuthorityBackend` over the pinned Keto client — the managed deployment's
-scoped-grant engine (`design/managed-identity-access/authorization.md`).
+scoped-grant engine (`docs/design/managed-identity-access/authorization.md`).
 
 Relation hygiene is enforced HERE, at the write boundary: only the
 declared relations may be written — `member`, `admin`, `restricted`,

@@ -1,4 +1,4 @@
-// Boot-decision tests (design/voice-channel/audio.md «Connection lifecycle» + 2026-09-16 audit C-2): the persisted
+// Boot-decision tests (docs/design/voice-channel/audio.md «Connection lifecycle» + 2026-09-16 audit C-2): the persisted
 // desired-state channel is honored only while it matches env CHANNEL_ID.
 
 import { test } from 'node:test';

@@ -1,6 +1,6 @@
 """music_session — one row per guild, a SNAPSHOT of what `MusicPlayer` holds
 in memory: now-playing, paused, volume, which channels
-(design/voice-channel/music.md).
+(docs/design/voice-channel/music.md).
 
 Distinct from `music_queue` (0028): that's an append/pop LOG, one row per
 upcoming track. This is a snapshot, upserted in place -- `guild_id` is the

@@ -1,4 +1,4 @@
-"""Check that every file under design/ has the shape of a design document.
+"""Check that every file under docs/design/ has the shape of a design document.
 
 `tests/architecture/test_design_is_design.py` holds existing violations to
 `tests/architecture/design_shape_baseline.json`, which only shrinks.
@@ -59,7 +59,7 @@ def check(path: str, text: str) -> list[str]:
 
 def census() -> dict[str, list[str]]:
     out = subprocess.run(
-        ["git", "ls-files", "--cached", "--others", "--exclude-standard", "design"],  # noqa: S607
+        ["git", "ls-files", "--cached", "--others", "--exclude-standard", "docs/design"],  # noqa: S607
         cwd=ROOT, check=True, capture_output=True, text=True,
     ).stdout.split()
     result = {}

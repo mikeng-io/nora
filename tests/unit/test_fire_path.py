@@ -465,7 +465,7 @@ async def test_a_fire_turn_cut_off_between_messages_is_counted_as_partial(
 async def test_a_timeout_after_the_reminder_went_out_is_a_partial_delivery(
     persons: Persons, doctrine_store, metrics: Metrics,
 ) -> None:
-    """The contradiction `docs/runbook.md` sends an operator into: the invoke stage
+    """The contradiction `docs/operations/runbook.md` sends an operator into: the invoke stage
     counts `invocation_timeout` for a turn that was NOT silent, while `_turn`
     sees `delivered` and answers `sent`. Both readings are right about
     different halves — and only `nora_partial_replies_total` says the group got
@@ -1177,7 +1177,7 @@ async def _fire_path_with_tiers(
 def _shared_reader(standing, rooms=()):
     """A real `shared_reader` over the given standing store — the position
     paragraph reaches the fire context as a `standing` entry in the ONE
-    `standing` view (design/notebook-memory-types/20-standing.md)."""
+    `standing` view (docs/design/notebook-memory-types/20-standing.md)."""
     from nora.agent.shared_state import shared_reader
     return shared_reader(
         standing=standing, ai_peer="nora",
@@ -3288,7 +3288,7 @@ async def test_a_proactive_act_runs_when_only_optional_display_coverage_fails(
     record_store, memory_store,
 ):
     """Optional display coverage — positions/findings and ledger readbacks —
-    degrades the prompt without withholding the act itself (design/cognition-loop/proactive.md:
+    degrades the prompt without withholding the act itself (docs/design/cognition-loop/proactive.md:
     "a display-only cap must not permanently prevent all proactive
     activity")."""
     from dataclasses import replace

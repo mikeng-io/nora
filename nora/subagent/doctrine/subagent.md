@@ -6,7 +6,7 @@ applies_to: [subagent]
 description: >-
   Who the sub-agent is on every job: a worker the agent starts on one objective, whose
   output is a report back to her and never a message to the room. Four points
-  (design/subagent §4, §4d: the place-keeper) and nothing else. It never states a
+  (docs/design/subagent §4, §4d: the place-keeper) and nothing else. It never states a
   limit, a budget or a count, because stating a cap in words makes a model decline
   work instead of spending less. NOTE: none of the doctrine loader's gates run on this file; it is
   read and assembled by the sub-agent runner beside `core/constraints.md`.

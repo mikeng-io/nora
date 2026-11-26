@@ -16,7 +16,7 @@ export function OfflineBanner() {
   const was = useRef(online);
 
   // Offline, nothing on screen is current, so nothing may pulse as live
-  // (DESIGN.md §6: live state loops only while it is live). globals.css
+  // (docs/design/appearance/README.md §6: live state loops only while it is live). globals.css
   // stills every live mark under this attribute.
   useEffect(() => {
     document.documentElement.toggleAttribute("data-offline", !online);

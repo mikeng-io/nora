@@ -1,6 +1,6 @@
 """rollup_builds -- the Rollup as versioned builds of a pure projection of the
-Record (design/cognition-loop/observation.md, design/cognition-loop/data.md,
-design/cognition-loop/data.md «Notebook vocabulary», the rows marked 2).
+Record (docs/design/cognition-loop/observation.md, docs/design/cognition-loop/data.md,
+docs/design/cognition-loop/data.md «Notebook vocabulary», the rows marked 2).
 
 WHAT THIS ADDS, all additive (no table dropped, no column dropped):
 

@@ -15,8 +15,8 @@ Each row has three parts:
   a reader can. Rules held by review alone are where lessons come from.
 
 The stories behind the rules are in
-[conventions rationale](maintainers/conventions-rationale.md). Rules that are
-not standards yet are in [lessons](maintainers/lessons.md): a lesson seen
+[conventions rationale](conventions-rationale.md). Rules that are
+not standards yet are in [lessons](lessons.md): a lesson seen
 three times becomes a row here.
 
 ## Cross-cutting
@@ -43,8 +43,8 @@ three times becomes a row here.
 | A result has three states: `ok`, `nothing_found`, `unavailable`. | A wiring gap, a stale fix, a failed read or a timeout is `unavailable`, never "nothing" and never a guess. | ADR 0015; review |
 | A failed read, parse or hash means unknown. | It is never read as empty, none or equal. A list that guards access fails closed when it can't be read. | review |
 | Bind to the real property, never a proxy. | The value comes from the source that owns it: a live GPS read, HKO's own reading, the vendor's own reply. | review |
-| When the measurer is a model, its input explains itself. | A judgement about *when* carries a time, about *who* an index, about *still open* the thing that would close it. A bad judgement is fixed in the input before the instruction. | `test_every_block_declares_its_type`; [why](maintainers/conventions-rationale.md#the-instruction-is-the-first-thing-blamed-and-usually-the-wrong-one) |
-| An instrument's null is evidence only after its positive is shown. | The PR says what a positive result would look like and that the system can produce one. | review; [why](maintainers/conventions-rationale.md#the-never-rules--with-the-war-stories) |
+| When the measurer is a model, its input explains itself. | A judgement about *when* carries a time, about *who* an index, about *still open* the thing that would close it. A bad judgement is fixed in the input before the instruction. | `test_every_block_declares_its_type`; [why](conventions-rationale.md#the-instruction-is-the-first-thing-blamed-and-usually-the-wrong-one) |
+| An instrument's null is evidence only after its positive is shown. | The PR says what a positive result would look like and that the system can produce one. | review; [why](conventions-rationale.md#the-never-rules--with-the-war-stories) |
 | Source and tests are authoritative. | A brief's unknowns are checked against the code; a generated summary or a peer's claim is not evidence. | review |
 
 ### Tests
@@ -62,7 +62,7 @@ three times becomes a row here.
 | Every zero is paired with a positive control. | A test that asserts "nothing happened" also shows the same path producing something. | review |
 | A timing test leaves room on both sides. | No wall-clock bound a loaded runner can exceed; the timing test is listed in `TIMING_TESTS` (`scripts/pytest_gate.py`). | review |
 | A test that fails on `master` is a bug now. | "Fails the same on master" is not a baseline: it is fixed, or filed with its cause, before shipping on top. | review |
-| A new behavioural rule has a decision row and a named test. | The row is in `design/09-decision-index.md` and the test in `RULE_TESTS`. | `test_acceptance_rules`; `test_decision_index_tests_exist` |
+| A new behavioural rule has a decision row and a named test. | The row is in `docs/design/09-decision-index.md` and the test in `RULE_TESTS`. | `test_acceptance_rules`; `test_decision_index_tests_exist` |
 
 ### Evidence and acceptance
 
@@ -79,12 +79,12 @@ three times becomes a row here.
 
 | Rule | A reviewer checks | Held by |
 |---|---|---|
-| Review the change against its stated purpose. | Findings outside the brief are follow-ups, never blockers. | `REVIEW.md`; `nora-review` |
+| Review the change against its stated purpose. | Findings outside the brief are follow-ups, never blockers. | `docs/engineering/review.md`; `nora-review` |
 | Run it, then break it. | The head is checked out and the cited checks run; the fix is reverted and the named test goes red. | `nora-review`; `nora-prove-fix` |
 | Check the vendor, not the PR's account of it. | Upstream behaviour is read from the upstream source, binary or real reply. | review |
 | Classify narrowly. | A status, mark or error class covers only the case it describes. | review |
 | A preview writes nothing. | A dry run, plan or shadow mode has no side effects. | review |
-| Don't reverse a decision the operator locked. | A change to a ruled decision is left to the operator. | `design/09-decision-index.md` |
+| Don't reverse a decision the operator locked. | A change to a ruled decision is left to the operator. | `docs/design/09-decision-index.md` |
 
 ### Commits and PRs
 
@@ -104,7 +104,7 @@ three times becomes a row here.
 | One fact, one owner. | The section that owns the subject is revised in place; no section is added beside it, and no other page copies it. | review |
 | A guide says what holds now. | Present tense, no dates, issue or PR numbers, or "was X, now Y". History is in git, the ADRs and the rationale. | `test_root_docs_are_instructions` |
 | A design bundle is architecture, not a spec. | The parts, connections, invariants, terms and why. A part names its owning module or symbol, never a line number. | `test_design_is_design`; `nora-design` |
-| A changed contract updates its bundle in the same PR. | A component, connection, boundary, invariant or term that moves is in the diff under `design/`. | `nora-design`; review |
+| A changed contract updates its bundle in the same PR. | A component, connection, boundary, invariant or term that moves is in the diff under `docs/design/`. | `nora-design`; review |
 | A comment says what the code cannot. | A unit, bound, constraint or business fact in at most three lines; never history, a measurement or a review story. | `test_comments_carry_no_new_log` |
 | A docstring says what the thing is. | An internal function has one line or none; a model-facing tool docstring is behaviour. | review; `nora-tool` |
 | Size has a budget that is met, not raised. | File at most 800 lines, function 120, `AGENTS.md` 250, a design subject file 300. A cleanup rewrites its baseline, which only shrinks (`python -m scripts.code_size --write`; likewise `scripts.log_markers` and `scripts.design_shape`). | `test_code_stays_within_size_limits`; `test_root_docs_are_instructions`; `scripts.design_shape` |
@@ -128,7 +128,7 @@ three times becomes a row here.
 |---|---|---|
 | One migration head after every merge. | `uv run alembic heads` prints one line; a parent is re-checked at merge time. | `test_alembic_single_head` |
 | The metadata matches the migrated database. | `schema.py` and the migrations agree, including CHECKs and index order. | `test_schema_parity` |
-| `idx_messages_conv_ts` is hand-written. | Autogenerate output is never trusted for it. | review; [why](maintainers/conventions-rationale.md#gate-commands--the-detail) |
+| `idx_messages_conv_ts` is hand-written. | Autogenerate output is never trusted for it. | review; [why](conventions-rationale.md#gate-commands--the-detail) |
 | A revision id fits its column. | The id is short enough for `alembic_version.version_num`. | `test_migration_revision_fits_version_column` |
 | A recurring SQL repair is measured at scale. | Generated history-size scaling and background/foreground probes under the normal lease. | `nora-land` |
 
@@ -147,10 +147,10 @@ three times becomes a row here.
 
 | Rule | A reviewer checks | Held by |
 |---|---|---|
-| Read `docs/observability.md` before adding an instrument. One root span per entry point; stages are its children. | Spawned work does not inherit the caller's span; it attaches its intended context explicitly. | `docs/observability.md`; review |
+| Read `docs/operations/observability.md` before adding an instrument. One root span per entry point; stages are its children. | Spawned work does not inherit the caller's span; it attaches its intended context explicitly. | `docs/operations/observability.md`; review |
 | Langfuse gets traces with a generation in them. | A root declares `nora.trace_kind`; model calls use Strands' spans or `start_raw_model_span`, never hand-written `gen_ai.*`. | `test_raw_model_calls_use_strands_telemetry` |
 | A declared metric has a call site and every increment a declaration. | Labels derive from the code (`get_args` off a `Literal`). | `test_every_recorded_metric_is_declared` |
-| An instrument measures the cost as well as the result. | Every instrument has three states. | review; [why](maintainers/conventions-rationale.md#instruments-and-spans--the-war-stories) |
+| An instrument measures the cost as well as the result. | Every instrument has three states. | review; [why](conventions-rationale.md#instruments-and-spans--the-war-stories) |
 
 ### Evals
 
@@ -167,7 +167,7 @@ three times becomes a row here.
 | Rule | A reviewer checks | Held by |
 |---|---|---|
 | Both locales make the same claims. | A correction in one locale is made in the other; the same keys are not enough. | `test_portal_locales_make_the_same_claims` |
-| How she looks follows `DESIGN.md`. | The change is checked against its section before it is built. | review |
+| How she looks follows `docs/design/appearance/README.md`. | The change is checked against its section before it is built. | review |
 | A change under `app/` runs its own tests and build. | `npm test` and `npm run build` in `app/`. | CI portal jobs |
 
 ### Deploy, config and secrets

@@ -234,7 +234,7 @@ def test_the_registered_blocks_are_exactly_the_two_the_gate_is_allowed_to_see():
         f"the gate's registered blocks are {names}, not exactly "
         "{'standing', 'transcript'}. Widening what the gate sees "
         "measured WORSE (#144/#147) and produced false-speaking 4/5 on "
-        "silence twins (#216) — see design/context-assembly/"
+        "silence twins (#216) — see docs/design/context-assembly/"
         "02-the-gate-stays-closed.md before adding a row here."
     )
 

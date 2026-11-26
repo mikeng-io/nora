@@ -43,7 +43,7 @@ services:
     # non-standard host ports keep the legacy OTLP collector's 4317/4318 free
     # during acceptance. App containers never use these — they reach
     # signoz-ingester:4318 over the network. Host-side reads via Tailscale
-    # serve; see docs/observability.md "Cutover and acceptance".
+    # serve; see docs/operations/observability.md "Cutover and acceptance".
     - "127.0.0.1:14317:4317"
     - "127.0.0.1:14318:4318"
     restart: unless-stopped

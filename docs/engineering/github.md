@@ -181,7 +181,7 @@ published: a notice line carrying the link, then the release notes in a fixed em
 stable or pre-release, body). It is a separate workflow from
 `.github/workflows/release-images.yml` on purpose — a notification that shares a failure
 domain with the build is silent exactly when the build is broken, the rule
-`docs/observability.md` states for alerts.
+`docs/operations/observability.md` states for alerts.
 
 It takes one secret and one variable, both set by an owner/admin:
 
@@ -337,7 +337,7 @@ object. The object has these keys (no copied task/design body):
 | `confirmed` | JSON `true`: the owner has read and confirms all those current facts |
 
 The five scope/evidence references must be the canonical issue URL plus a section anchor. The issue
-may link immutable design/evidence there; the dispatcher does not guess semantics
+may link immutable docs/design/evidence there; the dispatcher does not guess semantics
 or resolve arbitrary external URLs. Existing issue forms lack structured fields,
 so this explicit trusted confirmation is required. Actions binds it to issue
 revision/head and the owner-confirmed scheduling fields; repeated API reads before
@@ -416,7 +416,7 @@ The operator configures Review Console themselves. For each qualified candidate:
 **Manual Review API creation is absent.** Its documented per-PR Console spend cap
 applies only to automatic reviews and does not cap a manual API trigger. No flag
 can enable that POST here. A verified applicable account/org budget mechanism
-and separately reviewed implementation would be needed to add it. `REVIEW.md`
+and separately reviewed implementation would be needed to add it. `docs/engineering/review.md`
 supplies context, not enrollment control, and cannot cancel a paid review.
 [Official security profile](https://docs.devin.ai/api-reference/v3/security-profiles/get-organizations-security-profile),
 [profile enforcement](https://docs.devin.ai/product-guides/security-profiles),

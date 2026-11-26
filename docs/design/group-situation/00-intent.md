@@ -27,7 +27,7 @@ planned, and what else that day holds.
 This bundle is step 1 of three:
 
 1. **This node.** The tag turn carries the room's situation (§3).
-2. Place identity (`design/unified-memory/graph.md`), then the time-anchored forecast
+2. Place identity (`docs/design/unified-memory/graph.md`), then the time-anchored forecast
    (Tier 4) with an instrument somebody other than its author can re-run.
 3. A proactive pass that wakes on time anchors and world changes, not only on
    note and Standing changes (`nora/language/proactive.py::_changed_since`).
@@ -146,7 +146,7 @@ others; with n this small that does not change the reading below.
 The instrument is not committed: its inputs are private rows (members' names,
 home areas and chat), so it lives on the deploy host outside the checkout
 (`~/workspace/nora-replay/group-situation-2026-09-25/`). By the rule
-`design/cognition-loop/observation.md` «Wake policy» applies to its own forecast numbers, these are one
+`docs/design/cognition-loop/observation.md` «Wake policy» applies to its own forecast numbers, these are one
 party's single measurement.
 
 ### 4.2 What the null says

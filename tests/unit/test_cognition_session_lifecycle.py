@@ -293,7 +293,7 @@ def _rig(
 
 # ---------------------------------------------------------------------------
 # the Standing fold is the session's AUTOMATIC completion hook, not a verb
-# (design/notebook-memory-types/20-standing.md): it runs on the retained
+# (docs/design/notebook-memory-types/20-standing.md): it runs on the retained
 # Record after a completed loop, once per room the session actually bound
 # ---------------------------------------------------------------------------
 

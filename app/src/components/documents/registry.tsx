@@ -1,10 +1,10 @@
 "use client";
 
 // Renders a document (src/lib/documents/catalog.ts) on the portal's own
-// primitives. Not the shadcn package's components: DESIGN.md's Hairline-First
+// primitives. Not the shadcn package's components: docs/design/appearance/README.md's Hairline-First
 // rule (a panel is one hairline, never a card inside a card) is not what
 // shadcn's Card is, and S0 found its layout defaults and Alert colours broken
-// on this theme (design/artifact/catalog.md). json-render supplies the
+// on this theme (docs/design/artifact/catalog.md). json-render supplies the
 // catalog, the registry and the renderer; the look is the portal's.
 import { createContext, useContext, type ReactNode } from "react";
 import { useTranslations } from "next-intl";
@@ -56,7 +56,7 @@ function PageBlock({ props, children }: Render<"Page">) {
     <article className="flex min-w-0 flex-col gap-8">
       <div className="flex flex-col gap-4">
         {/* `data-document-cover`: the Page's own title block, which the present view shows
-            on the cover slide only (design/artifact/lifecycle.md). */}
+            on the cover slide only (docs/design/artifact/lifecycle.md). */}
         <header className="flex flex-col gap-2" data-document-cover>
           <h1 className="text-display font-semibold text-ink">{props.title}</h1>
           {props.subtitle ? <p className="text-lead text-ink-soft">{props.subtitle}</p> : null}

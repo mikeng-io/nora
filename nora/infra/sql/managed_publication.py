@@ -1,5 +1,5 @@
 """Atomic person consolidation — the write side of `identity.md`'s stable
-aliases (`design/managed-identity-access/`).
+aliases (`docs/design/managed-identity-access/`).
 
 One transaction retires the former person: accounts move to the survivor
 keeping their account rows and identifiers (ownership provenance stays

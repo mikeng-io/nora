@@ -1,4 +1,4 @@
-"""compute_jobs becomes the generic deferred-job outbox (design/subagent §6, step 1).
+"""compute_jobs becomes the generic deferred-job outbox (docs/design/subagent §6, step 1).
 
 Adds `kind` (which backend owns the row; every existing row is `legacy`, already
 terminal, and no backend answers to it), `tag_id` (the launching turn, for the trace

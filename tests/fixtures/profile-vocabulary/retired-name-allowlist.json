@@ -14,7 +14,7 @@
    "persona": 3
   }
  },
- "design/09-decision-index.md": {
+ "docs/design/09-decision-index.md": {
   "reason": "Historical design provenance; only the requested standing-ledger call sites change.",
   "matches": {
    "Persona": 15,
@@ -33,13 +33,13 @@
    "persona_write": 3
   }
  },
- "design/13-trace-content-and-redaction.md": {
+ "docs/design/13-trace-content-and-redaction.md": {
   "reason": "Historical design provenance; only the requested standing-ledger call sites change.",
   "matches": {
    "PERSONA": 2
   }
  },
- "design/17-prompt-substrate.md": {
+ "docs/design/17-prompt-substrate.md": {
   "reason": "Historical design provenance; only the requested standing-ledger call sites change.",
   "matches": {
    "Persona": 3,
@@ -51,7 +51,7 @@
    "persona_store": 1
   }
  },
- "design/computer-unit-scope/00-contract.md": {
+ "docs/design/computer-unit-scope/00-contract.md": {
   "reason": "Historical design provenance; only the requested standing-ledger call sites change.",
   "matches": {
    "Persona": 1

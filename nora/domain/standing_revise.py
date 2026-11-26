@@ -65,7 +65,7 @@ def check_mode(mode: str) -> Refusal | None:
         return Refusal(
             reason="bad_mode",
             detail=f"{mode!r} is not one of {ALLOWED_MODES} — Standing's "
-                   f"allowed reasoning modes (design/cognition-loop/data.md)",
+                   f"allowed reasoning modes (docs/design/cognition-loop/data.md)",
         )
     return None
 

@@ -1,5 +1,5 @@
 """Holder-facing link routes — the private portal API for `request_link`,
-view, decisions and `unlink` (`design/managed-identity-access/`).
+view, decisions and `unlink` (`docs/design/managed-identity-access/`).
 
 Every handler authenticates the request-bound assertion through the shared
 verifier; the body carries the operation's OWN fields only — never an actor,

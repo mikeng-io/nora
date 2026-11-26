@@ -1,7 +1,7 @@
 # Managed identity handoff — admitting `identity.toml`/`policy.toml`
 
 `scripts/managed_identity_handoff.py` is the installation-only initial
-import described by `design/managed-identity-access/identity.md` «Backend
+import described by `docs/design/managed-identity-access/identity.md` «Backend
 selection and lifecycle»: when the managed backend is *selected*, the
 operator admits one validated mapping of the existing people and grants.
 This command performs that admission into an **empty managed target**. It

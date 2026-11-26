@@ -76,7 +76,7 @@ measured. Both use this bundle's vocabulary.
 
 ## Where it lives in the code
 
-Areas follow [ADR 0037](../../docs/adr/0037-code-is-grouped-by-area-and-depends-inward.md).
+Areas follow [ADR 0037](../../adr/0037-code-is-grouped-by-area-and-depends-inward.md).
 
 | part | owner |
 |---|---|

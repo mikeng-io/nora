@@ -2,7 +2,7 @@ package main
 
 // GET /accounts/{igid}/items, and what the two configured GraphQL reads (the
 // story and the timeline) share: a doc_id from config, the `stale_query`
-// code, and never a seen-mark (design/cognition-loop/observation.md).
+// code, and never a seen-mark (docs/design/cognition-loop/observation.md).
 
 import (
 	"encoding/json"
@@ -587,7 +587,7 @@ func countsOf(t *testing.T, body itemsBody, i int) string {
 
 // Each item carries its likes, comments and reposts and whether its author
 // hid the likes, as the node has them: a null `media_repost_count` and an
-// absent one are both unknown, never 0 (design/cognition-loop/observation.md).
+// absent one are both unknown, never 0 (docs/design/cognition-loop/observation.md).
 func TestItemsCarryEachItemsCounts(t *testing.T) {
 	f := &fakeIG{TimelineBody: []byte(fakeig.TimelineFirstPageJSON)}
 	body := decodeItems(t, getItems(t, newTestBridge(t, f), fakeig.TimelineOwnerIGID, ""))
@@ -635,7 +635,7 @@ func TestItemsACountOfTheWrongShapeIsUnknownNotARefusedPage(t *testing.T) {
 }
 
 // Who liked an item, Nora's own like and the Facebook cross-post counts are
-// never decoded, so none of them leaves the bridge (design/cognition-loop/observation.md).
+// never decoded, so none of them leaves the bridge (docs/design/cognition-loop/observation.md).
 func TestItemsNeverCarryWhoLikedNorasLikeOrFacebookCounts(t *testing.T) {
 	const at = `"like_count": 31, "comment_count": 4,`
 	extra := at + ` "top_likers": ["synthliker_one"], "facepile_top_likers": [{"username": "synthliker_two"}],` +

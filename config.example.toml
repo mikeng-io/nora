@@ -1,4 +1,4 @@
-# Deployment settings; credentials and endpoint examples: docs/configuration.md.
+# Deployment settings; credentials and endpoint examples: docs/operations/configuration.md.
 
 identity_file = "identity.toml"
 policy_file = "policy.toml"   # who may talk to her, and where; see policy.example.toml
@@ -16,7 +16,7 @@ threads = "@noraexample"
 # mode = "direct": base_url is the signal-cli daemon's JSON-RPC/HTTP API and
 #   inbound arrives over its SSE. mode = "bridge": base_url is the standalone
 #   signal-bridge's /v1 action API and inbound arrives over Redis Streams —
-#   the deployed shape (design/platform-bridges). Never run a direct adapter
+#   the deployed shape (docs/design/platform-bridges). Never run a direct adapter
 #   AND a bridge on the same account: that is two sessions on one
 #   registration.
 base_url = "http://signal-bridge:18090"
@@ -51,7 +51,7 @@ base_url = "http://instagram-bridge:18082"  # bridge holds the cookie session; n
 # mode = "bridge"
 # account_key = "default"
 
-# [bridges] — the durable inbound handoff (design/platform-bridges). Any
+# [bridges] — the durable inbound handoff (docs/design/platform-bridges). Any
 # platform with mode = "bridge" requires redis_url_env to resolve at boot.
 # redis_url_env names the env var carrying the Redis URL (a credential —
 # named reference only, never a value here); token_env names the shared /v1
@@ -747,7 +747,7 @@ headers_env = ""                      # env var NAME holding auth headers; reuse
 # [identity] — which backend owns person binding and scoped grants.
 # "file" (default) is identity.toml + policy.toml exactly as today;
 # "managed" selects self-hosted Ory Kratos + Keto + PostgreSQL under the
-# same ports (design/managed-identity-access/). A backend change is a
+# same ports (docs/design/managed-identity-access/). A backend change is a
 # boot-time decision — it builds a different object graph, so it is a
 # restart, never a hot reload.
 # backend = "file"

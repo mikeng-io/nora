@@ -1,6 +1,6 @@
 """Initial file-to-managed admission — the installation authority's one-time
 import of an established `identity.toml`/`policy.toml` mapping
-(`design/managed-identity-access/identity.md` «Backend selection and
+(`docs/design/managed-identity-access/identity.md` «Backend selection and
 lifecycle», `authorization.md` «installation administration»).
 
 Selecting the managed backend admits a validated mapping of existing people

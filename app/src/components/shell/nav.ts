@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 
 // The portal's map of itself. Seven places for the circle, four for Nora.
-// On a phone the bottom bar holds five cells (DESIGN.md §7: no raised centre
+// On a phone the bottom bar holds five cells (docs/design/appearance/README.md §7: no raised centre
 // button): four places plus More, which opens a sheet listing everything else
 // — the rest of the circle and the four pages about her. Five cells is the
 // most it fits (MOBILE_NAV_MAX): a sixth would crowd the labels on a 320px

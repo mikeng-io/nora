@@ -38,13 +38,13 @@ replacement has measured at least as well.
 
 ## Superseded and amended
 
-- [standing-ledger/10-what-standing-holds.md](../standing-ledger/10-what-standing-holds.md): the working set
+- [standing-ledger/10-what-standing-holds.md](10-what-standing-holds.md): the working set
   becomes a decision's `Options` (step 4).
 - [12-schemas](../cognition-loop/data.md) §5: room Standing's sections
   and the unit sections are replaced by the three entry kinds; person Standing
   is unchanged. A pointer goes into that node when step 2 lands.
 - DEC-112 (step 5), by its own decision row at merge time
-  (`design/09-decision-index.md`); no number is taken before then.
+  (`docs/design/09-decision-index.md`); no number is taken before then.
 
 ## Open
 

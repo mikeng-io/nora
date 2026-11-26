@@ -1,5 +1,5 @@
 """`FakePlatformAdapter` — a platform-neutral adapter for the liveness path
-(design/platform-bridges/platform-liveness.md), on the shared `DegradeLatch`
+(docs/design/platform-bridges/platform-liveness.md), on the shared `DegradeLatch`
 like every real adapter."""
 
 from __future__ import annotations
@@ -26,7 +26,7 @@ HANG = object()
 
 class FakePlatformAdapter(DegradeLatch):
     """A platform-neutral `PlatformAdapter` for the liveness path
-    (design/platform-bridges/platform-liveness.md): any `platform` name —
+    (docs/design/platform-bridges/platform-liveness.md): any `platform` name —
     the stand-in for a platform the table does not have yet (`telegram`) —
     on the shared `DegradeLatch`, like every real adapter.
 

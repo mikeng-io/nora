@@ -1,7 +1,7 @@
 # Lanes and standing authorities
 
 Mike edits this file; agents read it before every launch and never ask again
-for what it already grants. [ORCHESTRATION.md](../ORCHESTRATION.md) holds the
+for what it already grants. [docs/engineering/orchestration.md](../docs/engineering/orchestration.md) holds the
 invariants: the reviewer is a fresh session whose vendor differs from every
 author's (an orchestrator that commits is an author), and a fallback meets the
 same bar as the lane it replaces.
@@ -30,7 +30,7 @@ Granted without asking:
 | action | condition |
 |---|---|
 | merge a PR | its route's required review passed with no BLOCKER and its scanner findings are triaged; required checks then must pass before the merge happens (enable auto-merge, or end the turn and resume on the checks, never wait); report the merge, which releases and deploys |
-| paid eval, replay, judge-only calibration or spike | inside the scenario budget the brief or issue states ("unbounded" is a budget); a goal-driven rerun needs both it and the convergence budget left; each receipt records its effective cutoff (`docs/eval-sop.md`) |
+| paid eval, replay, judge-only calibration or spike | inside the scenario budget the brief or issue states ("unbounded" is a budget); a goal-driven rerun needs both it and the convergence budget left; each receipt records its effective cutoff (`docs/engineering/eval-sop.md`) |
 | re-run after the agent's own fix | same cases, inside the same budget, criteria unchanged; rescoring is not a re-run |
 | switch to the next fallback lane | as above |
 | retire merged or archived artifacts | `make gc APPLY=1` |

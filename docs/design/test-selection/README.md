@@ -31,6 +31,6 @@ Local affected-test selection remains the union of the static import graph,
 recorded dependency map and reader scan. Missing evidence still selects ALL;
 this no longer launches the full backend suite automatically in hosted CI.
 
-[ADR 0038](../../docs/adr/0038-bound-automatic-validation-and-run-full-tests-on-demand.md)
+[ADR 0038](../../adr/0038-bound-automatic-validation-and-run-full-tests-on-demand.md)
 records the accepted tradeoff: feedback speed over automatic complete acceptance.
 Reopen the baseline only with measured escaped failures or measured budget excess.

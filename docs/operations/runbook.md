@@ -5,7 +5,7 @@ retained phone/UUID/coordinate, place/person-name and location audience checks,
 set `enabled = true` in the deployment-owned config and restart through the
 normal validated deployment procedure. This does not toggle credential or
 doctrine protection, or grant a room/unit access. No live config is changed by
-the source change. See [the decision](adr/0030-content-filters-are-disabled-by-default-and-reversible.md).
+the source change. See [the decision](../adr/0030-content-filters-are-disabled-by-default-and-reversible.md).
 
 All example names, account IDs, nicknames and room mappings in this file are
 synthetic pseudonyms; replace them with your own installation values.
@@ -16,13 +16,13 @@ deployment). Paths under `~/workspace/` are example installation paths; substitu
 your own. Loopback addresses refer to the host where each command runs.
 
 Before deployment, config recreation or rollback, select the installed mode in
-[the nora-deploy skill](../.agents/skills/nora-deploy/SKILL.md). A production Komodo
+[the nora-deploy skill](../../.agents/skills/nora-deploy/SKILL.md). A production Komodo
 success receipt or pending attempt routes deployment and recovery through the
-[native Stack](../deploy/komodo/README.md), including code, doctrine and recreation. The checkout build, source-pull, retag and
+[native Stack](../../deploy/komodo/README.md), including code, doctrine and recreation. The checkout build, source-pull, retag and
 recreate procedures below apply only before that cutover; read-only diagnostics
 still apply in either mode.
 
-The [deployment ownership map](../deploy/README.md#ownership-and-entry-points)
+The [deployment ownership map](../../deploy/README.md#ownership-and-entry-points)
 identifies the application, infrastructure, observability and computer entry points.
 Project `nora` is shared: do not use project-wide teardown or orphan removal
 to clean up retired services.
@@ -54,7 +54,7 @@ To tell "quiet" from "broken":
    `nora_silent_failures_total{audience="heartbeat"}` alongside
    `nora_reminders_fired_total{outcome}` and `nora_heartbeat_last_tick_age_seconds`.
 
-   The participation occasion (design/ambient-loop/01-stages-and-seams.md, once enabled) is the
+   The participation occasion (docs/design/ambient-loop/01-stages-and-seams.md, once enabled) is the
    third audience on this series, and it changes what "silent" MEANS: a
    participation turn that says nothing is the HEALTHY outcome, so it never lands
    here — it counts on `nora_participation_silence_total`, and a spoke turn on
@@ -65,7 +65,7 @@ To tell "quiet" from "broken":
    `nora_silent_failures_total{audience="participation"} / (nora_participation_silence_total + nora_participation_spoke_total)`,
    NOT a share of the tag budget.
 
-   The proactive occasion (design/cognition-loop/README.md, DEC-162; since
+   The proactive occasion (docs/design/cognition-loop/README.md, DEC-162; since
    2026-10-03, DEC-277, its reminder rows are written by the Cognition
    session's `remind`, and the fire path's act turn below is unchanged) is the fourth audience and has
    participation's exact shape: a `kind="proactive"` row's act turn that
@@ -140,7 +140,7 @@ To tell "quiet" from "broken":
    Nora re-resolves it in the background (every 5 s, backing off to 5 min)
    and promotes it to `live` without a restart. Re-pairing the bridge is the
    whole fix. `/health` is `503` only when no enabled platform is live
-   (design/platform-bridges/platform-liveness.md). A refused credential
+   (docs/design/platform-bridges/platform-liveness.md). A refused credential
    (401/403), a missing bridge bearer or Redis URL, or an unknown `mode`
    still stops startup: those are configuration, not availability.
 
@@ -329,7 +329,7 @@ fingerprint and does not enforce version order. This does **not** roll back the
 database schema (migrations upgrade to head on startup) or host config. Check
 compatibility before selecting an older bundle; otherwise roll forward or use a
 coordinated database restore (section 9). Preserve failed-attempt evidence;
-see [Komodo recovery](../deploy/komodo/README.md#failure-and-recovery).
+see [Komodo recovery](../../deploy/komodo/README.md#failure-and-recovery).
 
 `~/workspace/nora` is still the live runtime root for private config, `.env`,
 `data/` and `state/`; database, RustFS, Prometheus, Alertmanager and embedder still
@@ -339,7 +339,7 @@ use it as their Compose root, and the computer unit's `ExecStart` points there.
 ### Legacy checkout mode: local image rollback
 
 The following is checkout-era reference only; it does not apply to production's
-installed release stack. See the [legacy deploy reference](../.agents/skills/nora-deploy/reference.md#legacy-checkout-mode).
+installed release stack. See the [legacy deploy reference](../../.agents/skills/nora-deploy/reference.md#legacy-checkout-mode).
 
 Nora runs as a **Docker container**, not under systemd. The per-phase tags this
 section used to retag (`nora:p0`, `nora:p1a`, …) no longer exist on the deploy
@@ -375,8 +375,8 @@ Unchanged image/effective service config preserves container IDs; a host bind-fi
 content change alone does not recreate a process. After validated config/identity/
 policy edits, write the scoped `config-reload.json` request under the shared lock,
 then release it before native `DeployStack`. See
-[the installed deploy procedure](../.agents/skills/nora-deploy/SKILL.md) and
-[the file reload contract](../deploy/komodo/README.md#loaded-once-host-file-reload).
+[the installed deploy procedure](../../.agents/skills/nora-deploy/SKILL.md) and
+[the file reload contract](../../deploy/komodo/README.md#loaded-once-host-file-reload).
 
 ### Legacy checkout mode: `scripts/verify-deploy.py`
 
@@ -418,7 +418,7 @@ docker image inspect voice-sidecar:latest --format '{{.Id}}'    # must match
 
 There is no per-guild container: one sidecar serves every server Nora holds
 voice on, and one wake gate serves every sidecar connection
-(design/voice-channel/audio.md).
+(docs/design/voice-channel/audio.md).
 
 **THE THREE VOICE IMAGES MOVE TOGETHER.** `nora`, `voice-sidecar` and
 `voice-wake` speak two seams that have both changed inside one release:
@@ -482,7 +482,7 @@ signoz_provision.py` puts them live; retired `deploy/prometheus/` +
 `deploy/alert-bridge/` in this change) and its slack-format channel posts the
 result into the review channel.
 `PlatformSilent` is the SSE-silence one — no adapter event for 900 seconds — and the
-rest are in `docs/observability.md`'s table with the incident behind each.
+rest are in `docs/operations/observability.md`'s table with the incident behind each.
 
 For a Signal alert, inspect the current `signal-bridge` container first:
 
@@ -506,13 +506,13 @@ docker logs --tail 100 nora
 
 Look for transport failures, queue-reader failures or a process restart. A quiet
 room or an empty log is insufficient evidence for recreation. If recovery needs
-a restart/recreation, follow the installed [Komodo recovery procedure](../deploy/komodo/README.md#failure-and-recovery)
+a restart/recreation, follow the installed [Komodo recovery procedure](../../deploy/komodo/README.md#failure-and-recovery)
 for the affected service, preserving the other bridges and admission publisher.
 Do not run checkout `docker compose restart` against the installed application.
 
 ## 4b. WhatsApp (whatsapp-bridge)
 
-The bridge (`deploy/whatsapp-bridge/`, design/whatsapp-adoption/README.md) is the
+The bridge (`deploy/whatsapp-bridge/`, docs/design/whatsapp-adoption/README.md) is the
 transport twin of signal-cli: same private network, same no-published-ports
 posture, session on `./state/whatsapp` (chmod 700, never commit). It is only
 relevant when `[platforms.whatsapp] enabled = true`.
@@ -542,7 +542,7 @@ deny-by-default until the DM study lands.
 | WhatsApp protocol update | bridge reconnect loop / messages stop | bump the Baileys pin in deploy/whatsapp-bridge/package.json, rebuild, re-pair if the session was invalidated |
 | Phone offline >~14 days (operational lore, not an SLA) | device unlinked | re-pair with the command above |
 | Session dir lost/corrupt | `paired: false` in the bridge's /health | re-pair (no data loss) |
-| Account restricted (ban) | login throttled/rejected | stop using the number; evaluate cause (design/whatsapp-adoption/identity.md, posture) |
+| Account restricted (ban) | login throttled/rejected | stop using the number; evaluate cause (docs/design/whatsapp-adoption/identity.md, posture) |
 | Network blip | transient disconnect | self-heals; the bridge reconnects with backoff |
 
 The container healthcheck only proves the HTTP layer serves (curl exists in
@@ -605,7 +605,7 @@ the variable to go back to password mode.
 Nora has ONE Google identity (`[google]` in `config.toml`, three variables in
 `.env`: `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`,
 `GOOGLE_OAUTH_REFRESH_TOKEN`), shared by every Google service she uses
-(shared files today, design/external-files §4). API keys such as the Maps key
+(shared files today, docs/design/external-files §4). API keys such as the Maps key
 are separate and live with their feature.
 
 - **Every Google service answers `unavailable`** and
@@ -660,7 +660,7 @@ uv run python scripts/signoz_provision.py --api http://localhost:8080
 # upserts are idempotent on the rule name; list returns non-200 -> it stops, never blind-POSTs
 ```
 
-**Known limits.** There is no dead-man switch (`docs/observability.md`, «What this
+**Known limits.** There is no dead-man switch (`docs/operations/observability.md`, «What this
 pipeline cannot say»): nothing says so if the SigNoz backend itself stops —
 `IngestionSilent` is evaluated BY the backend and cannot report its own death.
 
@@ -759,7 +759,7 @@ alerting specifically.
 **Status as of 2026-08-05: ENABLED and verified end-to-end** — against Langfuse
 directly. **Superseded 2026-09-04:** the container now exports to an
 OpenTelemetry collector (`http://host.docker.internal:4318/v1/traces`), which
-fans out to Langfuse (`:3100`) and Jaeger (`:16686`); `docs/observability.md`
+fans out to Langfuse (`:3100`) and Jaeger (`:16686`); `docs/operations/observability.md`
 «How a span reaches a collector» carries the live read-back and the two
 filters on that path. `headers_env = "LANGFUSE_OTLP_HEADERS"` still names the
 credential, which lives in the gitignored `.env` and is passed to the container
@@ -844,7 +844,7 @@ confusable. If it refuses, widen `--range` or lower `--days`.
 **The counter is the weak half and the script says so.** Prometheus labels
 lazily and the process restarts a few times a day, so a refusal never scraped
 before a restart leaves no trace, and times are accurate only to the scrape
-interval. `design/ambient-loop/02-doctrine-and-measurement.md` §3 names the fix — a durable per-verdict row, which
+interval. `docs/design/ambient-loop/02-doctrine-and-measurement.md` §3 names the fix — a durable per-verdict row, which
 DEC-179 excluded from `decision_log` on purpose. Until that exists, `overrides`
 is approximate and is a lower bound.
 
@@ -960,7 +960,7 @@ The current entry point is `uv run python -m evals <corpus-name>
 `uv run python -m evals --list` lists the selectable corpora without running one;
 `--class` and `--all` select broader runs. Live runs need the configured model,
 source clone and backing services and can spend model calls. Use the
-[eval SOP](eval-sop.md#bind-the-selected-measurement) for the independently reviewed
+[eval SOP](../engineering/eval-sop.md#bind-the-selected-measurement) for the independently reviewed
 contract, setup and the results/trace readback procedure.
 The runner prints measurements; retain its output and exit code with the source
 revision. Langfuse traces are separate evidence, not a substitute for the runner's
@@ -1408,7 +1408,7 @@ approval; this section does not authorize host actions.
 The browser runtime behind the X and LinkedIn tools (DEC-201) is four pieces on the
 host, all systemd **user** services or user installs — none of them is the
 Nora container, and Nora runs fine with all of them down (the tool answers
-`unavailable`). See [Architecture — State and trust boundaries](../ARCHITECTURE.md#state-and-trust-boundaries).
+`unavailable`). See [Architecture — State and trust boundaries](../../ARCHITECTURE.md#state-and-trust-boundaries).
 
 The Tailscale address, the OpenCLI profile alias and the host user in the unit
 names below are placeholders; the real ones are on the deploy host
@@ -1589,7 +1589,7 @@ docker exec nora /app/.venv/bin/python -c \
 cd ~/workspace/honcho && docker compose up -d api </dev/null
 ```
 
-For step 3, follow [nora-deploy’s config-only procedure](../.agents/skills/nora-deploy/SKILL.md#3-config-only-change).
+For step 3, follow [nora-deploy’s config-only procedure](../../.agents/skills/nora-deploy/SKILL.md#3-config-only-change).
 
 Doing step 4 before step 3 shuts nora out of memory: every peer write fails,
 and the failure reads as Honcho being down.

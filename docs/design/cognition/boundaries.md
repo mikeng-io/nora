@@ -60,7 +60,7 @@ people's responses to her acts, never only her own earlier words.
 - Content checks — identifier and coordinate filters, place and person-name
   screens, the location audience subset and unknown-person checks — follow
   the repository's content-check operating mode, off by default
-  ([ADR 0030](../../docs/adr/0030-content-filters-are-disabled-by-default-and-reversible.md)).
+  ([ADR 0030](../../adr/0030-content-filters-are-disabled-by-default-and-reversible.md)).
   When enabled they fail closed. Scope, consent, availability and the
   three-state results never switch off.
 - Silence is a valid outcome of every delivering pass.

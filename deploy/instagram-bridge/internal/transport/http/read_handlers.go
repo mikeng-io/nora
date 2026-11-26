@@ -9,7 +9,7 @@ import (
 )
 
 // Every path id is parsed HERE, at the edge, before the use case runs, so a
-// malformed one is 400 whatever the session's state (design/instagram-adoption/bridge.md «Messaging contract»: "a
+// malformed one is 400 whatever the session's state (docs/design/instagram-adoption/bridge.md «Messaging contract»: "a
 // malformed id is 400 before any use case runs"). Before bridge.md the parse sat
 // behind the session gate and a checkpointed session answered 409 first; that
 // was the reorder debt accounts_search.go's header named.

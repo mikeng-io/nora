@@ -1,11 +1,11 @@
 // Package httptransport is the bridge's HTTP surface: routes, request
 // parsing, response DTOs and the status mapping
-// (design/instagram-adoption/bridge.md). Handlers are thin: they
+// (docs/design/instagram-adoption/bridge.md). Handlers are thin: they
 // parse the path ids and the body, call ONE use case, and write what it
 // returned. They import the use cases and the domain, never instameow and
 // never a wire struct.
 //
-// The routes are design/instagram-adoption/bridge.md «Messaging contract»:' table: nouns (a thread, its messages, an
+// The routes are docs/design/instagram-adoption/bridge.md «Messaging contract»:' table: nouns (a thread, its messages, an
 // account, a post), plus the two paths where the bridge talks about ITSELF
 // (`/health`, `/events`), which are operational and not resources.
 //
@@ -86,7 +86,7 @@ func (s *Server) Routes() http.Handler {
 	//
 	// Each route is traced by its PATTERN (the span name and `http.route`).
 	// The thread routes use Route: their path carries a thread id and a
-	// message id, both allowed in a span (design/instagram-adoption/bridge.md «Observation»). A route whose path
+	// message id, both allowed in a span (docs/design/instagram-adoption/bridge.md «Observation»). A route whose path
 	// segment names somebody's content uses PatternOnlyRoute instead.
 	mux.HandleFunc("GET /threads/{thread_fbid}/members", observability.Route("GET /threads/{thread_fbid}/members", s.handleRoster))
 	mux.HandleFunc("POST /threads/{thread_fbid}/messages", observability.Route("POST /threads/{thread_fbid}/messages", s.handleSendMessage))
@@ -101,7 +101,7 @@ func (s *Server) Routes() http.Handler {
 	// answered.
 	mux.HandleFunc("GET /accounts/{igid}", observability.Route("GET /accounts/{igid}", s.handleProfile))
 	// The only path to a story anywhere. The social stream's poller reads
-	// members' stories (design/cognition-loop/observation.md), and
+	// members' stories (docs/design/cognition-loop/observation.md), and
 	// the read never marks one seen. A sub-resource of the account,
 	// because that is what it is.
 	mux.HandleFunc("GET /accounts/{igid}/story", observability.Route("GET /accounts/{igid}/story", s.handleStory))
@@ -120,7 +120,7 @@ func (s *Server) Routes() http.Handler {
 	// routes already get from it.
 	mux.HandleFunc("GET /mentions", observability.PatternOnlyRoute("GET /mentions", s.handleMentions))
 	// A post's comments, and the bridge's ONE public write: a reply under a
-	// summons (comments.go; design/instagram-adoption/summons.md). PatternOnlyRoute: the shortcode names
+	// summons (comments.go; docs/design/instagram-adoption/summons.md). PatternOnlyRoute: the shortcode names
 	// somebody's post, and the reply_to query and the body carry comment ids
 	// and people's words, none of which may become a span attribute.
 	mux.HandleFunc("GET /posts/{shortcode}/comments", observability.PatternOnlyRoute("GET /posts/{shortcode}/comments", s.handleComments))

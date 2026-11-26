@@ -70,7 +70,7 @@ ACTOR_STATUSES: tuple[str, ...] = (
 )
 
 #: Kinds a platform's PINNED bridge cannot supply at all — the coverage
-#: matrix's explicit "unavailable" cells (design/platform-observations/observations.md
+#: matrix's explicit "unavailable" cells (docs/design/platform-observations/observations.md
 #: Instagram polls at mautrix-meta v0.2609.0, where a poll read must answer
 #: `unavailable`, never a confident `nothing_found`). A kind absent from a
 #: platform's set is NOT claimed supported — it is simply not known to be
@@ -758,7 +758,7 @@ def fold_observation(
 ) -> ObservationHead:
     """Apply one stored observation to `head` — THE one fold.
 
-    Order rules (design/platform-observations/observations.md): deltas apply
+    Order rules (docs/design/platform-observations/observations.md): deltas apply
     once, in source order; a complete snapshot replaces only its covered set
     and only at its source position — an old snapshot never overlays a newer
     applied position; a partial snapshot merges, never clears; a transition

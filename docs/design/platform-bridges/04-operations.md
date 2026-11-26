@@ -2,7 +2,7 @@
 
 ## Redis lifecycle
 
-Use a pinned supported Redis image with command flags `--appendonly yes --appendfsync everysec --maxmemory-policy noeviction --no-appendfsync-on-rewrite no`, `/data` on a named durable volume, private network and authenticated ACLs. These non-secret flags belong in Compose; named credential references follow `docs/configuration.md`. No host ports, credentials in command-line examples, cache eviction, TTL on live work or `down -v`. Size disk/memory for retained backlog and AOF rewrite headroom; full disk/OOM is enqueue failure, never a successful receipt.
+Use a pinned supported Redis image with command flags `--appendonly yes --appendfsync everysec --maxmemory-policy noeviction --no-appendfsync-on-rewrite no`, `/data` on a named durable volume, private network and authenticated ACLs. These non-secret flags belong in Compose; named credential references follow `docs/operations/configuration.md`. No host ports, credentials in command-line examples, cache eviction, TTL on live work or `down -v`. Size disk/memory for retained backlog and AOF rewrite headroom; full disk/OOM is enqueue failure, never a successful receipt.
 
 The default targets application interruption. Redis [documents AOF fsync trade-offs](https://redis.io/docs/latest/operate/oss_and_stack/management/persistence/): everysec may lose recent acknowledged writes under host failure. Bridge journals improve retry recovery but do not justify a blanket zero-loss promise. App restart with Redis/volumes intact is the required proof; Redis power-loss behavior is a separately documented limit.
 
@@ -45,7 +45,7 @@ When model work starts, its existing engagement/fire generation root stays a **s
 Python producer/consumer uses OTel SDK through the existing provider setup; Go/Node producers need minimal OTLP SDK initialization/export and the same resource/kind/field contract. Export queue OTLP/HTTP to the existing collector, with bridge service.name reflecting service names. No hand-written GenAI attributes and no Strands wrapper around bridge operations. The queue span helper records only allowlisted error type/reason/status, not the existing generic helper’s automatic exception message/stack capture; exceptions still propagate unchanged to the work seam. Test this with a synthetic secret-bearing SDK error. Export setup/timeout/failure remains best effort.
 
 **Collector contract amended 2026-10-30:** the accepted
-[SigNoz design](../../docs/observability.md#accepted-direction-self-hosted-signoz)
+[SigNoz design](../../operations/observability.md#accepted-direction-self-hosted-signoz)
 owns backend selection and whole-trace retention. Queue operations and complete
 model traces target SigNoz, with their separate roots and links retained. The
 queue root kind remains a semantic classification; it must not prescribe Jaeger

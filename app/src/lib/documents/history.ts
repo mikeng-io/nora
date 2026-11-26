@@ -1,4 +1,4 @@
-// Small pure helpers for the history pages (design/artifact/lifecycle.md), apart from the views so
+// Small pure helpers for the history pages (docs/design/artifact/lifecycle.md), apart from the views so
 // they are tested.
 
 import { RestoreRefusedError } from "@/lib/api/document-history";

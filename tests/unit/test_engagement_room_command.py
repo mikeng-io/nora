@@ -1,5 +1,5 @@
 """`!!!member` room commands through `EngagementPipeline` — the model-free
-occasion's slot contract (design/managed-identity-access/management.md
+occasion's slot contract (docs/design/managed-identity-access/management.md
 «In-room management», the F1 finding of the first room review).
 
 The slot contract is the tag path's own: admission's RUN_NOW acquires the

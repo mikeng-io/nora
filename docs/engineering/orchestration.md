@@ -49,7 +49,7 @@ before it; a tier describes the work and its checking, never a model or toolset.
 ## The orchestrator
 
 The orchestrator is whichever coding agent holds the operator-facing session;
-how each runtime does a step is in [.agents/runtimes/](.agents/runtimes/README.md). It owns the outcome: scope, do or
+how each runtime does a step is in [.agents/runtimes/](../../.agents/runtimes/README.md). It owns the outcome: scope, do or
 delegate, reconcile evidence, triage, land and report.
 
 - **Do small changes yourself**: documentation, agent-skill wording, comments,
@@ -58,7 +58,7 @@ delegate, reconcile evidence, triage, land and report.
   cost and lost context, or the operator asks; file count alone is not one. Any
   delegation mechanism follows the same brief and read-back rules.
 - **Lanes are the operator's table.** Which model orchestrates, builds and
-  reviews, its fallbacks and the standing authorities: [.agents/lanes.md](.agents/lanes.md).
+  reviews, its fallbacks and the standing authorities: [.agents/lanes.md](../../.agents/lanes.md).
 - One committing agent per isolated worktree; reviews run read-only in their
   own checkout of the exact head. Read back `pwd`, head and clean status rather
   than trusting a worker's report.
@@ -67,7 +67,7 @@ delegate, reconcile evidence, triage, land and report.
 
 Engineering follows UACP's phases in order: **triage → propose → plan →
 execute → verify → resolve**. `nora-work` routes it; its
-[lifecycle reference](.agents/skills/nora-work/references/lifecycle.md) owns
+[lifecycle reference](../../.agents/skills/nora-work/references/lifecycle.md) owns
 the routes, the transition table and the re-triage triggers.
 
 - **No self-attestation.** At each transition its route requires, a checker
@@ -163,7 +163,7 @@ prepared worktree keeps its base, never a second worktree or a restart on master
 
 ## Bounded independent review
 
-`REVIEW.md` owns review scope, finding quality and the return format;
+`docs/engineering/review.md` owns review scope, finding quality and the return format;
 `nora-review` the steps. All grounded findings stay in the receipt; non-blocking
 ones go into one PR summary comment, at most six classes, and open no round.
 
@@ -209,11 +209,11 @@ ones go into one PR summary comment, at most six classes, and open no round.
 - Use native ownership and dependencies and link evidence; never copy plans,
   receipts or tracker state into parallel files. Roadmap outcomes, report
   disposition and execution status are linked, never mirrored
-  ([roadmap conventions](docs/maintainers/conventions.md#roadmap)).
+  ([roadmap conventions](conventions.md#roadmap)).
 - Session completion, PR merge and child closure are not whole-outcome
   acceptance; a skill or MCP connection grants no unattended spending authority.
 
-Task states follow the Linear convention (`docs/maintainers/conventions.md`
+Task states follow the Linear convention (`docs/engineering/conventions.md`
 «Linear execution»); read the configured workflow names back rather than assuming them.
 
 Artifact lifecycle — one owner and one end event each; retirement is mechanical, not a judgement:

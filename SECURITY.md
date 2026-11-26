@@ -21,5 +21,5 @@ are handled on a best-effort basis, without a guaranteed response time.
 
 Each operator manages their installation's credentials, platform registrations,
 network access and backups. What is exposed, to whom, and what is accepted risk
-is in [`SECURITY_MODEL.md`](SECURITY_MODEL.md). Use synthetic fixtures for development and keep
+is in [`docs/design/security/README.md`](docs/design/security/README.md). Use synthetic fixtures for development and keep
 production configuration and data outside version control.

@@ -115,7 +115,7 @@ committed instrument (§4).
   and drops 1 and 2 are among them. The paragraph below stands as a reading
   of the old fold, not of today's. On today's fold (the 79 pairs written
   after 7fdb24b4) the confirmed drops are one substantive (drop 5) and one
-  minor. See `design/standing-ledger/20-the-ledger.md` for what that does
+  minor. See `docs/design/standing-ledger/20-the-ledger.md` for what that does
   to the build.
 - **Most folds with no new rows still rewrite nearly everything.** 11 pairs had
   no new message rows between them. The rows had already been folded, so the

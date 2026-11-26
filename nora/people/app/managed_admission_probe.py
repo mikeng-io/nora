@@ -1,5 +1,5 @@
 """The admission's installation-target seam — the empty-or-owned proof and
-the two durable publication boundaries (`design/managed-identity-access/
+the two durable publication boundaries (`docs/design/managed-identity-access/
 identity.md` «Backend selection and lifecycle»).
 
 `facts` reads every managed row the claim must see — including the rows

@@ -21,7 +21,7 @@ Nora never models anything. Through `world_place` (`10-world-as-a-view.md`
 held in the right hand". Everything after that is code and models with no
 agent in the loop, run as a deferred job on the compute outbox
 (`compute_jobs`, `ComputeJobPoller`) the way `video_create` runs
-(`design/video-generation/README.md`). The placement shows the closest
+(`docs/design/video-generation/README.md`). The placement shows the closest
 library item until the job finishes, then swaps.
 
 ## 2. Resolution order, cheapest first

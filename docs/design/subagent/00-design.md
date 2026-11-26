@@ -65,7 +65,7 @@ The outbox was built 2026-08-13 for `make_artifact` (DEC-99): launch the
 work, wait about 15 s, and on a slower job write a row so the result arrives
 later through `FirePath.speak`, delivered at most once by a compare-and-set
 claim. Smith was its only worker; the mechanism was always generic. Video
-generation (`design/video-generation/README.md`) is a second worker
+generation (`docs/design/video-generation/README.md`) is a second worker
 waiting for the same outbox, which is why the table stays generic (§6).
 
 ## 3. The tool family
@@ -143,7 +143,7 @@ found the Dreamer and cognition paths stop write tools on purpose:
 - `document_publish` refuses any call whose actor is not `tag` or whose room
   has no tagger: `unavailable`, `no_requester` (`nora/agent/tools.py`).
 - `computer_export` to a link or the chat is refused for any actor but `tag`:
-  the containment line of `design/sandbox-runtime/sessions.md`,
+  the containment line of `docs/design/sandbox-runtime/sessions.md`,
   decision 6 ("an effect outside the VM waits for a person who asked in THIS
   turn").
 - `create_dream_agent` takes no `skills_dir` by design (`nora/agent/factory.py`),
@@ -418,7 +418,7 @@ to the whole report.
   scope (operator, 2026-10-04): that is a waiting state, a clock that pauses,
   and routing an answer back, a different order of work.
 - **Surviving a restart.** Persist the worker's conversation and resume.
-- **The video worker** (design/video-generation/README.md) on the same outbox, once `kind` exists.
+- **The video worker** (docs/design/video-generation/README.md) on the same outbox, once `kind` exists.
 
 ## 10. Open questions
 

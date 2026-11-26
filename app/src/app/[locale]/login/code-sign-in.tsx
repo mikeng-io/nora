@@ -22,7 +22,7 @@ const FIELD =
   "outline-none placeholder:text-ink-muted focus:border-seam focus:ring-2 focus:ring-denim lg:h-11";
 
 // One glyph per messenger, drawn in ink like every other icon: the One-Accent
-// Rule (DESIGN.md §4) leaves no room for two more brand colours.
+// Rule (docs/design/appearance/README.md §4) leaves no room for two more brand colours.
 const GLYPH: Record<CodePlatform, LucideIcon> = {
   signal: MessageSquareLock,
   whatsapp: MessageCircle,

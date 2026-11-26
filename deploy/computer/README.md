@@ -1,7 +1,7 @@
 # Nora's computer
 
 The persistent microVM that Nora's computer-use tools run on
-(`design/sandbox-runtime/README.md`). It is a Docker Sandboxes (sbx) VM
+(`docs/design/sandbox-runtime/README.md`). It is a Docker Sandboxes (sbx) VM
 booted from `Dockerfile`, and it runs `computerd.py`, a small HTTP API with
 Nora as its only client. Nora reaches it at `http://172.17.0.1:18765`
 (docker0: reachable from the nora container, not from the LAN) with a bearer
@@ -71,7 +71,7 @@ allowlist of DEC-260), so `nora-computer` adds these rules, **scoped to the
 public NAME that resolves to a private address (`127-0-0-1.sslip.io`) still
 passes the deny and reaches the host's services. It is measured and the
 operator accepted the risk rather than add a guard
-(`design/browser-runtime/security.md` «Network and browser isolation»); there
+(`docs/design/browser-runtime/security.md` «Network and browser isolation»); there
 is none. `egress check` probes IP literals, so
 it cannot see this. The network audit is `sbx policy log`.
 
@@ -120,7 +120,7 @@ scope user must succeed; to `http://172.17.0.1:18765` it must be refused).
 
 ## Lifecycle audit: who did what to the machine
 
-The computer's audit (design/sandbox-runtime/sessions.md «Complete evidence») covers every tool call, and
+The computer's audit (docs/design/sandbox-runtime/sessions.md «Complete evidence») covers every tool call, and
 until 2026-10-01 nothing else: a VM create, a recreate, a computerd restart or a
 token rotation left no row. `nora-computer` runs on the host as the operator,
 outside the nora container and outside the VM, so it cannot append to Postgres
@@ -154,7 +154,7 @@ the way the tools do; it keeps a **host-side spool first** and replays it into
 - `nora-computer policy-log [--json]` is the audited way to read `sbx policy log`:
   it records the read first and does not read if it could not record it.
 
-Read it back using the [installed host helper](../../docs/configuration.md#host-migration-and-installed-files):
+Read it back using the [installed host helper](../../docs/operations/configuration.md#host-migration-and-installed-files):
 
 ```bash
 cd ~/workspace/nora && python3 ~/workspace/nora/scripts/secret_delivery.py --runtime-root ~/workspace/nora --compose-exec -T db psql -U nora -d nora -Atc \
@@ -191,9 +191,9 @@ A **recreate deletes /workspace**, and the audit of 2026-10-01 saw three of them
   last backup that holds any room. It logs `holds no rooms; nothing to back up`,
   makes no archive and prunes nothing.
 - **Not in it:** each room's `browser/` directory (a Chromium profile is a
-  credential store; its cookies are never backed up, design/sandbox-runtime/files.md «Backup and restore») and computerd's
+  credential store; its cookies are never backed up, docs/design/sandbox-runtime/files.md «Backup and restore») and computerd's
   `.tmux` sockets. A project folder that happens to be called `browser` is kept.
-- **It is rollback, not off-host backup** (design/sandbox-runtime/files.md «Backup and restore»): the same machine, the same
+- **It is rollback, not off-host backup** (docs/design/sandbox-runtime/files.md «Backup and restore»): the same machine, the same
   disk. Copy `~/nora-backups` off the host if the host's loss matters.
 - **`nora-computer destroy` takes a backup first and refuses if it cannot**
   (exit 9, the VM untouched). That backup is filed under

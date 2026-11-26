@@ -14,7 +14,7 @@ edges:
 Every measurement below runs **on master and on the branch**, with a case
 count that can separate a fix from noise: one example decides nothing (the
 Relevance Gate's same 40 cases scored 0 to 2 run to run on one build). How a
-corpus is run is `docs/eval-sop.md`; the numbers go in the PR.
+corpus is run is `docs/engineering/eval-sop.md`; the numbers go in the PR.
 
 ## 1. Work recall (new corpus)
 

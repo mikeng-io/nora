@@ -9,7 +9,7 @@ body:
         Stated as a fact about what is wrong, not as a task — and the title is
         `<Area>: <the gap>` (e.g. `Note tier: discharge pipeline — route settled
         note content on close`). The full reasoning behind every heading below
-        lives in `docs/maintainers/conventions.md` §Issues.
+        lives in `docs/engineering/conventions.md` §Issues.
 
   - type: dropdown
     id: area

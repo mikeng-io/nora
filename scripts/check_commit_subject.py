@@ -4,7 +4,7 @@
 Three failure shapes this catches:
 
 1. A subject with NO type at all, most often a bare `Merge ...` line (the
-   GitHub default merge message, which docs/maintainers/conventions.md's merge-strategy rule
+   GitHub default merge message, which docs/engineering/conventions.md's merge-strategy rule
    forbids).
 2. An UNDECLARED type. A type that is in use but not declared is a convention
    that only looks agreed.
@@ -70,7 +70,7 @@ PROVENANCE = ("Environment", "Agent", "Model")
 SUBJECT_RE = re.compile(rf"^({TYPES_RE})(\([^)]+\))?!?: .+")
 
 # Bare `Merge pull request #N from ...` / `Merge branch ...` are GitHub's
-# default merge subjects. The authored-merge rule (docs/maintainers/conventions.md §Merge
+# default merge subjects. The authored-merge rule (docs/engineering/conventions.md §Merge
 # strategy) REPLACES them with a `merge: <summary of the arc>` subject.
 BARE_MERGE_RE = re.compile(r"^(Merge pull request|Merge branch|Merge remote-tracking branch)\b")
 # `Revert "<original subject>"` is standard git plumbing; allowed as-is.
@@ -104,7 +104,7 @@ def check_subject(subject: str) -> list[str]:
                 "authored-merge prefix on a GitHub-DEFAULT body. The prefix is right;\n"
                 "    the body is the default merge message. Write the arc instead:\n"
                 "    merge: <what the branch set out to fix, what was measured, what shipped>\n"
-                "    (docs/maintainers/conventions.md §Merge strategy)"
+                "    (docs/engineering/conventions.md §Merge strategy)"
             )
         return problems
     if re.match(r"^merge\s*:", subject):
@@ -117,7 +117,7 @@ def check_subject(subject: str) -> list[str]:
             "malformed `merge:` subject — the arc is empty, or the prefix is not\n"
             "    flush (`merge: <arc>`). Say what the branch set out to fix and what\n"
             "    shipped, e.g. `merge: the conventions get delivered (#246)`.\n"
-            "    (docs/maintainers/conventions.md §Merge strategy)"
+            "    (docs/engineering/conventions.md §Merge strategy)"
         )
         return problems
     if OLD_MERGE_RE.match(subject):
@@ -125,7 +125,7 @@ def check_subject(subject: str) -> list[str]:
             "superseded merge-subject generation (`Merge <branch>: ...`). The current\n"
             "    shape is `merge: <the arc>` - what the branch set out to fix, what was\n"
             "    measured, what shipped. The branch name is already in the merge commit;\n"
-            "    it does not need to be in the subject. (docs/maintainers/conventions.md section Merge\n"
+            "    it does not need to be in the subject. (docs/engineering/conventions.md section Merge\n"
             "    strategy.)"
         )
         return problems
@@ -133,7 +133,7 @@ def check_subject(subject: str) -> list[str]:
         problems.append(
             "GitHub-default merge subject. Write an AUTHORED merge subject:\n"
             "    merge: <what the branch set out to fix, what was measured, what shipped>\n"
-            "    (docs/maintainers/conventions.md §Merge strategy)"
+            "    (docs/engineering/conventions.md §Merge strategy)"
         )
         return problems
     if REVERT_RE.match(subject):

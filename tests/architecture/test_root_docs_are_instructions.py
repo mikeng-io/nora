@@ -15,9 +15,12 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 LOGS = {"CHANGELOG.md", "THIRD_PARTY_NOTICES.md"}
+#: The process documents moved into docs/engineering/ stay instructions an agent reads.
+MOVED = ["docs/engineering/orchestration.md", "docs/engineering/review.md"]
 GUIDES = sorted(
     [p for p in ROOT.glob("*.md") if p.name not in LOGS]
     + list(ROOT.glob(".agents/skills/*/SKILL.md"))
+    + [ROOT / p for p in MOVED]
 )
 
 # A bare ISO date; one inside a path or an anchor is part of a name.
@@ -34,7 +37,7 @@ def test_the_guides_are_found() -> None:
     names = {p.relative_to(ROOT).as_posix() for p in GUIDES}
     assert {
         "AGENTS.md",
-        "ORCHESTRATION.md",
+        "docs/engineering/orchestration.md",
         "GLOSSARY.md",
         ".agents/skills/nora-land/SKILL.md",
     } <= names
@@ -75,17 +78,18 @@ def test_guide_carries_no_history(path: Path) -> None:
 # can only be consolidated, never extended.
 BUDGET = {
     "AGENTS.md": 250, "ARCHITECTURE.md": 176, "CLAUDE.md": 19, "CODE_OF_CONDUCT.md": 85,
-    "CONTRIBUTING.md": 198, "DESIGN.md": 519, "GLOSSARY.md": 692, "ORCHESTRATION.md": 293,
-    "README.md": 247, "REVIEW.md": 51, "SECURITY.md": 25, "SECURITY_MODEL.md": 90,
+    "CONTRIBUTING.md": 198, "GLOSSARY.md": 692, "README.md": 247, "SECURITY.md": 25,
+    "docs/engineering/orchestration.md": 293, "docs/engineering/review.md": 51,
 }
-ROOT_GUIDES = [p for p in GUIDES if p.parent == ROOT]
+ROOT_GUIDES = [p for p in GUIDES if p.parent == ROOT or p.relative_to(ROOT).as_posix() in MOVED]
 
 
-@pytest.mark.parametrize("path", ROOT_GUIDES, ids=lambda p: p.name)
+@pytest.mark.parametrize("path", ROOT_GUIDES, ids=lambda p: p.relative_to(ROOT).as_posix())
 def test_guide_is_within_its_budget(path: Path) -> None:
-    assert path.name in BUDGET, f"{path.name} needs a line budget"
+    name = path.relative_to(ROOT).as_posix()
+    assert name in BUDGET, f"{name} needs a line budget"
     lines = len(path.read_text(encoding="utf-8").splitlines())
-    assert lines <= BUDGET[path.name], (
-        f"{path.name} is {lines} lines, budget {BUDGET[path.name]}: revise or consolidate "
+    assert lines <= BUDGET[name], (
+        f"{name} is {lines} lines, budget {BUDGET[name]}: revise or consolidate "
         "the section that owns the subject instead of adding to it"
     )

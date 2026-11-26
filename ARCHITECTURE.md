@@ -1,7 +1,7 @@
 # Nora — Architecture
 
 The map of the system: how it runs and where its code lives. Decisions and their
-costs are in [ADRs](docs/adr/README.md) and the [decision index](design/09-decision-index.md);
+costs are in [ADRs](docs/adr/README.md) and the [decision index](docs/design/09-decision-index.md);
 enabled capabilities and room grants are deployment configuration.
 
 ## Continuity beyond a session
@@ -66,7 +66,7 @@ room, including when queued work is delivered.
 Cognition processes stimuli and maintains working state, notes, events and
 reminders; the Dreamer supplies background research, including culture work.
 Both share one agent factory, tool set and instruction infrastructure
-([execution and time](design/cognition-loop/execution.md)). The
+([execution and time](docs/design/cognition-loop/execution.md)). The
 reminder heartbeat drives deferred conscious turns; addressed turns continue
 through engagement.
 
@@ -75,7 +75,7 @@ independent copies of Nora's policy or memory.
 
 ## Code map
 
-Code is grouped by **area**, one package per subject designed under `design/`
+Code is grouped by **area**, one package per subject designed under `docs/design/`
 ([ADR 0037](docs/adr/0037-code-is-grouped-by-area-and-depends-inward.md)), in
 three layers importing inward ([rules](nora/AGENTS.md), enforced in `pyproject.toml`).
 
@@ -155,7 +155,7 @@ the image revision when reconstructing running behaviour.
 - Nora publishes health and metrics on host loopback port 9100. Health combines
   dependency and platform status; inspect degraded-platform detail as well as
   the HTTP status. Prometheus/Alertmanager and tracing serve different needs;
-  [observability](docs/observability.md) and the [runbook](docs/runbook.md)
+  [observability](docs/operations/observability.md) and the [runbook](docs/operations/runbook.md)
   describe diagnosis.
 
 Application releases deploy through the installed Komodo Stack: a published

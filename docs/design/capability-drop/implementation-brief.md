@@ -4,7 +4,7 @@
 
 The Nora repo has a generated `kind: capability` doctrine section rendered by
 `ToolRegistry.capability()` from the `NATIVE_TOOLS.when` clauses. Design
-decision DEC-150 (bundle at `design/capability-drop/`, approved) deletes it:
+decision DEC-150 (bundle at `docs/design/capability-drop/`, approved) deletes it:
 the tool schemas (docstring-derived) already carry 85% of the when-clause
 content, and the two behavioural rules the block carried that schemas cannot
 (closed-world, sourcing) move to conduct.md. **This brief is the closed
@@ -12,10 +12,10 @@ decision — implement exactly this, do not redesign. If evidence conflicts with
 a listed invariant, STOP and return BLOCKED.**
 
 Design bundle (read these first):
-- `design/capability-drop/00-overview.md`
-- `design/capability-drop/01-when-stays-in-schema.md`
-- `design/capability-drop/02-rules-to-conduct.md`
-- `design/capability-drop/03-code-surface.md` — the authoritative per-file change list
+- `docs/design/capability-drop/00-overview.md`
+- `docs/design/capability-drop/01-when-stays-in-schema.md`
+- `docs/design/capability-drop/02-rules-to-conduct.md`
+- `docs/design/capability-drop/03-code-surface.md` — the authoritative per-file change list
 
 ## Invariants (non-negotiable)
 
@@ -73,7 +73,7 @@ Design bundle (read these first):
 - `nora/skills/navigation/SKILL.md`: remove `capability` from `authority_above`
   (becomes `[]` or `[situation]` — check the skill loader's authority rules).
 - `conduct.md`: add the two behavioural rules from
-  `design/capability-drop/02-rules-to-conduct.md` §3 draft wording (closed-world
+  `docs/design/capability-drop/02-rules-to-conduct.md` §3 draft wording (closed-world
   + sourcing), by-category phrasing, NO tool names.
 - `constraints.md`/`identity.md` `not_here` lines: "what she can find out is
   generated from the tool registry" → "what she can find out is described by the

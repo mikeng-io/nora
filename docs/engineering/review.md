@@ -4,9 +4,9 @@ Review answers: **does this candidate satisfy the agreed change, and what
 real regression could it introduce?** It returns a scoped judgment and
 evidence — not another design, a task list or merge permission.
 
-[ORCHESTRATION.md](ORCHESTRATION.md) owns tiers, independence, dispositions
-and convergence, the [code standards](docs/code-standards.md) the rules a
-finding names, and [nora-review](.agents/skills/nora-review/SKILL.md) the procedure. All
+[docs/engineering/orchestration.md](orchestration.md) owns tiers, independence, dispositions
+and convergence, the [code standards](code-standards.md) the rules a
+finding names, and [nora-review](../../.agents/skills/nora-review/SKILL.md) the procedure. All
 reviewers share this contract — shaping behavior, never enforcement or paid-review admission.
 
 ## Scope and inputs
@@ -29,7 +29,7 @@ outside it are not newly reviewed or implicitly passed.
 
 Lenses follow what changed and can break, never a fixed panel —
 application, security/privacy, data/concurrency, measurement/operations —
-and ORCHESTRATION.md's risk floors. Over-build is always a lens: a guard,
+and docs/engineering/orchestration.md's risk floors. Over-build is always a lens: a guard,
 policy, permission or abstraction the brief did not ask for is a scope finding.
 
 ## Findings and return

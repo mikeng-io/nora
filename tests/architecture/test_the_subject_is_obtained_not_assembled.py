@@ -66,7 +66,7 @@ ROOT = Path(__file__).resolve().parents[2]
 _SEAMS = frozenset({
     "database_url", "workdir", "overrides", "identity", "policy", "now", "room",
     # `circle`/`signal_rpc_url` state what the OUTSIDE WORLD does (argued in
-    # design/evaluation/subject.md): which controlled absence a case
+    # docs/design/evaluation/subject.md): which controlled absence a case
     # presents and where the transport would reach — input, not collaborators.
     "circle", "signal_rpc_url",
     # `environment` states WHICH RECORDED SERVICES the case's world answers
@@ -84,7 +84,7 @@ def test_the_spec_names_only_seams() -> None:
     assert fields == _SEAMS, (
         f"SubjectSpec changed: {sorted(fields ^ _SEAMS)}. A new field is a claim "
         "that something has stopped being part of Nora — argue it in "
-        "design/evaluation/subject.md and amend this list, or find "
+        "docs/design/evaluation/subject.md and amend this list, or find "
         "another way. Every one of build_offline_pipeline's 21 parameters was "
         "added for a good local reason."
     )

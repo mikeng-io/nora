@@ -1,6 +1,6 @@
-"""Docs cite repo paths inline in backticks — `design/09-decision-index.md`,
+"""Docs cite repo paths inline in backticks — `docs/design/09-decision-index.md`,
 `nora/agent/tools.py` — and a doc move (such as the ADRs moving from
-`design/adr/` to `docs/adr/`) leaves every backticked citation of the old
+`docs/design/adr/` to `docs/adr/`) leaves every backticked citation of the old
 location dangling silently, because a doc move is not a `grep` anyone runs by
 habit. This gate checks that each cited path still exists.
 
@@ -16,13 +16,13 @@ FROM a file under it, and a citation OF a path under it from anywhere else.
 sweep of every backticked, slash-containing token in every tracked `.md` file
 produces mostly non-defects: version-like numbers and IPs (no extension), bare
 relative mentions inside a file already scoped to that subtree
-(`agent/guards.py` inside a doc under `design/whatsapp-adoption/README.md`), and — the
+(`agent/guards.py` inside a doc under `docs/design/whatsapp-adoption/README.md`), and — the
 largest category — prose that talks ABOUT a deleted or not-yet-built file
 rather than pointing at a live one. Each tightening below is a STRUCTURAL
 signal already present in this repo's own conventions, not a per-path guess:
 
   - Only a reference anchored at a real top-level directory (`nora/`,
-    `design/`, `docs/`, `tests/`, `evals/`, `deploy/`, `scripts/`,
+    `docs/design/`, `docs/`, `tests/`, `evals/`, `deploy/`, `scripts/`,
     `.github/`, `.agents/`) or a known root file counts as a path
     CLAIM. A bare `doctrine/identity.md` is prose shorthand for a concept
     ("her doctrine"), not a root-relative path — `doctrine/` is not itself a
@@ -39,7 +39,7 @@ signal already present in this repo's own conventions, not a per-path guess:
     "RETIRED", "DEPRECATED", "SUPERSEDED", or "deleted", or the phrase
     "resolves in git history", is read as the same kind of deliberate
     historical citation the superpowers exemption already covers —
-    `design/09-decision-index.md`'s own header states that a decision whose
+    `docs/design/09-decision-index.md`'s own header states that a decision whose
     subject is deleted is marked exactly this way and never rewritten.
   - A path that is a LITERAL (non-glob) entry in `.gitignore` is a generated
     artifact, not a moved one — `nora/version.json` is built at image time and
@@ -69,12 +69,18 @@ from pathlib import Path
 
 from scripts.check_documents import STAGED_TARGETS
 
+_PRE_MOVE = (
+    "design/", "docs/maintainers/", "docs/runbook.md", "docs/configuration.md",
+    "docs/observability.md", "docs/code-standards.md", "docs/eval-sop.md",
+    "ORCHESTRATION.md", "REVIEW.md", "SECURITY_MODEL.md", "DESIGN.md",
+)
+
 ROOT = Path(__file__).resolve().parents[2]
 
 # Only these anchor a backticked token as a repo-root-relative path CLAIM.
 # `doctrine/` is deliberately absent — see the module docstring.
 _CHECKED_PREFIXES = (
-    "design/",
+    "docs/design/",
     "docs/",
     "nora/",
     "tests/",
@@ -254,7 +260,7 @@ _KNOWN_DANGLING: dict[tuple[str, str], str] = {
     ),
 
     (
-        "design/online-status/04-consumers.md",
+        "docs/design/online-status/04-consumers.md",
         "scripts/render_release_notes.py",
     ): (
         "deleted 2026-10-16 with the manual release scheme and the upgrade "
@@ -277,7 +283,7 @@ _KNOWN_DANGLING: dict[tuple[str, str], str] = {
     # `nora/agent/disclosure.py` (DEC-124) stays pinned: it was never built —
     # DEC-124's own row names it as a prospective housekeeping move, not a path
     # that ever existed, so no "deleted" marker fits it.
-    ("design/09-decision-index.md", "nora/agent/disclosure.py"): (
+    ("docs/design/09-decision-index.md", "nora/agent/disclosure.py"): (
         "never built; DEC-124's row names `nora/agent/disclosure.py` "
         "prospectively — 'a housekeeping step for whoever builds the first "
         "tool that imports it from outside whereis' — as a place "
@@ -303,7 +309,7 @@ _KNOWN_DANGLING: dict[tuple[str, str], str] = {
     **{
         (doc, old): f"pre-port copy deleted 2026-09-21; now evals/corpora/{new}"
         for doc, old, new in (
-            ("design/09-decision-index.md",
+            ("docs/design/09-decision-index.md",
              "evals/adversarial/being_contradicted.yaml", "being_contradicted.yaml"),
         )
     },
@@ -315,47 +321,51 @@ _KNOWN_DANGLING: dict[tuple[str, str], str] = {
     # names the code of its day is not drift, and mass-rewriting prose to chase
     # a delete loses the record of what the delete removed.
     #
-    # The OPERATOR-facing docs (`docs/runbook.md`, `docs/eval-sop.md`,
-    # `docs/maintainers/conventions-rationale.md`, the `make eval-*` targets)
+    # The OPERATOR-facing docs (`docs/operations/runbook.md`, `docs/engineering/eval-sop.md`,
+    # `docs/engineering/conventions-rationale.md`, the `make eval-*` targets)
     # name `python -m evals`, because those tell somebody to run a command.
     **{
         (doc, "evals/run.py"): (
             "the old eval CLI, deleted 2026-09-18; this line records what was "
-            "true when it was written (design/evaluation Step 5)"
+            "true when it was written (docs/design/evaluation Step 5)"
         )
         for doc in (
-            "design/ambient-loop/02-doctrine-and-measurement.md",
-            "design/capability-drop/03-code-surface.md",
-            "design/capability-drop/implementation-brief.md",
+            "docs/design/ambient-loop/02-doctrine-and-measurement.md",
+            "docs/design/capability-drop/03-code-surface.md",
+            "docs/design/capability-drop/implementation-brief.md",
         )
     },
     # The eval-layer modules live in `tests/`; these references name where the
     # code was before.
-    ("design/capability-drop/03-code-surface.md", "evals/harness.py"): (
+    ("docs/design/capability-drop/03-code-surface.md", "evals/harness.py"): (
         "re-homed into `tests/` 2026-09-18; the reference records where "
-        "it lived (design/evaluation Step 5)"
+        "it lived (docs/design/evaluation Step 5)"
     ),
-    ("design/13-trace-content-and-redaction.md", "evals/judge.py"): (
+    ("docs/design/13-trace-content-and-redaction.md", "evals/judge.py"): (
         "re-homed into `tests/` 2026-09-18; the reference records where "
-        "it lived (design/evaluation Step 5)"
+        "it lived (docs/design/evaluation Step 5)"
     ),
-    ("design/capability-drop/03-code-surface.md", "nora/app/eval_support.py"): (
-        "re-homed to `tests/offline_eval_support.py` 2026-09-18 (design/evaluation Step 5); the "
+    ("docs/design/capability-drop/03-code-surface.md", "nora/app/eval_support.py"): (
+        "re-homed to `tests/offline_eval_support.py` 2026-09-18 (docs/design/evaluation Step 5); "
+        "the "
         "reference records where it lived"
     ),
-    ("design/capability-drop/implementation-brief.md", "evals/harness.py"): (
-        "re-homed to `tests/offline_eval_harness.py` 2026-09-18 (design/evaluation Step 5); the "
+    ("docs/design/capability-drop/implementation-brief.md", "evals/harness.py"): (
+        "re-homed to `tests/offline_eval_harness.py` 2026-09-18 (docs/design/evaluation Step 5); "
+        "the "
         "reference records where it lived"
     ),
-    ("design/capability-drop/implementation-brief.md", "nora/app/eval_support.py"): (
-        "re-homed to `tests/offline_eval_support.py` 2026-09-18 (design/evaluation Step 5); the "
+    ("docs/design/capability-drop/implementation-brief.md", "nora/app/eval_support.py"): (
+        "re-homed to `tests/offline_eval_support.py` 2026-09-18 (docs/design/evaluation Step 5); "
+        "the "
         "reference records where it lived"
     ),
     (
         "docs/adr/0011-the-relevance-gate-stays-off-the-sdk-transport.md",
         "nora/app/eval_support.py",
     ): (
-        "re-homed to `tests/offline_eval_support.py` 2026-09-18 (design/evaluation Step 5); the "
+        "re-homed to `tests/offline_eval_support.py` 2026-09-18 (docs/design/evaluation Step 5); "
+        "the "
         "reference records where it lived"
     ),
     # The ROUTING tier, which has no counterpart — DEC-76 is NOT ENFORCED.
@@ -363,59 +373,62 @@ _KNOWN_DANGLING: dict[tuple[str, str], str] = {
     ("voice-lab/docs/audit-brief-kimi-integration.md", "nora/platform/discord/voice_session.py"): (
         "a 2026-09 audit brief moved in from the voice-lab repo; it proposes where "
         "stage-1 TTS+ducking WOULD live. The file was never created (the voice "
-        "channel went the sidecar route, design/voice-channel/receive.md) — the brief is a "
+        "channel went the sidecar route, docs/design/voice-channel/receive.md) — the brief is a "
         "historical record of the proposal, not a link to fix"
     ),
-    ("design/discord-integration/00-overview.md", "deploy/watchdog.sh"): (
+    ("docs/design/discord-integration/00-overview.md", "deploy/watchdog.sh"): (
         "the shell watchdog was deleted 2026-09-09 once Prometheus covered its one "
         "condition with a real delivery path; this design records the reasoning as it "
         "stood, and rewriting a decision record to match later code is what this "
         "repo's design docs deliberately do not do"
     ),
-    ("design/08-stack-refactor-brief.md", "nora/store/db.py"): (
+    ("docs/design/08-stack-refactor-brief.md", "nora/store/db.py"): (
         "pre-refactor handoff brief describing the SQLite-era code the brief itself "
         "proposed replacing; nora/store/ no longer exists post-refactor"
     ),
-    ("design/08-stack-refactor-brief.md", "nora/store/migrate.py"): (
+    ("docs/design/08-stack-refactor-brief.md", "nora/store/migrate.py"): (
         "pre-refactor handoff brief describing the SQLite-era code the brief itself "
         "proposed replacing; nora/store/ no longer exists post-refactor"
     ),
-    ("design/09-decision-index.md", ".github/workflows/gates.yml"): (
+    ("docs/design/09-decision-index.md", ".github/workflows/gates.yml"): (
         "A12 names a CI gate file; this repo deliberately runs no CI (operator decision) "
         "and the file was never added back after that decision"
     ),
-    ("design/11-recall-and-threading.md", "nora/engagement/recall.py"): (
+    ("docs/design/11-recall-and-threading.md", "nora/engagement/recall.py"): (
         "early recall design; the module never landed at this path"
     ),
-    ("design/11-recall-and-threading.md", "nora/infra/sql/migrations/versions/0003_quoted_ts.py"): (
+    (
+        "docs/design/11-recall-and-threading.md",
+        "nora/infra/sql/migrations/versions/0003_quoted_ts.py",
+    ): (
         "migration was renumbered/renamed before landing (0003_presence_places.py today), "
         "same shape as 0017_events.py's own documented renumbering"
     ),
-    ("design/event-abstraction/02-naming-rename.md", "nora/infra/sql/events.py"): (
+    ("docs/design/event-abstraction/02-naming-rename.md", "nora/infra/sql/events.py"): (
         "naming-rename plan; shipped as nora/domain/events.py instead"
     ),
-    ("design/event-abstraction/02-naming-rename.md", "nora/testing/events.py"): (
+    ("docs/design/event-abstraction/02-naming-rename.md", "nora/testing/events.py"): (
         "naming-rename plan; no such fake module was built"
     ),
-    ("design/event-abstraction/02-naming-rename.md", "tests/test_events_domain.py"): (
+    ("docs/design/event-abstraction/02-naming-rename.md", "tests/test_events_domain.py"): (
         "naming-rename plan's proposed test names; shipped as tests/unit/test_standing_event.py"
     ),
-    ("design/event-abstraction/02-naming-rename.md", "tests/test_events_service.py"): (
+    ("docs/design/event-abstraction/02-naming-rename.md", "tests/test_events_service.py"): (
         "naming-rename plan's proposed test names; shipped as tests/unit/test_standing_event.py"
     ),
-    ("design/event-abstraction/02-naming-rename.md", "tests/test_event_tools.py"): (
+    ("docs/design/event-abstraction/02-naming-rename.md", "tests/test_event_tools.py"): (
         "naming-rename plan's proposed test names; shipped as tests/unit/test_standing_event.py"
     ),
-    ("design/event-abstraction/02-naming-rename.md", "tests/test_web_events.py"): (
+    ("docs/design/event-abstraction/02-naming-rename.md", "tests/test_web_events.py"): (
         "naming-rename plan's proposed test names; shipped as tests/unit/test_standing_event.py"
     ),
     (
-        "design/event-abstraction/02-naming-rename.md",
+        "docs/design/event-abstraction/02-naming-rename.md",
         "tests/contract/test_event_store_contract.py",
     ): (
         "naming-rename plan's proposed contract suite; not built under this name"
     ),
-    ("design/event-abstraction/04-dispatch-and-batching.md", "tests/test_events.py"): (
+    ("docs/design/event-abstraction/04-dispatch-and-batching.md", "tests/test_events.py"): (
         "same event-abstraction planning-doc-vs-shipped-name drift as 02-naming-rename.md"
     ),
     ("docs/adr/0020-documents-are-json-specs-the-portal-renders.md",
@@ -451,8 +464,12 @@ def test_every_doc_reference_resolves_or_is_a_known_finding() -> None:
 
     # A path a later calibration unit generates is staged in the document gate,
     # which owns the list; anything else unresolved is a finding.
+    # An ADR is history and is never edited, so it may cite a path as it stood
+    # before the docs/ move.
     unpinned = {
-        k: v for k, v in found.items() if k not in _KNOWN_DANGLING and k[1] not in STAGED_TARGETS
+        k: v for k, v in found.items()
+        if k not in _KNOWN_DANGLING and k[1] not in STAGED_TARGETS
+        and not (k[0].startswith("docs/adr/") and k[1].startswith(_PRE_MOVE))
     }
     assert not unpinned, (
         "new dangling documentation reference(s) — a backticked path that no "

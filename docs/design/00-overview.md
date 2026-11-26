@@ -4,7 +4,7 @@ title: "Nora — Ambient Signal Group Agent: Overview & Topology"
 description: "Two-layer architecture: ambient ingest (no Agent SDK) writes Signal traffic into SQLite audit + Honcho; tagging path runs a stateless Strands agent that reuses SDK primitives for context, reasoning, and reply."
 tags: [nora, design, architecture, strands, ambient, signal]
 timestamp: '2026-08-03'
-supersedes: "DESIGN.md (2026-08-01, from-scratch no-framework v1)"
+supersedes: "docs/design/appearance/README.md (2026-08-01, from-scratch no-framework v1)"
 edges:
   - {dst: 01-ambient-ingest, rel: decides_on, provenance: asserted}
   - {dst: 02-tagging-path, rel: decides_on, provenance: asserted}
@@ -156,7 +156,7 @@ Telegram are extensions, not rebuilds.
   Honcho peer (`04-config-identity.md §Persons`).
 
 Signal was the only adapter when this was written; Discord joined it on
-2026-08-14 (DEC-102, `design/discord-integration/`), and every enabled adapter
+2026-08-14 (DEC-102, `docs/design/discord-integration/`), and every enabled adapter
 now runs at once with replies routed back to the platform they came from. See
 `01-ambient-ingest.md`, `02-tagging-path.md`.
 
@@ -173,11 +173,11 @@ now runs at once with replies routed back to the platform they came from. See
   (tags/replies/errors counters + latency histograms). See `01-ambient-ingest.md
   §Observability`.
 - **Evaluation:** `strands-agents-evals` is the framework, enforced rather than
-  merely cited (`design/evaluation/measurement.md`). The architecture and
-  measurement contract live in that bundle and `design/evaluation/coverage.md`.
+  merely cited (`docs/design/evaluation/measurement.md`). The architecture and
+  measurement contract live in that bundle and `docs/design/evaluation/coverage.md`.
   `05-evaluation.md` is the original 2026-08-03 plan, superseded — its CI-gate
   shape and evaluator axes were never implemented and are replaced by the
-  scenario map (`design/evaluation/coverage.md`).
+  scenario map (`docs/design/evaluation/coverage.md`).
 
 ## External Services (unchanged, verified)
 

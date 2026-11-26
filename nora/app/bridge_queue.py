@@ -1,4 +1,4 @@
-"""The app's side of the platform-bridge handoff (design/platform-bridges).
+"""The app's side of the platform-bridge handoff (docs/design/platform-bridges).
 
 `StreamReader` — one ELECTED reader per Redis stream (a Postgres advisory
 lock is the election). It `XAUTOCLAIM`s pending entries first (a dead
@@ -96,7 +96,7 @@ _STATE_EVENT: dict[str, bt.LifecycleEvent] = {
     "uncertain": "attempt_failed",
 }
 
-#: Independent claim lanes (design/platform-bridges/03-ownership-and-recovery.md)
+#: Independent claim lanes (docs/design/platform-bridges/03-ownership-and-recovery.md)
 #: — "do not serialize all ingestion behind a slow model" made structural.
 #: The comprehend lane runs every kind that never holds a model turn; the
 #: speak lane runs the kinds that can. Within a lane the DB claim is the
@@ -1145,7 +1145,7 @@ class WorkRunner:
                 expect_scope=self._observation_scope(work))
         except (ValueError, KeyError, TypeError) as exc:
             # A malformed wire contract is a RETAINED FAILURE, never a silent
-            # successful consumption (design/platform-bridges/02-wire-and-platforms.md):
+            # successful consumption (docs/design/platform-bridges/02-wire-and-platforms.md):
             # the event says what it could not record, durably, for an operator to read.
             await finish("failed_retained",
                          {"reason": "malformed_observation"},

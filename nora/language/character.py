@@ -150,7 +150,7 @@ class PersonKey:
     rooms: tuple[CharacterRoom, ...]
     home: str
     #: The rooms that list them (`primary_id`s): where evidence about them
-    #: counts for their Profile (design/unified-memory/profiles.md).
+    #: counts for their Profile (docs/design/unified-memory/profiles.md).
     listed: tuple[str, ...] = ()
 
 

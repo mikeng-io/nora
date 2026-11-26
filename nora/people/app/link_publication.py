@@ -1,5 +1,5 @@
 """Publish an approved bilateral account link — the central
-consolidation executor of `design/managed-identity-access/`.
+consolidation executor of `docs/design/managed-identity-access/`.
 
 `observe` produces the authoritative snapshot a `PendingLink` records as
 its owners/revisions, so the approval binds REAL observed state.

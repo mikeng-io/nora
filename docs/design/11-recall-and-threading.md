@@ -189,7 +189,7 @@ millisecond is on the tag budget. Therefore:
 ## 1.5 Privacy
 
 **Alias resolution as a lookup target is safe only if the target set is bounded
-before any alias is consulted.** design/10-identity-and-policy-schema.md §1.3 says aliases are comprehension-only
+before any alias is consulted.** docs/design/10-identity-and-policy-schema.md §1.3 says aliases are comprehension-only
 and never resolve a SENDER; here they would resolve a lookup TARGET, which is a
 different operation with a different exposure.
 
@@ -294,7 +294,7 @@ guard. Say so rather than implying otherwise.
 | `nora/config.py` (268 L) | `memory.recall_timeout_seconds`, `memory.max_conclusions`. |
 | `nora/obs/metric_specs.py` (208 L) | `nora_recall_total{status}`, `nora_recall_people`. |
 | `nora/testing/fakes.py` (281 L, near cap) | `FakeMemoryStore.representation`. |
-| `design/09-decision-index.md` | DEC-22; R-19b. |
+| `docs/design/09-decision-index.md` | DEC-22; R-19b. |
 | `tests/test_acceptance_rules.py::RULE_TESTS` | `"R-19b": "test_recall_is_never_fetched_for_someone_outside_the_room"`. |
 | `evals/adversarial/` | one item for "tell me everything about \<alias\>". |
 
@@ -533,7 +533,7 @@ there was anything to look up, even though `load_transcript` (the renamed
 `read_buffer`, `nora/agent/tools.py:2854`, max 60 rows) already exists and
 would often reach it — the 56-row live case would have fit inside it. The
 missing piece is not a new tool; it is a reason for her to reach for the one
-that exists, or for `design/context-assembly/composition.md`'s
+that exists, or for `docs/design/context-assembly/composition.md`'s
 `read_thread(handle)` + `ContextBudget` (also never built) to replace it with
 something bounded and legible. Left for follow-up, per operator decision
 2026-09-22.
@@ -641,7 +641,7 @@ A full graph is not warranted. Do **not** build:
 | `nora/testing/fakes.py` (281 L, near cap) | `FakeRecordStore` matches — `quoted_ts`, `by_timestamps`, `set_delivery_outcome`. |
 | `tests/contract/test_audit_store_contract.py` | A `by_timestamps` / `quoted_ts` block across both stores (CLAUDE.md: a port never gains a second implementation without a shared contract suite). |
 | `tests/infra/test_schema_parity.py` | Column set + append position. |
-| `design/09-decision-index.md` | DEC-23; R-20. |
+| `docs/design/09-decision-index.md` | DEC-23; R-20. |
 | `tests/test_acceptance_rules.py::RULE_TESTS` | `"R-20": "test_a_forged_quote_cannot_put_words_in_someone_elses_mouth"`. |
 
 ---
@@ -702,6 +702,6 @@ Do not start it before that lands; steps 1–3 and 5 do not need it.
 - **How Honcho populates `peer_card`** — whether only via `PUT /peers/{id}/card`, or
   by dreaming. `/schedule_dream` exists and was not invoked.
 - **The roster design** is not in the repo (no `RosterStore` / `rosters()` / `R-19`
-  anywhere under `nora/`, `tests/` or `design/`), so §1.5 and step 4 build on a
+  anywhere under `nora/`, `tests/` or `docs/design/`), so §1.5 and step 4 build on a
   described, unwritten design.
 - **Token-cost estimates** for the recall block are estimates, not measurements.

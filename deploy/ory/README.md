@@ -9,7 +9,7 @@ self-hosted Ory **v26.2.0** (OSS):
 - `kratos/kratos.dev.yaml` — development config: sqlite DSN, private
   listeners, `identity.schemas` entry for the person schema.
 - `keto/namespaces.ts` — the OPL permission model declared by
-  `design/managed-identity-access/authorization.md`.
+  `docs/design/managed-identity-access/authorization.md`.
 - `keto/keto.dev.yaml` — development config: sqlite DSN, private read/write
   listeners, `namespaces.location` pointing at the OPL source and strict mode enabled.
   Positive and negative per-permit tuples use `grant_<permit>` and

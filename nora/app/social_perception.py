@@ -1,6 +1,6 @@
 """`SocialPerception` — what the social stream's items show, and the stimulus
-each read raises (design/cognition-loop/observation.md ;
-design/cognition-loop/observation.md).
+each read raises (docs/design/cognition-loop/observation.md ;
+docs/design/cognition-loop/observation.md).
 
 **A pass over the Record, not a step of the poll.** The poller records an item
 and its bytes and moves on; this pass, on its own clock, reads what is

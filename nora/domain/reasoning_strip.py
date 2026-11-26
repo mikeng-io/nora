@@ -204,7 +204,7 @@ class ReasoningStripStore(Protocol):
     acts on this signal — acting on it would be a behaviour change, and a retry
     would turn a deterministic request-shape incompatibility into an apparently
     intermittent one. The reader is a person
-    with `psql`, and the query is written down in `docs/runbook.md` beside the
+    with `psql`, and the query is written down in `docs/operations/runbook.md` beside the
     table rather than added here as a method
     `tests/architecture/test_store_methods_have_production_callers.py` would
     then have to be told to forgive.

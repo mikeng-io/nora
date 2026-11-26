@@ -53,5 +53,5 @@ systemctl --user enable --now nora-social-bridge
 curl -s http://127.0.0.1:19826/health    # {"ok": true}
 ```
 
-See `docs/runbook.md` §10 for operating the whole social desktop (VNC, Chrome,
+See `docs/operations/runbook.md` §10 for operating the whole social desktop (VNC, Chrome,
 OpenCLI, this bridge).

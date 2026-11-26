@@ -4,7 +4,7 @@
 trust, and private `secret.toml` credential values. In the file backend, identity
 and policy reload every three seconds after validation. Config and secrets require controlled restart or
 recreation. They are not hot reloaded. See the
-[contract amendment](adr/0033-private-secrets-and-model-endpoints.md) (DEC-325).
+[contract amendment](../adr/0033-private-secrets-and-model-endpoints.md) (DEC-325).
 
 ## Public agent identity
 
@@ -50,7 +50,7 @@ not an identity-file hot reload. See the
 
 Configure private Kratos admin and Keto read/write URLs under
 `[identity.managed]`. They must be reachable from Nora's runtime, not just the
-operator's shell. The [pinned Ory artifacts](../deploy/ory/README.md) include a
+operator's shell. The [pinned Ory artifacts](../../deploy/ory/README.md) include a
 disposable local/CI stack; its development mode, loopback host ports and volume
 cleanup commands are for that environment. An installed managed service needs
 its own persistent stores and private listener access.
@@ -79,7 +79,7 @@ portal issuer gets no other issuer's key; managed mode still refuses file
 fallback. Ory admin keys, provisioning tokens and model keys are not portal
 credentials. Optional `AUTH_TELEGRAM_ID` and `AUTH_TELEGRAM_SECRET` use the same
 private credential delivery. Recreate affected readers through the
-[validated-copy procedure](../.agents/skills/nora-deploy/SKILL.md#3-config-only-change)
+[validated-copy procedure](../../.agents/skills/nora-deploy/SKILL.md#3-config-only-change)
 after changing these loaded-once settings; updating source does not update an
 installed helper or live process.
 

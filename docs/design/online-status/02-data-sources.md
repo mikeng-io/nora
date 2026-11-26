@@ -24,7 +24,7 @@ without a Steam account answers `nothing_found`, never a guessed identity.
 
 ```python
 intents = discord.Intents.default()
-intents.message_content = True  # privileged; see design/discord-integration/01-listener-and-resilience.md
+intents.message_content = True  # privileged; see docs/design/discord-integration/01-listener-and-resilience.md
 intents.guilds = True
 intents.members = True          # privileged; the roster read needs it
 ```

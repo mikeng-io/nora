@@ -41,7 +41,7 @@
 # directly from `messages`, not guessed), so the reconstructed window is
 # everything that room actually held as of this conversion.
 
-# --- RE-HOMED 2026-09-17 (design/evaluation Step 4) -------------------------
+# --- RE-HOMED 2026-09-17 (docs/design/evaluation Step 4) -------------------------
 #
 # These cases were driven by `evals/run.py`'s `_invoke_agent`, whose own
 # docstring says what it is:

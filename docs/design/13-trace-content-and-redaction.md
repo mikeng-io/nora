@@ -11,8 +11,8 @@ status: open-decision
 
 > **Historical SDK/content investigation (2026-08-06), retained as evidence.**
 > The selected backend and current migration design live in
-> [Observability](../docs/observability.md#accepted-direction-self-hosted-signoz)
-> and [ADR 0034](../docs/adr/0034-self-hosted-signoz-unifies-application-and-llm-observability.md).
+> [Observability](../operations/observability.md#accepted-direction-self-hosted-signoz)
+> and [ADR 0034](../adr/0034-self-hosted-signoz-unifies-application-and-llm-observability.md).
 > Their acceptance includes readable content with the pinned SDK/backend; this
 > does not select a new field-level redaction policy or authorize cloud export.
 > The endpoint, storage and missing-collector statements below are historical,
@@ -27,7 +27,7 @@ documentation.
 ## Authorized evaluation exception
 
 The operator authorizes full evaluation content to the configured owner-local
-SigNoz sink. [Evaluation visibility](../docs/observability.md#evaluation-visibility)
+SigNoz sink. [Evaluation visibility](../operations/observability.md#evaluation-visibility)
 owns its export policy, SDK-native format and readback acceptance. This exception
 includes full prompts, injected context, tool schemas, inputs and results; it
 does not authorize cloud export or change ordinary runtime redaction.
@@ -53,7 +53,7 @@ they carry:
 | `tag_id`, `conversation_id`, `doctrine_sha256` | span attributes | n/a — provenance only, no content (`nora.obs.tracing.trace_attributes`, and a test pins it) |
 
 R-18 (`nora.agent.egress`) guards what reaches the GROUP. Nothing guards what
-reaches the trace, and design/12-prompt-tool-skill-boundaries.md §3 already states the general form of this
+reaches the trace, and docs/design/12-prompt-tool-skill-boundaries.md §3 already states the general form of this
 mistake: *scope is enforced at assembly, never at egress*. By the time a span
 exists the disclosure is already authorised.
 

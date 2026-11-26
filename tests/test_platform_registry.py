@@ -1,7 +1,7 @@
 """`AdapterRegistry.from_config` — builds enabled adapters and resolves each
 one's own identity at startup. An identity failure degrades THAT platform
 alone; misconfiguration still refuses to start
-(design/platform-bridges/platform-liveness.md).
+(docs/design/platform-bridges/platform-liveness.md).
 """
 
 from __future__ import annotations
@@ -399,7 +399,7 @@ async def test_a_CHECKPOINTED_instagram_does_NOT_fail_the_whole_registry(aiohttp
     assert registry.get("instagram").degraded is True
 
 
-# --- per-platform liveness (design/platform-bridges/platform-liveness.md) --
+# --- per-platform liveness (docs/design/platform-bridges/platform-liveness.md) --
 
 
 class _Clock:

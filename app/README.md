@@ -26,7 +26,7 @@ whole portal out of search except the public privacy and terms pages.
 
 On a phone the bottom bar holds Today, Map, Plans and Documents, plus a More
 cell that opens a sheet with everywhere else — People, Artifacts,
-Downloads and the four pages about her (DESIGN.md §7: five cells, no raised
+Downloads and the four pages about her (docs/design/appearance/README.md §7: five cells, no raised
 centre button). ⌘K or `/` opens a search over everything;
 `g` then `t`, `m`, `p`, `l` or `n` jumps to a page. The first portal's
 URLs (`/status`, `/memory`, `/doctrine`, `/tools`, `/events`) redirect to where their content lives now (`next.config.ts`).
@@ -84,7 +84,7 @@ Icons: `uv run --no-project --with pillow python app/scripts/make-icons.py`.
 
 ## Design
 
-`DESIGN.md` binds it, as it binds the site: `src/styles/globals.css` holds its
+`docs/design/appearance/README.md` binds it, as it binds the site: `src/styles/globals.css` holds its
 tokens one for one, in both lightings (Studio and Late night, stored under the
 same `nora-theme` key the site uses, so the choice carries between them). The
 map is MapLibre over OpenFreeMap's vector tiles in a style of its own

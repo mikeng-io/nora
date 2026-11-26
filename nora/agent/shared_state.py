@@ -1,6 +1,6 @@
 """Reads the unit's Standing, ONCE, from the canonical stores.
 
-`design/notebook-memory-types/20-standing.md`: one typed
+`docs/design/notebook-memory-types/20-standing.md`: one typed
 projection over the existing stores — scoped ledger entries,
 pending and recently resolved act rows, self-wakes, working-set findings and
 her own delivered sends — with every source's coverage named, so a failed

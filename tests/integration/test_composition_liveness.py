@@ -1,5 +1,5 @@
 """Composition under per-platform liveness
-(design/platform-bridges/platform-liveness.md): a degraded platform never stops
+(docs/design/platform-bridges/platform-liveness.md): a degraded platform never stops
 the build, bridge misconfiguration does, and the composed runtime recovers a
 degraded platform with no restart."""
 # ruff: noqa: F811 — `cfg` is the shared composition fixture, imported below

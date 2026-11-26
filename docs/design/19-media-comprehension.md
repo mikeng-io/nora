@@ -15,7 +15,7 @@ edges:
 > and location audience filters described here remain implemented and tested in
 > enabled mode, but runtime defaults them off through `[content_checks]`.
 > Credentials, doctrine, scope, consent and availability are independent.
-> See the [current decision](../docs/adr/0030-content-filters-are-disabled-by-default-and-reversible.md).
+> See the [current decision](../adr/0030-content-filters-are-disabled-by-default-and-reversible.md).
 
 
 > 2026-10-03 (DEC-277): retired; the Cognition session does this now. The note-candidates, curator, note-merge and proactive DECIDE passes, the ingest Standing event/rollup fold and the shadow machinery named here are deleted. This document is the record of what was decided at the time.
@@ -105,7 +105,7 @@ media_fetch                  layer 1: serve the stored reading
 The asymmetry is the argument. `[image a3f2c1]` is a **promise that `a3f2c1` can
 be produced**, so the copy runs before the audit write — spawning it would write
 the promise first and keep it second, which is the exact A9 violation
-`design/18-media-custody.md` exists to end, reintroduced in a smaller size (DEC-43 §5).
+`docs/design/18-media-custody.md` exists to end, reintroduced in a smaller size (DEC-43 §5).
 
 **Comprehension has no such property.** An un-comprehended image is exactly the
 state every image was in before this existed, so a comprehension that lands
@@ -485,7 +485,7 @@ were one decision until 2026-09-09: the root declared `plumbing`, whose own
 definition is "no model call anywhere under it", over a job whose every branch
 is a describer or a summarizer. Measured rather than argued: 1041 live traces
 held zero `comprehend` roots while `nora_media_comprehension_total` counted the
-reads happening. See `docs/observability.md`.
+reads happening. See `docs/operations/observability.md`.
 
 ## 9. What is verified against what
 

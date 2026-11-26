@@ -327,7 +327,7 @@ func TestLookupAccountByUsernameCallsSearchAccounts(t *testing.T) {
 	}
 }
 
-// The the search probe (design/instagram-adoption/social.md) case: the exact match is not the first hit, and items[0] is never
+// The the search probe (docs/design/instagram-adoption/social.md) case: the exact match is not the first hit, and items[0] is never
 // taken (: "one exact match was not the first result").
 func TestLookupAccountByUsernameNeverTakesItemZero(t *testing.T) {
 	p := &fakePorts{searchHits: []domain.AccountSummary{

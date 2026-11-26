@@ -125,7 +125,7 @@ version reintroduces the bug it avoids:
 
 - `BlobStore` is `put`, `get` and `delete`. `delete` is the mechanism; the
   one policy that calls it is a story frame's bound
-  (design/cognition-loop/observation.md, `nora.app.social_expiry`),
+  (docs/design/cognition-loop/observation.md, `nora.app.social_expiry`),
   which deletes only bytes no other row names
   (`nora.infra.sql.blob_refs.held_elsewhere`) and leaves a tombstone. Room
   media has no retention (DEC-43): nothing deletes it.
@@ -1174,7 +1174,7 @@ class NewCognitionSession:
 
 @runtime_checkable
 class ObservationStore(Protocol):
-    """The typed platform-observation Record (design/platform-observations
+    """The typed platform-observation Record (docs/design/platform-observations
     02): `platform_observation` history plus the `platform_object_state`
     fold head. One fold — `nora.domain.observations.fold_observation` —
     backs the incremental head update, the as-of replay and the fake, so
@@ -2051,7 +2051,7 @@ class PlaceArea:
     neighbourhood (旺角 / Mong Kok), `city` the locality or first-level area
     that holds it (九龍 / Kowloon). Either may be None. Never a street, an
     address or a coordinate: these are public names, and they become the
-    memory index's place hubs (design/unified-memory/graph.md)."""
+    memory index's place hubs (docs/design/unified-memory/graph.md)."""
 
     district: str | None = None
     city: str | None = None
@@ -2087,7 +2087,7 @@ class GeocodeCacheStore(Protocol):
 
     `area` is the same geocode's district and city (`PlaceArea`), stored
     beside the address; `area_within` is `nearest_within` for it, read by
-    `nora.analytics` to place an outing (design/unified-memory 00 step 3a)."""
+    `nora.analytics` to place an outing (docs/design/unified-memory 00 step 3a)."""
 
     async def get(self, *, lat_rounded: float, lng_rounded: float) -> str | None: ...
     async def put(
@@ -2360,7 +2360,7 @@ class SocialSubjectIndex(Protocol):
     async def members(self) -> frozenset[str] | None:
         """Every person `is_tier_zero` answers True for, less anyone whose
         `identity.toml` block sets `social = false`: the social stream's
-        membership (design/cognition-loop/observation.md), or `None` when
+        membership (docs/design/cognition-loop/observation.md), or `None` when
         the index could not be read."""
         ...
 

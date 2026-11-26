@@ -54,7 +54,7 @@ Design 33 §3's test is intrinsic and decidable at write time, and it stays:
 > entry has not finished its job.
 
 What v1 was reaching for does **not** survive as a retirement signal either.
-Version 2 proposed counting decliner verdicts against a note; design/cognition-loop/proactive.md's build
+Version 2 proposed counting decliner verdicts against a note; docs/design/cognition-loop/proactive.md's build
 audit already derives why that is wrong — «a `decline` charges no strike…
 the curator already wakes every due note daily, so waking on every look would
 strike a quiet dateless note past the ceiling in two days». A count of

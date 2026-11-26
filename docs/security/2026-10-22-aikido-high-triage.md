@@ -373,7 +373,7 @@ positive**.
 | ID | Reported location | What the value actually is | Why it is not a secret | Trust boundary / reversal |
 |---|---|---|---|---|
 | 8764_82355 | `evals/retrieval_bakeoff/qwen_llama.py:51` | public Qwen model repo/revision names and tokenizer constants around the `__all__` block | model identifiers and hashes, not credentials | none: public/fixture data; reversal = a live credential or private identifier |
-| 8764_82525 | `design/04-config-identity.md:102` (value at `:107`) | commented placeholder Discord snowflake in a `persons.yaml` example | placeholder, not a live client id | none: public/fixture data; reversal = a live credential or private identifier |
+| 8764_82525 | `docs/design/04-config-identity.md:102` (value at `:107`) | commented placeholder Discord snowflake in a `persons.yaml` example | placeholder, not a live client id | none: public/fixture data; reversal = a live credential or private identifier |
 | 8764_82516 | `deploy/signal-cli/Dockerfile:19` | `ARG SIGNAL_CLI_KEY=FA10826A74907F9EC6BBB7FC2BA2CD21B5B09570`, a 40-hex OpenPGP fingerprint | public key fingerprint (not a SHA-256 checksum and not a secret) | none: public data; reversal = a private key or live credential |
 | 8764_82513 | `deploy/signal-cli/fetch.sh:9` | the same 40-hex OpenPGP fingerprint in `KEY=` | public key fingerprint | none: public data; reversal = a private key or live credential |
 | 8764_82495 | `evals/corpora/injections.yaml:123` | base64-encoded Signal conversation id in the fixture snapshot | eval identifier, not a credential | none: public/fixture data; reversal = a live credential or private identifier |

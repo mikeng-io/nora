@@ -1,7 +1,7 @@
 package instameow
 
-// One post by its shortcode: `GET /posts/{shortcode}` (design/instagram-adoption/README.md
-// design/instagram-adoption/social.md «Shared posts and stories in a room»).
+// One post by its shortcode: `GET /posts/{shortcode}` (docs/design/instagram-adoption/README.md
+// docs/design/instagram-adoption/social.md «Shared posts and stories in a room»).
 //
 // # What the library call really is
 //
@@ -56,7 +56,7 @@ package instameow
 // The response is also validated INSIDE the wrapped function, so a REST
 // failure carried in an HTTP 200 (`"status": "fail"`, no items, a carousel
 // without its children, somebody else's post) ends the span ERROR, the same
-// guarantee design/instagram-adoption/bridge.md «Observation» requires of a GraphQL `errors` array.
+// guarantee docs/design/instagram-adoption/bridge.md «Observation» requires of a GraphQL `errors` array.
 
 import (
 	"context"

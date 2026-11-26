@@ -1,4 +1,4 @@
-# PREVIEW — proposed shape for policy.toml (design/10-identity-and-policy-schema.md).
+# PREVIEW — proposed shape for policy.toml (docs/design/10-identity-and-policy-schema.md).
 # Not loaded by anything yet.
 #
 # WHAT IS ALLOWED. Separate from config.toml (deploy cadence) and identity.toml

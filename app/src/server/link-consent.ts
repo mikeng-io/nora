@@ -11,7 +11,7 @@ import { authenticationAssertion, checkManagedSession, identityBackend, managedS
   managementURL, type AuthenticationEvent } from "./management-session";
 import { privateApiFetch } from "./private-api-fetch";
 
-// Request-bound provider consent (`design/managed-identity-access/account-linking.md`,
+// Request-bound provider consent (`docs/design/managed-identity-access/account-linking.md`,
 // `management.md`): the holder's explicit approve/refuse/cancel mints a sealed,
 // short-lived intent bound to the server-read request, the exact account, the
 // private nonce and the operation identity. Only a matching fresh provider

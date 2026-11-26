@@ -2,7 +2,7 @@ import { privateApiFetch } from "@/server/private-api-fetch";
 import { checkSession, sessionFailure } from "@/server/session";
 import { proxyDocumentRestore } from "@/server/document-restore";
 
-// Restore an old revision of a document as a new one (design/artifact/lifecycle.md). The rules
+// Restore an old revision of a document as a new one (docs/design/artifact/lifecycle.md). The rules
 // live in src/server/document-restore.ts.
 const NORA_API_BASE = process.env.NORA_API_BASE ?? "http://nora:9100";
 

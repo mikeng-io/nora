@@ -756,7 +756,7 @@ class TagContext:
     # The unit's kept memos (DEC-306), the `<memos>` index: unit-wide like
     # `notes`, filled by the tag and fire assemblers; `()` renders no block.
     memos: tuple[Memo, ...] = ()
-    # The typed SOURCE events of the transcript window (design/platform-
+    # The typed SOURCE events of the transcript window (docs/design/platform-
     # observations/observations.md): poll/room/membership/pin/artifact
     # transitions the bridge recorded, interleaved into the transcript by their own clock
     # — typed rows, never a speaker's line and never a fabricated message.
@@ -773,7 +773,7 @@ class TagContext:
     source_reads_failed: bool = False
     source_events_more: int = 0
     source_objects_more: int = 0
-    # `retained_sources` is the retained lane (design/platform-
+    # `retained_sources` is the retained lane (docs/design/platform-
     # observations/projections.md): `RetainedSource`s — the room's open notes'
     # curated `object_refs` resolved NOW, each with its CURRENT folded head or
     # an explicit unresolved marker. An object an ongoing matter tracks stays in
@@ -806,7 +806,7 @@ class TagContext:
     # `read_culture` keyed `nora_character_key(unit)` on the tag and fire turns.
     # `None` until the unit has one.
     self_account: CultureRevision | None = None
-    # THE SWITCH (design/unified-memory/profiles.md, `[memory.profile] read`): each entity
+    # THE SWITCH (docs/design/unified-memory/profiles.md, `[memory.profile] read`): each entity
     # of this turn's Profile account — self, room, unit, then the persons — read
     # through `read_profile` and rendered as `<profile>` blocks INSTEAD of
     # `self_account`, `culture`, `unit_culture`, `character`, `peer_card`,
@@ -891,7 +891,7 @@ class TagContext:
     # this room. `None` (an offline harness, a caller with no policy) is
     # `mode = "off"`: every block renders.
     lineage_room: RenderRoom | None = None
-    # The one Standing view (design/notebook-memory-types/20-standing.md):
+    # The one Standing view (docs/design/notebook-memory-types/20-standing.md):
     # positions, open judgements, pending acts and what she already did,
     # read from the canonical stores by the scoped reader and rendered as
     # the single `standing` block every occasion shares. `None` when no
@@ -915,7 +915,7 @@ class TagContext:
     # while `[subagent]` is off, in a room with no job in the window, and in every harness
     # that wires no reader: the block then renders nothing.
     subagents: SubagentsView | None = None
-    # `<recalled>`, the pre-fetch (design/unified-memory/README.md):
+    # `<recalled>`, the pre-fetch (docs/design/unified-memory/README.md):
     # the memory index searched from this message's own seeds before the
     # turn, as `nora.agent.memory_search.render_packet`'s items (the same
     # shape `memory_search` answers with), cut at `PREFETCH_TOKENS`. Tag turn

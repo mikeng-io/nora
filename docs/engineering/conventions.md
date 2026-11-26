@@ -108,7 +108,7 @@ Linear owns execution priorities, dependencies and completion; a report can link
 copying the task description or status back and forth. Small direct changes
 need no ticket: the PR records the operator's intent and result.
 
-[ORCHESTRATION.md](../../ORCHESTRATION.md#artifact-ownership) defines artifact
+[docs/engineering/orchestration.md](orchestration.md#artifact-ownership) defines artifact
 ownership; `nora-work` routes the lifecycle and `nora-decision` records reports
 or deferred work. Follow the relevant procedure rather than copying it here.
 
@@ -131,7 +131,7 @@ content on close"*, not *"Add discharge pipeline"*.
 *Design-anchored*, when a design document already specified this:
 
 ```
-**Design:** `design/<topic>/<file>.md` (<what it covers>).
+**Design:** `docs/design/<topic>/<file>.md` (<what it covers>).
 
 ## The gap
 <what is broken or missing today, with file:line references>
@@ -212,7 +212,7 @@ These artifacts have different jobs; confusing them loses the intent:
 | **Linear work brief** | a proposed outcome and its completion boundary | Linear |
 | **GitHub issue** | a repository defect/problem report | `mikeng-io/nora` |
 | **ADR** | a *decision with a cost* — an alternative rejected, a trade accepted | `docs/adr/NNNN-*.md` |
-| **decision row** | a *landed* decision and the test that enforces it | `design/09-decision-index.md` |
+| **decision row** | a *landed* decision and the test that enforces it | `docs/design/09-decision-index.md` |
 
 An open work item or defect report is not a decision. A trivial decision gets
 an index row and nothing more. An ADR is warranted when the decision will look wrong to someone
@@ -224,7 +224,7 @@ worse**. `docs/adr/README.md` carries the full convention.
 ## Numbering discipline
 
 Never take a DEC-, R-, ADR- or issue number from a chat agreement or from
-memory — re-read `design/09-decision-index.md` (or `gh issue list`) at merge
+memory — re-read `docs/design/09-decision-index.md` (or `gh issue list`) at merge
 time, not at claim time. Two sessions that carefully coordinate numbers can
 still both be wrong. If a number you referenced as a placeholder turns out to
 be taken, fix the reference, not the number.
@@ -243,7 +243,7 @@ deleting only their own `worktrees/<id>` admin dir — never a global `git
 worktree prune`. Each removed ref is appended with its SHA and custody (`pr=#N` or
 `archive=<tag>`) to `${XDG_STATE_HOME:-~/.local/state}/nora/git-gc.log` so it
 can be restored. The orchestrator runs it at intake and after merge
-([ORCHESTRATION.md](../../ORCHESTRATION.md#artifact-ownership)).
+([docs/engineering/orchestration.md](orchestration.md#artifact-ownership)).
 
 Work that does not merge is archived first: `make archive BRANCH=<b>
 REASON="..."` pushes an annotated `archive/<branch>` tag on the committed
@@ -267,7 +267,7 @@ or merge-base check makes the affected verdicts `unknown`, never a removal.
 ## Local comments and configuration sources
 
 Keep comments short and descriptive. Maintained docs own architecture, rationale
-and decisions. The [configuration contract](../configuration.md) amends the old
+and decisions. The [configuration contract](../operations/configuration.md) amends the old
 environment-only credential-source guidance; `*_env` references retain their names.
 Private `secret.toml` and generated delivery files never enter Git. Config and
 secret changes require validated controlled recreation; identity/policy retain
@@ -334,7 +334,7 @@ reviewers get the brief as a packet (`nora-dispatch/references/brief.md`).
 | status | Backlog: deferred; Todo: bounded/ready; In Progress: executing, reviewing or blocked with cause; Done: evidenced completion; Canceled/Duplicate: reason/canonical link |
 | priority | set on every open issue (Urgent, High, Medium or Low), distinct from roadmap horizon |
 | type | one label from the **Type** group on every issue: Bug, Feature or Improvement |
-| area | one label from the **Area** group, one per code area in `ARCHITECTURE.md` «Code map» (`cognition` covers `design/cognition/` and its loops); a new Area label only with a new code area |
+| area | one label from the **Area** group, one per code area in `ARCHITECTURE.md` «Code map» (`cognition` covers `docs/design/cognition/` and its loops); a new Area label only with a new code area |
 | relations | a project, with a milestone per phase, for a split outcome; blocks for dependencies |
 | references | roadmap item and GitHub report when applicable; repository/base, session thread, PR and evidence as execution produces them |
 

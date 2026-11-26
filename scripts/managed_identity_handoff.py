@@ -1,7 +1,7 @@
 """Admit one established `identity.toml`/`policy.toml` mapping into an empty
 managed target — the installation authority's initial file-to-managed
-handoff (`design/managed-identity-access/identity.md` «Backend selection
-and lifecycle», `docs/maintainers/managed-identity-handoff.md`).
+handoff (`docs/design/managed-identity-access/identity.md` «Backend selection
+and lifecycle», `docs/engineering/managed-identity-handoff.md`).
 
 INSTALLATION-ONLY: a local command an operator runs against a prepared
 managed target. It is not reachable from HTTP, a model or a room; it never

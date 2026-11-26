@@ -33,7 +33,7 @@ ENV = "NORA_EVAL_PSEUDONYM_MAP"
 #: Appended to a refusal a pseudonymised anchor would cause.
 HINT = (
     f"the corpus is pseudonymised and no map resolved it: set {ENV} to the deploy "
-    "host's private pseudonym map (docs/eval-sop.md, issue #776)"
+    "host's private pseudonym map (docs/engineering/eval-sop.md, issue #776)"
 )
 _ARROW = "==>"
 

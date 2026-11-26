@@ -4,11 +4,11 @@ The threat model for Nora: what is exposed, to whom, what matters, and what the
 operator has ruled out of scope. Attackers, critical assets, scope and accepted
 risk are set by the operator; the component map and controls are read
 from the code. Security scans and finding triage start from this file. Vulnerability
-reporting is in [`SECURITY.md`](SECURITY.md).
+reporting is in [`SECURITY.md`](../../../SECURITY.md).
 
 Scope: runtime code only: `nora/`, `app/`, `deploy/`, `docker-compose.yml`,
 `Dockerfile`. Not `evals/`, `tests/`,
-`voice-lab/`, `docs/`, `design/`. Infrastructure is the in-repo
+`voice-lab/`, `docs/`, `docs/design/`. Infrastructure is the in-repo
 `docker-compose.yml`, `Dockerfile` and `deploy/`; there is no separate
 infrastructure repository.
 

@@ -7,11 +7,11 @@ Configuration proves intended routing, not successful inference by a provider.
 ## Nora already has readers and several retrieval paths
 
 The code read-back used the codebase graph and the corresponding source.
-The main anchors are [agent tools](../../nora/agent/tools.py),
-[media search storage](../../nora/infra/sql/media_objects.py),
-[comprehension](../../nora/infra/vision/comprehend.py),
-[video preprocessing](../../nora/infra/vision/preprocess.py), and
-[the architecture map](../../ARCHITECTURE.md).
+The main anchors are [agent tools](../../../nora/agent/tools.py),
+[media search storage](../../../nora/infra/sql/media_objects.py),
+[comprehension](../../../nora/infra/vision/comprehend.py),
+[video preprocessing](../../../nora/infra/vision/preprocess.py), and
+[the architecture map](../../../ARCHITECTURE.md).
 
 Acquisition keeps encrypted original bytes with a content hash and runs
 comprehension asynchronously. A compact textual reading can enter the

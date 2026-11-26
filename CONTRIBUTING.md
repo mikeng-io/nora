@@ -80,7 +80,7 @@ There is no `develop` branch. Use **`<type>/<kebab-slug>`** for maintainers, age
 and fork contributors alike, with a type from the commit table below, for example
 `docs/public-readiness` or `fix/message-delivery`. Describe the change in the slug.
 Every change starts in its own worktree and branch. The `PR content` check rejects any other branch name, and the `master` ruleset
-makes that check blocking (`docs/maintainers/github.md`, Merge rules).
+makes that check blocking (`docs/engineering/github.md`, Merge rules).
 
 ## Commit messages
 
@@ -194,5 +194,5 @@ labels are preserved. The Area field wins when a recognized title agrees or is
 less specific. Classification does not grant permission to start work.
 
 Maintainer procedures, including merge ownership, mutation proof, numbering and
-issue lifecycle, live in [maintainer conventions](docs/maintainers/conventions.md).
+issue lifecycle, live in [maintainer conventions](docs/engineering/conventions.md).
 Coding agents also follow [AGENTS.md](AGENTS.md).

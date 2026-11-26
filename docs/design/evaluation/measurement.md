@@ -114,5 +114,5 @@ credentials. Failure retains available evidence without expanding disclosure.
 Backend readback establishes retention and queryability; a frontend claim needs
 frontend evidence. Neither establishes the criterion's truth by itself.
 
-[Observability](../../docs/observability.md) owns sink and transport mechanics;
-[the eval SOP](../../docs/eval-sop.md) owns execution and adjudication procedure.
+[Observability](../../operations/observability.md) owns sink and transport mechanics;
+[the eval SOP](../../engineering/eval-sop.md) owns execution and adjudication procedure.

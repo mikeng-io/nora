@@ -19,7 +19,7 @@
 ## Gate on the merged tree
 
 <!-- Fixes an earlier merge: #N, or none. When not none, this PR adds or extends
-     a lesson in docs/maintainers/lessons.md. -->
+     a lesson in docs/engineering/lessons.md. -->
 
 <!-- Record impact-based validation and why it is sufficient. Small non-runtime
      docs/skill wording/images need no local gate or independent review. When a

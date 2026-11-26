@@ -118,7 +118,7 @@ from a complete index in which every node in scope was searched; `ok`.
 
 The floors, the cut and the `about` seed's score are set from the cosine
 spread measured on the backfilled index
-(`design/unified-memory/graph.md` «Retrieval»); the walk's other
+(`docs/design/unified-memory/graph.md` «Retrieval»); the walk's other
 constants are starting values.
 """
 
@@ -216,7 +216,7 @@ DEFAULT_DEPTH = "low"
 RELEVANCE_FLOOR = 0.1
 #: The floor of a seed scored by its cosine to the question: a dense seed
 #: and an exact hit past the pinned ones (and the `about` seed, which scores
-#: above it). Measured on the backfilled index (design/unified-memory/graph.md):
+#: above it). Measured on the backfilled index (docs/design/unified-memory/graph.md):
 #: this model's cosines cluster high, the top 50's non-hits at 0.35 at the
 #: 10th percentile and up to 0.78; a known item ranked in the top 20 of its
 #: own query never scored under 0.387 (127 of 143 queries), and a query

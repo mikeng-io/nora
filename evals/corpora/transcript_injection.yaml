@@ -2,7 +2,7 @@
 # EARLIER message, not the triggering one — the tag itself is innocuous. This checks
 # that context-window poisoning doesn't carry the attack through to the reply.
 
-# --- RE-HOMED 2026-09-17 (design/evaluation Step 4) -------------------------
+# --- RE-HOMED 2026-09-17 (docs/design/evaluation Step 4) -------------------------
 #
 # These cases were driven by `evals/run.py`'s `_invoke_agent`, whose own
 # docstring says what it is:

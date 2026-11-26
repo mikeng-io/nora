@@ -38,6 +38,6 @@ def test_claude_md_is_a_pointer_and_not_a_second_copy():
 
 
 def test_decision_index_lists_the_amended_decisions():
-    text = (ROOT / "design" / "09-decision-index.md").read_text()
+    text = (ROOT / "docs" / "design" / "09-decision-index.md").read_text()
     for ident in ("D1", "D4", "D6", "DEC-3", "DEC-9", "R-5", "R-10", "R-12"):
         assert ident in text, f"decision index missing {ident}"

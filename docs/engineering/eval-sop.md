@@ -253,7 +253,7 @@ against a sandbox database of the case's own, seeds it with what that room
 held at that instant, and drives one entry point. Declared stimuli and
 counterfactuals may be authored; they must not be presented as recorded history.
 The subject uses the corpus's canonical assembly rather than a bespoke
-per-case dependency graph (`design/evaluation/subject.md`
+per-case dependency graph (`docs/design/evaluation/subject.md`
 «Production owns the subject» and «Input and causal scope»).
 
 SDK execution uses private `--services FILE` HTTP recordings keyed by corpus
@@ -334,7 +334,7 @@ actual admitted/resident/deferred tool names, formatted OpenAI request bodies,
 existing OTel spans (including model/tool outputs and usage), enabled application
 logs, raw judge votes, typed case results and complete corpus reports. It uses
 the existing provider/SDK spans. The CLI also requires the configured owner-local
-SigNoz sink; [evaluation visibility](observability.md#evaluation-visibility)
+SigNoz sink; [evaluation visibility](../operations/observability.md#evaluation-visibility)
 defines the explicit content policy and operator acceptance.
 Request bodies and tool-surface events are persisted before model dispatch;
 raw model paths retain their existing SDK span contents rather than gaining a
@@ -528,7 +528,7 @@ A failure you fixed but did not add a case for is a failure you will ship
 again.
 
 
-## The participation suite — the flip gate (design/cognition-loop/proactive.md)
+## The participation suite — the flip gate (docs/design/cognition-loop/proactive.md)
 
 `make eval-participation` runs the 15-case participation corpus, including
 relevance-Yes cases, their knowledge-cut twins, and the pure-No cases (S6-S10) — the S1 and S4 pairs were

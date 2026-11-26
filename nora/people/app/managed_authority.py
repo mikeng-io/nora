@@ -1,5 +1,5 @@
 """Scoped authority: membership, grants, delegation, `check` and
-reconciliation (`design/managed-identity-access/authorization.md`).
+reconciliation (`docs/design/managed-identity-access/authorization.md`).
 
 `AuthorityService.check` is the one authoritative check path — revocation-
 first blocks, real topology, live person state, then the grant engine;

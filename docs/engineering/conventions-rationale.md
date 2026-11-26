@@ -1,6 +1,6 @@
 # Conventions & operational detail
 
-The long-form behind the [code standards](../code-standards.md). The standards
+The long-form behind the [code standards](code-standards.md). The standards
 carry the rule, what a reviewer checks and what holds it; this file carries the
 *reasoning*, the war-stories, and the specific values. Read it when a rule needs
 its "why": the terse rule is only safe because the story is preserved. A lesson
@@ -245,7 +245,7 @@ mistake it produced (2026-08-21: eight full gate runs in one session).
   modules that are not occasions are the named MECHANISM, RUNNER and EXEMPT
   entries in the test, each with a written reason, reviewed in the PR that adds
   it and re-checked by the test. A new occasion follows
-  `design/context-assembly/registry.md`
+  `docs/design/context-assembly/registry.md`
   (DEC-273, ADR 0021).
 
 - **Never read a gate's success through a pipe.** `make gate | tail` returns
@@ -261,7 +261,7 @@ mistake it produced (2026-08-21: eight full gate runs in one session).
   the container fails at boot because `upgrade "head"` refuses two heads.
   **`uv run alembic heads` must print exactly ONE line after every merge.**
 - **Never take a DEC or R number from a chat agreement** — re-read
-  `design/09-decision-index.md` at MERGE time, not at claim time. 2026-08-21:
+  `docs/design/09-decision-index.md` at MERGE time, not at claim time. 2026-08-21:
   two sessions coordinated numbers carefully and a third took DEC-131 anyway;
   it conflicted only because the rows landed on the same line. Allocation and
   duplicate checks now live in `nora-decision`, including origin/master and
@@ -388,7 +388,7 @@ compose and disagreed with this file). Identity and policy are bind-mounted read
 validation every three seconds**. Invalid edits retain the last good version;
 workspace-binding edits refuse the whole reload until recreation. The
 `nora_config_reloads_total` outcomes and `/health` staleness expose pending or
-refused changes (see `design/policy-reload/README.md`). `identity.toml` takes one
+refused changes (see `docs/design/policy-reload/README.md`). `identity.toml` takes one
 `[[persons.<id>.<platform>]]` block **per account**, all resolving to one
 `person_id` (their Honcho peer, A2/DEC-14). `policy.toml` is deny-by-default and
 Nora **refuses to start** if it is missing or allows nothing (R-5). Memory's
@@ -434,8 +434,8 @@ tier.** Both are gone: the code is deleted, the decision-index rows are marked
 (never renumbered), and every design node and spec that describes them carries a
 `DEPRECATED` banner. **Their database tables are NOT dropped** — the code goes,
 the schema stays, and dropping them is a separate explicit decision. The evidence
-that decided it is `design/cognition-loop/data.md` ; the issue
-is #115. Nothing under `design/cognition-loop/` numbered 20, 21, 23, 24, 25,
+that decided it is `docs/design/cognition-loop/data.md` ; the issue
+is #115. Nothing under `docs/design/cognition-loop/` numbered 20, 21, 23, 24, 25,
 28, 31 or 32 describes code that exists.
 
 **Deprecated 2026-09-08 — the note tier's entity-resolution chain and the
@@ -510,13 +510,13 @@ and was not reached for until the third rewrite.
 
 *(How the pieces fit together — the signal boundary, the path a span takes to a
 collector, how to instrument a model call, how to read it back — is
-`docs/observability.md`. This section is why the rules are what they are.)*
+`docs/operations/observability.md`. This section is why the rules are what they are.)*
 
 The catalogue: eight
 layers where an instrument could not observe the thing it existed to observe,
 plus the silent-match family one level down — the instruments we use to FIND
 those layers returning a positive-looking answer without ever engaging.
-`design/cognition-loop/execution.md` is where the bundle gives that
+`docs/design/cognition-loop/execution.md` is where the bundle gives that
 discipline a home for its own change. Neither is repeated here. This section
 carries the eight rules and the measurement behind each.
 
@@ -696,7 +696,7 @@ lived only in the plan, and nothing in this repo had ever looked at one. The
 fix is `== sa.false()` (`nora/infra/sql/turn_verdicts.py:100`) and the check is
 `tests/contract/test_turn_verdict_store_contract.py::test_the_trigger_read_
 actually_uses_its_partial_index`. (Both were deleted on 2026-09-24 with the
-grounding verdict, `design/standing-ledger/00-intent.md`; the lesson stands.)
+grounding verdict, `docs/design/standing-ledger/00-intent.md`; the lesson stands.)
 
 **And the first version of that test compiled its OWN statement** with the
 correct spelling and EXPLAINed that — so reverting the store's predicate to the
@@ -813,7 +813,7 @@ return None` from `_should_rebuild` and the stage raises `AttributeError` on
 assertions still hold. R-72 named that test among the ones enforcing it, and it
 measured nothing. It was found by a reviewer mutating a clause the author had
 not. (R-72 is retired and the test gone with `_should_rebuild` itself, deleted
-2026-09-24 with the grounding verdict, `design/standing-ledger/00-intent.md`; the lesson
+2026-09-24 with the grounding verdict, `docs/design/standing-ledger/00-intent.md`; the lesson
 stands.)
 
 At least five tests in that one file had the shape. The fix in each is two
@@ -829,7 +829,7 @@ clause was the one that shipped the defect.
 
 ## The five operational constraints (spec §2, with corrections)
 
-These came from `design/08-stack-refactor-brief.md` and are preserved here
+These came from `docs/design/08-stack-refactor-brief.md` and are preserved here
 because the spec that retired that document said they were the most
 operationally valuable text in it. Losing any of these wastes an afternoon.
 
@@ -898,7 +898,7 @@ operationally valuable text in it. Losing any of these wastes an afternoon.
   singletons.
 - A port never gains a second implementation — including a test fake —
   without a shared contract suite both pass (`tests/contract/`).
-- A new behavioural rule gets an entry in `design/09-decision-index.md` and a
+- A new behavioural rule gets an entry in `docs/design/09-decision-index.md` and a
   named test registered in `tests/test_acceptance_rules.py::RULE_TESTS`.
 - Where a test LIVES, what config it LOADS and where its FAKES live are the
   three rules of the next section (issue #113), each with its own gate under
@@ -1090,7 +1090,7 @@ procedure; `tests/README.md` carries the summary.
 ## Local comments and configuration sources
 
 Keep comments short and descriptive. Maintained docs own architecture, rationale
-and decisions. The [configuration contract](../configuration.md) amends the old
+and decisions. The [configuration contract](../operations/configuration.md) amends the old
 environment-only credential-source guidance; `*_env` references retain their names.
 Private `secret.toml` and generated delivery files never enter Git. Config and
 secret changes require validated controlled recreation; identity/policy retain

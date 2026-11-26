@@ -122,9 +122,9 @@ components:
 This file binds every visual surface of Nora: the official site (heynora.bot,
 the private `nora-site` repository), the portal (`app/`), the docs site
 (`docs-site/`), her social profiles, the images she generates of herself,
-stickers and icons, and any 3D or spatial form she is given. Her character is specified in `design/self-reference/identity.md`; it
+stickers and icons, and any 3D or spatial form she is given. Her character is specified in `docs/design/self-reference/identity.md`; it
 governs her appearance and takes precedence over this file on it. What the
-site says about her mind is bound by `design/cognition/`.
+site says about her mind is bound by `docs/design/cognition/`.
 
 ## 1. Overview
 
@@ -448,7 +448,7 @@ acts.** It shows the difference instead of explaining it.
     in: they light.
 11. **Gate.** First light at the moon gate. Meet Nora; the source on GitHub.
 
-Every claim the page makes is a behaviour `design/cognition/` defines, in its
+Every claim the page makes is a behaviour `docs/design/cognition/` defines, in its
 terms: engagement and reflection loops, intentions that close on recorded
 outcomes, reconsideration when what they rest on changes, lessons from
 verdicts, units as boundaries.

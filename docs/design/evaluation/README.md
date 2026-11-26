@@ -48,5 +48,5 @@ scenario + restored state + isolated dependencies
 - Production storage and person-visible services receive no evaluation effects.
   Private evidence remains private, including when a run fails.
 
-The [eval SOP](../../docs/eval-sop.md) owns operating order and commands.
+The [eval SOP](../../engineering/eval-sop.md) owns operating order and commands.
 Implementation gaps do not relax these contracts or license a smaller subject.

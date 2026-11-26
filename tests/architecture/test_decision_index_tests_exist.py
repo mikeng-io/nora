@@ -1,6 +1,6 @@
 """A decision row's enforcing test must exist, or the row must say it doesn't.
 
-`design/09-decision-index.md`'s last column names the test that enforces each
+`docs/design/09-decision-index.md`'s last column names the test that enforces each
 decision. That column is the whole point of the index — `AGENTS.md` sends you
 here to answer "which test guards this?" — so the named test has to be real.
 
@@ -76,7 +76,7 @@ import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-INDEX = ROOT / "design" / "09-decision-index.md"
+INDEX = ROOT / "docs" / "design" / "09-decision-index.md"
 
 #: A row carrying one of these is asserting that it does NOT describe a live
 #: guarantee. `DEPRECATED` is the index's own established convention (rows are
@@ -403,7 +403,7 @@ def test_the_index_still_cites_tests_at_all() -> None:
 def test_a_row_citing_a_deleted_test_is_caught() -> None:
     """The detector fires on a genuine regression."""
     row = (
-        "| DEC-999 | A decision nobody enforces. | `design/00-overview.md` | "
+        "| DEC-999 | A decision nobody enforces. | `docs/design/00-overview.md` | "
         "`tests/test_this_file_was_deleted_long_ago.py` |"
     )
     missing = [path for path in _TEST_PATH.findall(row) if not (ROOT / path).exists()]
@@ -419,7 +419,7 @@ def test_a_marked_row_citing_a_deleted_test_is_allowed() -> None:
     """
     row = (
         "| DEC-998 | **DEPRECATED 2026-09-07 — the tier this decides was deleted "
-        "(issue #115).** | `design/00-overview.md` | `tests/infra/test_fact_schema.py` |"
+        "(issue #115).** | `docs/design/00-overview.md` | `tests/infra/test_fact_schema.py` |"
     )
     missing = [path for path in _TEST_PATH.findall(row) if not (ROOT / path).exists()]
     assert missing, "the fixture must cite a genuinely absent test to be meaningful"
@@ -433,7 +433,7 @@ def test_a_sub_lettered_row_is_read_as_its_own_identifier() -> None:
     would misattribute a finding here to the wrong rule, which is worse than
     useless in a message a reader is meant to act on.
     """
-    row = "| R-6b | Something. | `design/00-overview.md` | `tests/test_guards.py` |"
+    row = "| R-6b | Something. | `docs/design/00-overview.md` | `tests/test_guards.py` |"
     match = _ROW_ID.match(row)
     assert match is not None
     assert match.group(1) == "R-6b"

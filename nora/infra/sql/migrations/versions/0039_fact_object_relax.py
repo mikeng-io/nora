@@ -1,6 +1,6 @@
 """fact.object — the literal always survives, the entity id becomes a real id
 
-`design/cognition-loop/data.md` «Citations, links and search» catalogued three
+`docs/design/cognition-loop/data.md` «Citations, links and search» catalogued three
 shipped defects on the object path and §10 decided the fix. All three are one
 column pair, and all three are free today: `fact` has zero rows on the live
 database.

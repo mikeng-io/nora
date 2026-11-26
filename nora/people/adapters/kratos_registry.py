@@ -1,5 +1,5 @@
 """`IdentityRegistry` over the pinned Kratos admin client — the managed
-identity record (`design/managed-identity-access/identity.md`).
+identity record (`docs/design/managed-identity-access/identity.md`).
 
 `ensure_identity` is the concurrency-critical verb: a create that hits the
 `external_id` unique constraint is resolved by READ-BACK of the identity

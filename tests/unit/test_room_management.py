@@ -1,7 +1,7 @@
 """The in-room `!!!member` command and `member_update` tool reach the ONE
 authenticated invocation — and nothing else can.
 
-`design/managed-identity-access/management.md` «In-room management», over
+`docs/design/managed-identity-access/management.md` «In-room management», over
 the in-memory fakes:
 
 - the actor is the transport-verified sender resolved live — body text,

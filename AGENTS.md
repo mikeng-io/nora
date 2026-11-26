@@ -1,7 +1,7 @@
 # AGENTS.md
 The entry point for any agent working in this repo. `CLAUDE.md` points here so
 there is one copy. Start or resume engineering work with `nora-work`: it routes
-the current outcome through the lifecycle in [ORCHESTRATION.md](ORCHESTRATION.md).
+the current outcome through the lifecycle in [docs/engineering/orchestration.md](docs/engineering/orchestration.md).
 That policy owns responsibilities and boundaries; skills own procedures. Load
 only the skill and references needed for the next action, before that action.
 
@@ -53,7 +53,7 @@ asked for. Content filters are off by default ([ADR 0030](docs/adr/0030-content-
 
 ## Design, documents and comments
 
-**The design bundle is the anchor.** `design/<topic>/` holds the high-level
+**The design bundle is the anchor.** `docs/design/<topic>/` holds the high-level
 architecture: the parts, their responsibilities and connections, the
 vocabulary, the invariants, and why. It is never a spec, a plan, a log, a
 decision table or a status report. An **architecture change** (a component, a
@@ -64,7 +64,7 @@ code. `nora-design` owns the procedure.
 
 **Git and GitHub are the log.** Commits and PRs record what changed and why;
 GitHub Project owns roadmap; Linear owns execution; GitHub Issues hold reports. The ADRs are
-the one decision record kept as history; `design/09-decision-index.md` lists
+the one decision record kept as history; `docs/design/09-decision-index.md` lists
 the decisions that hold now, each with its test or `NOT ENFORCED` (`nora-decision`).
 
 ## Reporting to the operator
@@ -92,10 +92,10 @@ reading that would overturn it when you decide. A decision the operator locked i
 
 ## Code standards
 
-Write and review every change against [docs/code-standards.md](docs/code-standards.md):
+Write and review every change against [docs/engineering/code-standards.md](docs/engineering/code-standards.md):
 the cross-cutting rules, then the section for each stack the diff touches.
 A reviewer's finding names the rule it breaks. A failure no rule caught is
-recorded in [docs/maintainers/lessons.md](docs/maintainers/lessons.md); a
+recorded in [docs/engineering/lessons.md](docs/engineering/lessons.md); a
 lesson seen on three separate days becomes a standard.
 
 ## Never
@@ -148,7 +148,7 @@ order of the commands and the check after each; a new skill adds both at once.
 | starting a change, running the gate, committing, opening or merging a PR | `nora-land` |
 | turning a design or issue into briefs, delegating a build, or reading a builder's result back | `nora-dispatch` |
 | reviewing a change against its original scope and acceptance | `nora-review` |
-| an architecture change, or any edit under `design/` | `nora-design` |
+| an architecture change, or any edit under `docs/design/` | `nora-design` |
 | a new DEC or R row, an ADR, an issue, a roadmap direction, or citing a decision | `nora-decision` |
 | putting merged code or config live on `nora-host`, or checking it is live | `nora-deploy` |
 | cutting a release: the release-please PR, the `vX.Y.Z` tag, the GitHub Release | `nora-release` |
@@ -164,4 +164,4 @@ order of the commands and the check after each; a new skill adds both at once.
 
 ## Reading order
 
-`README.md` → `ARCHITECTURE.md` → the area's design bundle → `docs/code-standards.md` → `CONTRIBUTING.md`, `docs/maintainers/conventions.md`; `DESIGN.md` before touching how she looks; `docs/observability.md`, `docs/eval-sop.md`, `docs/runbook.md` as needed.
+`README.md` → `ARCHITECTURE.md` → the area's design bundle → `docs/engineering/code-standards.md` → `CONTRIBUTING.md`, `docs/engineering/conventions.md`; `docs/design/appearance/README.md` before touching how she looks; `docs/operations/observability.md`, `docs/engineering/eval-sop.md`, `docs/operations/runbook.md` as needed.

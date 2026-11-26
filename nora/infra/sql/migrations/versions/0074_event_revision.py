@@ -1,12 +1,12 @@
 """event_revision -- the event migration: lifecycle statuses, per-field
 lineage, `event_revision`, RSVP transition rows
-(design/cognition-loop/data.md «Notebook vocabulary», the events row;
+(docs/design/cognition-loop/data.md «Notebook vocabulary», the events row;
 migration step 2b, DEC-237).
 
 WHAT THIS ADDS, all additive:
 
 1. `events` (the head, still updated in place — the compare-and-swap cache
-   design/cognition-loop/data.md «One direction of flow» allows) gains:
+   docs/design/cognition-loop/data.md «One direction of flow» allows) gains:
 
    - `unit_id`: text, default `''`. Existing rows cannot be resolved to a
      unit from inside a migration (that needs `policy.toml`, which the
@@ -15,13 +15,13 @@ WHAT THIS ADDS, all additive:
      pre-2b event names no unit until an operator backfills one out of band.
      Every NEW event is unit-keyed from the write path (`_unit()`,
      `nora.agent.tools`, the same resolver notes already share).
-   - `end`, `people`: design/cognition-loop/data.md's remaining event columns
+   - `end`, `people`: docs/design/cognition-loop/data.md's remaining event columns
      (`what`/`start` are `title`/`when`, already there; `place` is the
      existing `venue_*` group; `status` already there).
    - `reasoning`, `confidence`, `lineage`, `as_of`: the same four columns
      `0073_lineage` added to note/standing/culture, and the same
      simplification (row-level, NULL until a write verb states one) —
-     design/cognition-loop/data.md «Notebook vocabulary» asks for these PER FIELD;
+     docs/design/cognition-loop/data.md «Notebook vocabulary» asks for these PER FIELD;
      `lineage` gets that from day
      one (`nora.domain.lineage.Lineage` already sections by an arbitrary
      name, here the field: `what`, `start`, `end`, `place`, `people`,
@@ -33,7 +33,7 @@ WHAT THIS ADDS, all additive:
      because it is added before that table exists; backfilled below, never
      null after this migration completes for a row that existed before it).
    - The status CHECK widens from `proposed`/`confirmed`/`cancelled` to the
-     full lifecycle (design/cognition-loop/data.md): `staged`, `proposed`, `confirmed`,
+     full lifecycle (docs/design/cognition-loop/data.md): `staged`, `proposed`, `confirmed`,
      `happened`, `cancelled`, `lapsed`, `evicted`.
 
 2. `event_revision` (new): the append-only chain `events` is a
@@ -102,7 +102,7 @@ down_revision = "0073_lineage"
 branch_labels = None
 depends_on = None
 
-#: design/cognition-loop/data.md, frozen here (a migration is a frozen historical
+#: docs/design/cognition-loop/data.md, frozen here (a migration is a frozen historical
 #: statement, `0053_decision_log`'s rule); `nora.infra.sql.schema` is the
 #: live copy.
 _LIFECYCLE = (

@@ -1,4 +1,4 @@
-"""discord-bridge — the durable Discord boundary (design/platform-bridges).
+"""discord-bridge — the durable Discord boundary (docs/design/platform-bridges).
 
 Owns the Discord Gateway connection, the deterministic slash-command surface
 (`/music`, `/discord`), the `MusicPlayerManager` over the existing SQL
@@ -14,7 +14,7 @@ manager and the SAME controller generation.
 The bridge owns NO discord.py `VoiceClient`: join/leave go through the hub,
 which drives the external controller's `/voice/*` endpoints — the
 controller keeps the Discord voice connection and all media playout
-(design/platform-bridges/03-ownership-and-recovery.md). The non-queued
+(docs/design/platform-bridges/03-ownership-and-recovery.md). The non-queued
 wake→utterance HTTP path is unchanged and stays in the app.
 
 Env: DISCORD_BOT_TOKEN, DATABASE_URL, NORA_REDIS_URL,

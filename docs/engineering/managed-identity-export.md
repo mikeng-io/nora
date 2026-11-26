@@ -7,9 +7,9 @@ produces a fresh private `identity.toml`/`policy.toml` pair plus an
 compared verdict-for-verdict against live managed checks.
 
 This is the preparation half of the managed-to-file handoff
-(`design/managed-identity-access/identity.md` «Backend selection and
+(`docs/design/managed-identity-access/identity.md` «Backend selection and
 lifecycle»). It is **not** the authority switch: adopting the bundle is the
-separate operator-approved step in `docs/runbook.md` «Managed identity
+separate operator-approved step in `docs/operations/runbook.md` «Managed identity
 activation and recovery», which additionally requires stopping writers,
 backup, session invalidation and read-back. The command never changes
 backend selection, configuration, source files, secrets or running

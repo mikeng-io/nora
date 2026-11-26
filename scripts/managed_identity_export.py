@@ -1,7 +1,7 @@
 """Export the current managed identity/access state into a fresh private
 `identity.toml`/`policy.toml` bundle — the preparation half of the
-managed-to-file handoff (`docs/maintainers/managed-identity-export.md`,
-`design/managed-identity-access/identity.md` «Backend selection and
+managed-to-file handoff (`docs/engineering/managed-identity-export.md`,
+`docs/design/managed-identity-access/identity.md` «Backend selection and
 lifecycle»).
 
 INSTALLATION-ONLY and READ-ONLY: a local operator command, never reachable

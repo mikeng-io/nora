@@ -14,7 +14,7 @@ A service appearing in that manifest does not make Komodo its lifecycle owner.
 | Application | Generated `deployments` branch `compose.json` + `release.json`; installed Komodo Stack `nora-releases` | Ordinary release/image/poller flow; explicit maintenance uses the [Komodo procedure](komodo/README.md) |
 | Infrastructure: `redis`, `db`, `rustfs`, `embedder` | Root Compose file in the persistent runtime checkout | Explicit service maintenance under the shared deploy lock; outside application reconciliation |
 | Application telemetry wiring | [`signoz/docker-compose.signoz.yaml`](signoz/docker-compose.signoz.yaml), an overlay on the selected application manifest | Installed Stack configuration, after the backend exists; never a standalone stack |
-| SigNoz backend | [`signoz/deployment/compose.yaml`](signoz/deployment/compose.yaml), separate project `signoz` | [Observability procedure](../docs/observability.md); retain installed host overrides |
+| SigNoz backend | [`signoz/deployment/compose.yaml`](signoz/deployment/compose.yaml), separate project `signoz` | [Observability procedure](../docs/operations/observability.md); retain installed host overrides |
 | Computer VM image and lifecycle | [`computer/`](computer/README.md), outside root Compose | `nora-computer` and its documented systemd lifecycle |
 | Memory graph experiment | [`memory-graph-spike/compose.yaml`](memory-graph-spike/compose.yaml), isolated experiment project | Its [experiment procedure](memory-graph-spike/README.md); never production memory storage |
 | OTel queue fixture | [`otel-queue-fixture/docker-compose.yml`](otel-queue-fixture/docker-compose.yml) | Disposable test fixture; not a production deployment entry point |
@@ -35,10 +35,10 @@ Use explicit services for infrastructure work; project-wide `up`, `down`,
 The former `make up`, `make stop`, `make logs` and `make ps` shortcuts are removed.
 For installed container reads, use `docker logs <container>` and `docker ps -a`
 without resolving private Compose inputs. Host exec uses the
-[credential helper](../docs/configuration.md#host-migration-and-installed-files).
+[credential helper](../docs/operations/configuration.md#host-migration-and-installed-files).
 
 The operator/agent procedure is [nora-deploy](../.agents/skills/nora-deploy/SKILL.md);
-recovery is in the [runbook](../docs/runbook.md). Before a host change, identify
+recovery is in the [runbook](../docs/operations/runbook.md). Before a host change, identify
 the installed deployment mode, preserve outstanding attempts and private state,
 and use the shared lock. Unreadable deployment receipts are unavailable evidence,
 not permission to fall back to checkout deployment.
@@ -55,7 +55,7 @@ project teardown or orphan cleanup to remove old services.
   and bridge journals even if the old container is removed.
 - Legacy Prometheus, Alertmanager and alert-bridge are outside the current root
   model. Their replacement and retained telemetry follow the
-  [SigNoz cutover](../docs/observability.md), not application release cleanup.
+  [SigNoz cutover](../docs/operations/observability.md), not application release cleanup.
 - A separately installed OTel collector may still serve other producers. Trace
   its receivers, exporters and clients before stopping it; the SigNoz overlay
   alone does not establish that it is unused.
@@ -104,7 +104,7 @@ Chrome pins stay independent, with official Node 24 copied from the Node stage.
 
 Bare Compose commands require a runtime `.env` sufficient for interpolation;
 they do not read `secret.toml`. Host exec uses the
-[installed helper](../docs/configuration.md#host-migration-and-installed-files).
+[installed helper](../docs/operations/configuration.md#host-migration-and-installed-files).
 
 ## First installation and checkout use
 
@@ -134,7 +134,7 @@ mode's procedure rather than running the root project without service selection.
 
 Back up configuration, PostgreSQL and persistent storage before an upgrade.
 Follow the installed deployment mode in the [operator procedure](../.agents/skills/nora-deploy/SKILL.md)
-and the [runbook's rollback constraints](../docs/runbook.md#3-rollback).
+and the [runbook's rollback constraints](../docs/operations/runbook.md#3-rollback).
 An older image must remain compatible with both schema and config; never clear
 Alembic's version table to force a rollback.
 
@@ -152,14 +152,14 @@ application services through the generated `deployments` Compose manifest;
 their release images are built from subtrees here (`stt/`, `voice-sidecar/`, …).
 The newest:
 
-* **`voice-sidecar/`** — the Node audio-controller (design/voice-channel/audio.md):
+* **`voice-sidecar/`** — the Node audio-controller (docs/design/voice-channel/audio.md):
   the SOLE holder of the Discord voice connection. Joins a channel,
   DAVE-decrypts per-user audio and forwards PCM over a local TCP seam
   toward the Python wake gate, AND drives outbound music/speech playback
   itself over an HTTP control plane (`nora/infra/voice/http_controller.py`)
   — no longer receive-only, the stage-2 name from before nora stopped
   holding its own voice connection. See
-  `design/voice-channel/audio.md` and
+  `docs/design/voice-channel/audio.md` and
   `deploy/voice-sidecar/README.md`.
 * **`voice-wake/`** — Python wake gate (stage 3), the seam's only consumer:
   openWakeWord 「喂 Nora」 detection per user, utterance collection,
@@ -169,6 +169,6 @@ The newest:
 
 ## Monitoring
 
-See [observability](../docs/observability.md) for SigNoz metrics, traces, logs
+See [observability](../docs/operations/observability.md) for SigNoz metrics, traces, logs
 and delivery diagnostics. Health and dependency metrics answer different questions;
 monitor both.

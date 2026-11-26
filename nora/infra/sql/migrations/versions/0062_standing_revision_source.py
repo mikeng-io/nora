@@ -1,5 +1,5 @@
 """standing_revision.source -- marks a manual operator edit apart from a fold
-(design/cognition-loop/data.md, dated section 2026-09-25).
+(docs/design/cognition-loop/data.md, dated section 2026-09-25).
 
 WHAT WAS MISSING. Every `standing_revision` row looked like a fold, because
 `SqlStandingStore.write` had exactly one caller shape: the debrief stage and

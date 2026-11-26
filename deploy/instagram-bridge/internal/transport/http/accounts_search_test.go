@@ -181,7 +181,7 @@ func repeat(s string, n int) string {
 // which status and shape reach the caller, and that validation and the
 // session gate order the same way ?query='s already do.
 
-// The the search probe (design/instagram-adoption/social.md) case: the exact match is not the first hit, and this route must
+// The the search probe (docs/design/instagram-adoption/social.md) case: the exact match is not the first hit, and this route must
 // still return it rather than items[0].
 func TestAccountsByUsernameExactMatchNotAtRankZero(t *testing.T) {
 	h := searchHandler(authenticated, searchOnlyPorts{hits: []domain.AccountSummary{
@@ -438,7 +438,7 @@ func TestAccountsSearchSessionGate(t *testing.T) {
 	}
 }
 
-// Request-shape validation runs BEFORE the session gate: design/instagram-adoption/bridge.md says "a
+// Request-shape validation runs BEFORE the session gate: docs/design/instagram-adoption/bridge.md says "a
 // malformed id is 400 before any use case runs", and a blank query is that.
 // A checkpointed session must not change the answer — proof that the 400
 // check is not reachable only when the session happens to be healthy.

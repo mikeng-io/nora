@@ -1,5 +1,5 @@
 """fact_candidate.asserted_* and fact.asserted_* -- who said it, and when
-(design/cognition-loop/data.md «Layers by authority», the derived
+(docs/design/cognition-loop/data.md «Layers by authority», the derived
 layers fact tables).
 
 **Why on BOTH tables.** The candidate row carries the claim's attribution —

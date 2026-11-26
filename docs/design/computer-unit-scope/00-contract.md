@@ -55,7 +55,7 @@ These are source observations, not a live deployment readback.
 | `nora/engagement/computer_context.py::ComputerContextReader._read` | Reads room sessions and room workspace state | Read unit sessions and unit workspace state together |
 | `nora/agent/tools.py::build_tool_specs` browser closure | Passes bound room scope to browser | Pass the same bound unit scope |
 
-[ADR 0019](../../docs/adr/0019-noras-computer-runs-in-an-sbx-microvm.md)
+[ADR 0019](../../adr/0019-noras-computer-runs-in-an-sbx-microvm.md)
 keeps one persistent shared sbx microVM behind computerd. Its room-hash clause
 is the part this proposal changes; no VM per unit, new sandbox runtime or
 second storage service is introduced. Per-scope Unix users are the current

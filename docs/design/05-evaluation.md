@@ -12,7 +12,7 @@ edges:
 
 # Nora — Evaluation
 
-> **SUPERSEDED 2026-09-19 by `design/evaluation/` (start at `_index.yaml`,
+> **SUPERSEDED 2026-09-19 by `docs/design/evaluation/` (start at `_index.yaml`,
 > current task order in `GOAL-2-backbone.md`).** This node is the 2026-08-03
 > plan, written before Nora had an evaluation layer at all. What survived:
 > **the framework choice** — `strands-agents-evals` is still the answer, now

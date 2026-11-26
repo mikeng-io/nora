@@ -54,7 +54,7 @@ REUSE_RECIPES = {
 # files beside reached modules a package may read at runtime), NOT the whole
 # repo tree — an app-only change must keep these images' digests, which is
 # what lets an app-only release leave the bridge fleet and its containers
-# untouched (design/platform-bridges §05).
+# untouched (docs/design/platform-bridges §05).
 PYTHON_ENTRIES = {
     'signal-bridge': 'deploy/signal-bridge/wrapper.py',
     'discord-bridge': 'deploy/discord-bridge/entry.py',

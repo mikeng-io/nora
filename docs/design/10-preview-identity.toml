@@ -1,4 +1,4 @@
-# PREVIEW — proposed shape for identity.toml (design/10-identity-and-policy-schema.md).
+# PREVIEW — proposed shape for identity.toml (docs/design/10-identity-and-policy-schema.md).
 # Not loaded by anything. The live file is identity.example.toml.
 #
 # WHO PEOPLE ARE. One section per person; policy.toml refers to these by

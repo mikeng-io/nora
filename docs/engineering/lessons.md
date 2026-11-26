@@ -1,7 +1,7 @@
 # Lessons from merged work
 
 What merged work got wrong, and the rule that would have caught it. Read it
-before changing code, next to the [code standards](../code-standards.md).
+before changing code, next to the [code standards](code-standards.md).
 
 ## How a lesson is kept
 
@@ -35,7 +35,7 @@ subject. Two lanes fixing one gate set means one of them rebases onto the
 other's reconciliation.
 
 **Evidence:** PR #815 (manual full-suite acceptance) overlapped PR #818
-(architecture-gate fixes, NOR-16) and PR #819 (`REVIEW.md` consolidation) in
+(architecture-gate fixes, NOR-16) and PR #819 (`docs/engineering/review.md` consolidation) in
 five files. It merged after a rebase to reconcile them.
 
 **Seen:** 2026-11-19.

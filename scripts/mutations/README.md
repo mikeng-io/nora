@@ -45,7 +45,7 @@ alongside the first is the point.
 
 `media-comprehension.json` is the worked example: 26 entries from issues
 #116/#117, the branch the practice came out of. See `scripts/mutate.py`'s
-docstring for why, and `design/19-media-comprehension.md` for the war-story.
+docstring for why, and `docs/design/19-media-comprehension.md` for the war-story.
 
 An entry is five fields:
 

@@ -91,7 +91,7 @@ cases:
     metadata: {criteria: [tool_status_reported]}
     snapshot: *room_a
 
-  # routine_read (design/cognition-loop/observation.md): whatever it returns (in the sandbox,
+  # routine_read (docs/design/cognition-loop/observation.md): whatever it returns (in the sandbox,
   # `unavailable`: no presence feed), the reply reports exactly that, and an
   # answer is said as a friend would say a forecast («should be», «probably»,
   # «maybe»), never «will» and never a rate.
@@ -103,7 +103,7 @@ cases:
     metadata: {criteria: [tool_status_reported]}
     snapshot: *room_a
 
-  # design/sandbox-runtime S2b-2: after `computer_run` she answers in her own
+  # docs/design/sandbox-runtime S2b-2: after `computer_run` she answers in her own
   # words, never with the bare stdout (a live turn replied only "338350").
   # Measures the `[computer] enabled` arm ONLY: with the computer off the
   # tools are withheld and this is a plain arithmetic question. Judged on the

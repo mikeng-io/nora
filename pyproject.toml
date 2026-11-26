@@ -41,7 +41,7 @@ dependencies = [
     # 75KB config. Runtime dependency: the CLI ships in the image.
     "tomlkit>=0.13",
     "jsonschema>=4.26.0",
-    # Reading a shared PDF as text (design/external-files §2, the `pdf` kind).
+    # Reading a shared PDF as text (docs/design/external-files §2, the `pdf` kind).
     # Pure Python with no dependencies of its own; the stdlib has no PDF
     # parser, and docx/xlsx/pptx are read with zipfile + ElementTree instead.
     "pypdf>=7.0.0",
@@ -60,7 +60,7 @@ sentry = [
     "sentry-sdk==2.44.0",
 ]
 
-# Makes `nora groups` and `nora persons pending` — the commands design/10-identity-and-policy-schema.md §6,
+# Makes `nora groups` and `nora persons pending` — the commands docs/design/10-identity-and-policy-schema.md §6,
 # policy.example.toml and `nora.policy`'s own error messages all name — real
 # commands rather than shorthand for `python -m nora …`. Same entry point, so
 # the container's `python -m nora` CMD is unaffected.
@@ -188,7 +188,7 @@ select = ["E", "F", "W", "I", "N", "UP", "B", "BLE", "ASYNC", "S", "C4", "SIM", 
 #           finding it, not finding a defect. Added 2026-09-17 (#285) after 25 N802s
 #           accumulated across the self-growth and participation-measure suites and
 #           `make gate` went red at its FIRST step. Renaming them was the alternative
-#           and is worse: it costs the emphasis and churns names `design/09-decision-index.md`
+#           and is worse: it costs the emphasis and churns names `docs/design/09-decision-index.md`
 #           cites (#187: the reproducible derivation in
 #           `tests/architecture/test_decision_index_tests_exist.py` found 40 stale
 #           `::selector` citations after triage, largely from renames — the "91"
@@ -220,7 +220,7 @@ forbidden_modules = ["aiohttp", "strands", "sqlalchemy", "pydantic", "prometheus
 name = "the room policy is composed in, never imported by a lower layer"
 type = "forbidden"
 # `resolve_voice_room` (nora/web/voice.py) and `resolve_music_channel`
-# (nora/platform/discord/music_notify.py, design/voice-channel/music.md) are both
+# (nora/platform/discord/music_notify.py, docs/design/voice-channel/music.md) are both
 # threaded as `Callable[[str], str | None]` rather than as the `Policy` itself,
 # each justified in a docstring by "this layer must not learn that nora.policy
 # exists". Both were true and neither was enforced — the same "a neutrality
@@ -272,7 +272,7 @@ type = "layers"
 # prove is the last line: nothing above nora.domain may be imported BY nora.domain.
 #
 # nora.ingest sits ABOVE nora.engagement, not beside it: the standing event fold
-# (design/standing-watermark/10-event-trigger.md) is triggered from the ingest path — every message,
+# (docs/design/standing-watermark/10-event-trigger.md) is triggered from the ingest path — every message,
 # tagged or not, spawns the watermark check — while the fold machinery it reuses
 # (ConversationSlots, the debrief objective/prompt/parse) is engagement's. That is
 # engagement's own framing ("ingest decides WHETHER to engage; engagement decides
@@ -280,7 +280,7 @@ type = "layers"
 # The reverse import does not exist and stays forbidden.
 layers = [
     # `nora.subject` obtains the composed graph for a caller that is NOT
-    # production (design/evaluation/subject.md, operator 2026-09-17).
+    # production (docs/design/evaluation/subject.md, operator 2026-09-17).
     # It sits ABOVE `nora.app` so it may reach the composition root while the
     # reverse is refused — the property that stops the application learning it
     # is being measured. Before this layer existed there was no slot for that
@@ -331,7 +331,7 @@ type = "forbidden"
 # and `build_dependencies` takes a `Config`. It reads config for the same reason
 # `nora.app` does. Recorded because this list is explicit — a package not named
 # here is unconstrained because nothing looks, not because anything decided, and
-# that was measured while choosing the layer (design/evaluation/subject.md).
+# that was measured while choosing the layer (docs/design/evaluation/subject.md).
 source_modules = [
     "nora.agent", "nora.obs", "nora.doctrine", "nora.language", "nora.platform",
     "nora.domain", "nora.persons", "nora.tag",
@@ -364,7 +364,7 @@ type = "forbidden"
 # added later needs a line here too; `tests/test_boundaries.py`'s AST-based sibling
 # check is the allowlist-style backstop that does not need updating for that case.
 #
-# `nora.domain` joined 2026-09-19 (design/evaluation, S5): it is "framework-free
+# `nora.domain` joined 2026-09-19 (docs/design/evaluation, S5): it is "framework-free
 # contracts, imports only the standard library" (nora/domain/__init__.py's own
 # docstring) — pure types and pure functions, not a collaborator or an assembly
 # seam, which is what this contract exists to keep out. Unlike `nora.agent`/

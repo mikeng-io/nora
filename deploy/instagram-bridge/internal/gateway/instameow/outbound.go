@@ -253,7 +253,7 @@ func sendText(
 }
 
 // sendError replaces a send failure's TEXT with a fixed one, so what Nora was
-// sending never reaches a span, a log line or an error envelope (design/instagram-adoption/bridge.md «Observation»'s
+// sending never reaches a span, a log line or an error envelope (docs/design/instagram-adoption/bridge.md «Observation»'s
 // never-list; bridge.md). An upstream refusal can quote what it refused (the
 // message, an upload's filename), the same shape `upstreamSearchError` exists
 // for on the search path. It covers all three send legs: the text message,

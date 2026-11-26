@@ -1,6 +1,6 @@
 # Disposable bridge-queue observability fixture — the smallest collector
 # that implements the routing the approved design
-# (design/platform-bridges/04-operations.md, docs/observability.md) REQUIRES:
+# (docs/design/platform-bridges/04-operations.md, docs/operations/observability.md) REQUIRES:
 #
 #   app sampler            this collector                       stores
 #   ───────────            ──────────────                       ──────

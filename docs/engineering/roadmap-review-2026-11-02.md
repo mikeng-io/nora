@@ -32,17 +32,17 @@ identifies current integration/validation attention, not a new execution order.
 
 | Direction and user value | Canonical design / existing home | Disposition and next evidence |
 |---|---|---|
-| One memory and Cognition: recall, connect and revise understanding across turns | [one-session build](../../design/unified-memory/understanding.md), [graph](../../design/unified-memory/graph.md), [Cognition](../../design/unified-memory/understanding.md) | Own outcome, In progress/Now. Recent source delivery includes graph, Register and Profile work; the November 2 snapshot explicitly leaves semantic longitudinal evidence, capture reliability, historical backfill preparation and cutover acceptance open. Do not make public benchmarks a cutover prerequisite. |
+| One memory and Cognition: recall, connect and revise understanding across turns | [one-session build](../design/unified-memory/understanding.md), [graph](../design/unified-memory/graph.md), [Cognition](../design/unified-memory/understanding.md) | Own outcome, In progress/Now. Recent source delivery includes graph, Register and Profile work; the November 2 snapshot explicitly leaves semantic longitudinal evidence, capture reliability, historical backfill preparation and cutover acceptance open. Do not make public benchmarks a cutover prerequisite. |
 | Honest external memory-quality baseline | [existing outcome #435](https://github.com/mikeng-io/nora/issues/435), children #429–431 | Reuse Planned/Next. Keep LongMemEval-S → GroupMemBench → Mem2ActBench, one native delivery milestone, no duplicate umbrella in its count. No full-run result is claimed. |
-| Continuity of decisions, arrangements and actual actions across rooms | [Notebook](../../design/notebook-memory-types/00-design.md), [one Standing](../../design/notebook-memory-types/20-standing.md), [turn records](../../design/standing-ledger/30-turn-records.md) | Own outcome, In progress/Now. Standing consolidation and typed Profile have merged source. Remaining scope is full memory-type migration and end-to-end continuity/actual-action evidence; never restore a separate shared-state block, conclusion tool or another cognitive writer. |
-| Multi-step computer work delegated to Pi, with switchable worker and sandbox | [agent-worker intent](../../design/agent-worker/00-intent.md), [adapters](../../design/agent-worker/20-adapters.md), [sandbox port](../../design/agent-worker/30-sandbox-port.md), [verification](../../design/agent-worker/50-verification-and-migration.md) | One outcome, design reconciliation first (operator, 2026-11-04; issue #520); implementation not started. Proposed/Now reflects current design attention. Next scope: one VM per unit/canonical private-DM scope, reusable anonymous Chrome task tabs and direct screenshots with executor/model selection explicit before implementation; reuse of CDP/Flash is recommended, Jev/cua-s1 remain unselected alternatives. Existing Strands subagent stays Nora; Pi is the computer worker inside the sandbox. Streamed spawn, measured Pi adapter and scoped relay are delivery slices; ACP and another VM provider are later extensions, not new parallel projects. Current sbx microVM is not a future unbuilt capability. |
-| Personalised replies and useful group recommendations | [personalisation](../../design/personalisation/README.md), [feedback](../../design/personalisation/feedback.md) | Own outcome, Proposed/Later. Likes, constraints, one ranker, venues/games and feedback share one engine. Historical fit/recommendations bundles were renamed, not three engines to build. Refresh graph-backed inputs and Standing dependencies before a bounded venue/reply slice. |
-| One private conversation across linked platforms with curated shared understanding | [existing #124](https://github.com/mikeng-io/nora/issues/124), [private DM](../../design/private-dm/README.md), [cross-unit reads](../../design/private-dm/curation.md) | Reuse Proposed/Later. WhatsApp/Signal continuity, owner-map and backup prerequisites, default-unit writes and provenance-preserving publication remain the scope. Shared unit computer migration is already recorded implemented; do not repeat it as a prerequisite build. |
-| Understand reactions, polls and room changes from captured evidence | [existing #433](https://github.com/mikeng-io/nora/issues/433), [observations](../../design/platform-observations/README.md), [coverage](../../design/platform-observations/observations.md) | Reuse Validating/Now. November 2 source includes typed observation foundation, read tools and Standing projections despite older proposed frontmatter. Complete platform-specific lifecycle/coverage and input readback; counts/reactions never become inferred agreement or consent. Telegram adoption is separate. |
-| Keep receiving and recover work across application releases | [existing #422](https://github.com/mikeng-io/nora/issues/422), [bridges](../../design/platform-bridges/00-contract.md) | Reuse Validating/Now. Source includes standalone bridges/durable handoff. Retain pending failure-window, recreation, platform and installed-wrapper proof as acceptance; design frontmatter alone cannot roll delivery back to not-built. |
-| Join Telegram through the same platform contracts | [observation coverage](../../design/platform-observations/observations.md), [platform adoption questions](../../design/platform-observations/README.md) | Own outcome, Proposed/Later. First decide bot versus client mode and required account permissions/capabilities. Then trace identity/policy, ingest, replies/media, observations and recovery end to end. No account creation, token request or implementation is authorized by this card. |
-| Inspect Nora's behavior and cost across deployments | [existing #440](https://github.com/mikeng-io/nora/issues/440), [observability](../observability.md) | Reuse Validating/Now. SigNoz code migration is source-delivered; retained logs, four-producer correlation, usage/cost and installed telemetry acceptance remain evidence questions. Do not declare production cutover from merged source. |
-| Consistent Mini/adult identity and usable modeled forms | [existing #245](https://github.com/mikeng-io/nora/issues/245), [representations](../../design/self-reference/modeling.md), [Mini](../../design/self-reference/identity.md) | Reuse Planned/Later. Approved 2D references and recent social artwork are delivered source assets. Orthographic consistency, mesh, rig and animation remain separately measured deliverables. Retain current Mini runtime direction. |
+| Continuity of decisions, arrangements and actual actions across rooms | [Notebook](../design/notebook-memory-types/00-design.md), [one Standing](../design/notebook-memory-types/20-standing.md), [turn records](../design/standing-ledger/30-turn-records.md) | Own outcome, In progress/Now. Standing consolidation and typed Profile have merged source. Remaining scope is full memory-type migration and end-to-end continuity/actual-action evidence; never restore a separate shared-state block, conclusion tool or another cognitive writer. |
+| Multi-step computer work delegated to Pi, with switchable worker and sandbox | [agent-worker intent](../design/agent-worker/00-intent.md), [adapters](../design/agent-worker/20-adapters.md), [sandbox port](../design/agent-worker/30-sandbox-port.md), [verification](../design/agent-worker/50-verification-and-migration.md) | One outcome, design reconciliation first (operator, 2026-11-04; issue #520); implementation not started. Proposed/Now reflects current design attention. Next scope: one VM per unit/canonical private-DM scope, reusable anonymous Chrome task tabs and direct screenshots with executor/model selection explicit before implementation; reuse of CDP/Flash is recommended, Jev/cua-s1 remain unselected alternatives. Existing Strands subagent stays Nora; Pi is the computer worker inside the sandbox. Streamed spawn, measured Pi adapter and scoped relay are delivery slices; ACP and another VM provider are later extensions, not new parallel projects. Current sbx microVM is not a future unbuilt capability. |
+| Personalised replies and useful group recommendations | [personalisation](../design/personalisation/README.md), [feedback](../design/personalisation/feedback.md) | Own outcome, Proposed/Later. Likes, constraints, one ranker, venues/games and feedback share one engine. Historical fit/recommendations bundles were renamed, not three engines to build. Refresh graph-backed inputs and Standing dependencies before a bounded venue/reply slice. |
+| One private conversation across linked platforms with curated shared understanding | [existing #124](https://github.com/mikeng-io/nora/issues/124), [private DM](../design/private-dm/README.md), [cross-unit reads](../design/private-dm/curation.md) | Reuse Proposed/Later. WhatsApp/Signal continuity, owner-map and backup prerequisites, default-unit writes and provenance-preserving publication remain the scope. Shared unit computer migration is already recorded implemented; do not repeat it as a prerequisite build. |
+| Understand reactions, polls and room changes from captured evidence | [existing #433](https://github.com/mikeng-io/nora/issues/433), [observations](../design/platform-observations/README.md), [coverage](../design/platform-observations/observations.md) | Reuse Validating/Now. November 2 source includes typed observation foundation, read tools and Standing projections despite older proposed frontmatter. Complete platform-specific lifecycle/coverage and input readback; counts/reactions never become inferred agreement or consent. Telegram adoption is separate. |
+| Keep receiving and recover work across application releases | [existing #422](https://github.com/mikeng-io/nora/issues/422), [bridges](../design/platform-bridges/00-contract.md) | Reuse Validating/Now. Source includes standalone bridges/durable handoff. Retain pending failure-window, recreation, platform and installed-wrapper proof as acceptance; design frontmatter alone cannot roll delivery back to not-built. |
+| Join Telegram through the same platform contracts | [observation coverage](../design/platform-observations/observations.md), [platform adoption questions](../design/platform-observations/README.md) | Own outcome, Proposed/Later. First decide bot versus client mode and required account permissions/capabilities. Then trace identity/policy, ingest, replies/media, observations and recovery end to end. No account creation, token request or implementation is authorized by this card. |
+| Inspect Nora's behavior and cost across deployments | [existing #440](https://github.com/mikeng-io/nora/issues/440), [observability](../operations/observability.md) | Reuse Validating/Now. SigNoz code migration is source-delivered; retained logs, four-producer correlation, usage/cost and installed telemetry acceptance remain evidence questions. Do not declare production cutover from merged source. |
+| Consistent Mini/adult identity and usable modeled forms | [existing #245](https://github.com/mikeng-io/nora/issues/245), [representations](../design/self-reference/modeling.md), [Mini](../design/self-reference/identity.md) | Reuse Planned/Later. Approved 2D references and recent social artwork are delivered source assets. Orthographic consistency, mesh, rig and animation remain separately measured deliverables. Retain current Mini runtime direction. |
 
 These are candidates/ongoing directions, not authority to execute them all.
 Implementation chooses a bounded slice against its canonical acceptance. Reopen
@@ -111,89 +111,89 @@ new delivery evidence or an operator scope change requires a different grouping.
 165 paths: 147 present, 18 removed/renamed at the source snapshot.
 
 ```text
-design/08-stack-refactor-brief.md
-design/09-decision-index.md
-design/13-trace-content-and-redaction.md
-design/19-media-comprehension.md
-design/25-version-and-announcement.md
-design/agent-worker/00-intent.md
-design/agent-worker/10-worker-port.md
-design/agent-worker/20-adapters.md
-design/agent-worker/30-sandbox-port.md
-design/agent-worker/40-models-egress-permissions.md
-design/agent-worker/50-verification-and-migration.md
-design/agent-worker/_index.yaml
-design/artifact/README.md
-design/capability-drop/01-when-stays-in-schema.md
-design/cognition-loop/README.md
-design/cognition-loop/data.md
-design/cognition-loop/observation.md
-design/cognition-loop/session.md
-design/computer-unit-scope/00-contract.md
-design/computer-unit-scope/01-migration.md
-design/computer-unit-scope/_index.yaml
+docs/design/08-stack-refactor-brief.md
+docs/design/09-decision-index.md
+docs/design/13-trace-content-and-redaction.md
+docs/design/19-media-comprehension.md
+docs/design/25-version-and-announcement.md
+docs/design/agent-worker/00-intent.md
+docs/design/agent-worker/10-worker-port.md
+docs/design/agent-worker/20-adapters.md
+docs/design/agent-worker/30-sandbox-port.md
+docs/design/agent-worker/40-models-egress-permissions.md
+docs/design/agent-worker/50-verification-and-migration.md
+docs/design/agent-worker/_index.yaml
+docs/design/artifact/README.md
+docs/design/capability-drop/01-when-stays-in-schema.md
+docs/design/cognition-loop/README.md
+docs/design/cognition-loop/data.md
+docs/design/cognition-loop/observation.md
+docs/design/cognition-loop/session.md
+docs/design/computer-unit-scope/00-contract.md
+docs/design/computer-unit-scope/01-migration.md
+docs/design/computer-unit-scope/_index.yaml
 scripts/context_decision_probe.py
-design/self-growth/character.md
-design/voice-channel/music.md
-design/cognition-loop/execution.md
-design/notebook-memory-types/00-design.md
-design/evaluation/measurement.md
-design/evaluation/coverage.md
-design/evaluation/subject.md
-design/instagram-adoption/social.md
-design/media-read-lane/reading.md
-design/notebook-memory-types/10-relations.md
-design/notebook-memory-types/20-standing.md
-design/notebook-memory-types/20-standing.md
-design/notebook-memory-types/_index.yaml
-design/personalisation/README.md
-design/personalisation/likes.md
-design/personalisation/ranker.md
-design/personalisation/feedback.md
-design/platform-bridges/00-contract.md
-design/platform-bridges/01-source-map.md
-design/platform-bridges/02-wire-and-platforms.md
-design/platform-bridges/03-ownership-and-recovery.md
-design/platform-bridges/04-operations.md
-design/platform-bridges/05-build-and-acceptance.md
-design/platform-bridges/_index.yaml
-design/platform-observations/README.md
-design/platform-observations/observations.md
-design/platform-observations/projections.md
-design/platform-observations/exposure.md
-design/policy-reload/README.md
-design/private-dm.md
-design/private-dm/README.md
-design/private-dm/admission.md
-design/private-dm/curation.md
-design/private-dm/workspaces.md
-design/system/grounding.md
-design/unified-memory/graph.md
-design/unified-memory/README.md
-design/room-topology/00-intent.md
-design/room-topology/10-topology.md
-design/room-topology/20-addressing.md
-design/room-topology/30-what-reads-the-platform.md
-design/room-topology/40-verification.md
-design/room-topology/50-migration.md
-design/room-topology/_index.yaml
-design/self-awareness/README.md
-design/self-awareness/rooms.md
-design/self-growth/lessons.md
-design/self-reference/identity.md
-design/self-reference/references.md
-design/self-reference/modeling.md
-design/standing-ledger/00-intent.md
-design/standing-ledger/10-what-standing-holds.md
-design/standing-ledger/20-the-ledger.md
-design/standing-ledger/30-turn-records.md
-design/standing-ledger/40-verification.md
-design/standing-ledger/50-migration.md
-design/standing-ledger/_index.yaml
-design/subagent/00-design.md
-design/tool-catalogue/deferral.md
-design/unified-memory/understanding.md
-design/unified-memory/profiles.md
-design/whatsapp-adoption/identity.md
-design/whatsapp-adoption/README.md
+docs/design/self-growth/character.md
+docs/design/voice-channel/music.md
+docs/design/cognition-loop/execution.md
+docs/design/notebook-memory-types/00-design.md
+docs/design/evaluation/measurement.md
+docs/design/evaluation/coverage.md
+docs/design/evaluation/subject.md
+docs/design/instagram-adoption/social.md
+docs/design/media-read-lane/reading.md
+docs/design/notebook-memory-types/10-relations.md
+docs/design/notebook-memory-types/20-standing.md
+docs/design/notebook-memory-types/20-standing.md
+docs/design/notebook-memory-types/_index.yaml
+docs/design/personalisation/README.md
+docs/design/personalisation/likes.md
+docs/design/personalisation/ranker.md
+docs/design/personalisation/feedback.md
+docs/design/platform-bridges/00-contract.md
+docs/design/platform-bridges/01-source-map.md
+docs/design/platform-bridges/02-wire-and-platforms.md
+docs/design/platform-bridges/03-ownership-and-recovery.md
+docs/design/platform-bridges/04-operations.md
+docs/design/platform-bridges/05-build-and-acceptance.md
+docs/design/platform-bridges/_index.yaml
+docs/design/platform-observations/README.md
+docs/design/platform-observations/observations.md
+docs/design/platform-observations/projections.md
+docs/design/platform-observations/exposure.md
+docs/design/policy-reload/README.md
+docs/design/private-dm.md
+docs/design/private-dm/README.md
+docs/design/private-dm/admission.md
+docs/design/private-dm/curation.md
+docs/design/private-dm/workspaces.md
+docs/design/system/grounding.md
+docs/design/unified-memory/graph.md
+docs/design/unified-memory/README.md
+docs/design/room-topology/00-intent.md
+docs/design/room-topology/10-topology.md
+docs/design/room-topology/20-addressing.md
+docs/design/room-topology/30-what-reads-the-platform.md
+docs/design/room-topology/40-verification.md
+docs/design/room-topology/50-migration.md
+docs/design/room-topology/_index.yaml
+docs/design/self-awareness/README.md
+docs/design/self-awareness/rooms.md
+docs/design/self-growth/lessons.md
+docs/design/self-reference/identity.md
+docs/design/self-reference/references.md
+docs/design/self-reference/modeling.md
+docs/design/standing-ledger/00-intent.md
+docs/design/standing-ledger/10-what-standing-holds.md
+docs/design/standing-ledger/20-the-ledger.md
+docs/design/standing-ledger/30-turn-records.md
+docs/design/standing-ledger/40-verification.md
+docs/design/standing-ledger/50-migration.md
+docs/design/standing-ledger/_index.yaml
+docs/design/subagent/00-design.md
+docs/design/tool-catalogue/deferral.md
+docs/design/unified-memory/understanding.md
+docs/design/unified-memory/profiles.md
+docs/design/whatsapp-adoption/identity.md
+docs/design/whatsapp-adoption/README.md
 ```

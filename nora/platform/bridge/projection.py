@@ -1,4 +1,4 @@
-"""The standalone bridge admission-projection publisher (design/platform-bridges §02).
+"""The standalone bridge admission-projection publisher (docs/design/platform-bridges §02).
 
 One long-running process per platform emits `/bridge-projection/{platform}.json`
 — the read-only transport admission scope every bridge polls by mtime. It is

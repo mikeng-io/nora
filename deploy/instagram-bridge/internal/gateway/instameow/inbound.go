@@ -2,7 +2,7 @@ package instameow
 
 // Inbound normalization: instameow's typed delta -> the JSON on GET /events.
 //
-// The shapes here are fixed by design/instagram-adoption/bridge.md
+// The shapes here are fixed by docs/design/instagram-adoption/bridge.md
 // and nothing else. Drift between this file and that document is a contract
 // failure, not a judgement call — the Python adapter is written against the
 // document, not against this code.
@@ -32,7 +32,7 @@ import (
 )
 
 // Event kinds on the SSE stream. `message` is the contract's; the rest are
-// documented extensions — design/instagram-adoption/bridge.md «Messaging contract» defines only
+// documented extensions — docs/design/instagram-adoption/bridge.md «Messaging contract» defines only
 // the message object, and an adapter is expected to ignore kinds it does not
 // know (the same posture whatsapp-bridge's `type` discriminator takes).
 const (
@@ -153,7 +153,7 @@ type eventShared struct {
 	// Caption is `caption_body_text`: the post's own caption, as its author
 	// wrote it, passed through when a delta carries one. It is NOT the free
 	// depth: measured 2026-09-24, a live shared reel and a live shared story
-	// carried no caption at all (design/instagram-adoption/social.md, the dated
+	// carried no caption at all (docs/design/instagram-adoption/social.md, the dated
 	// section). What is free is the author and TargetURL, from which the
 	// adapter reads the kind and a clean link.
 	Caption string `json:"caption,omitempty"`
@@ -417,7 +417,7 @@ func extractMedia(msg *slidetypes.Message) []*eventMedia {
 
 	case *slidetypes.MessageContentXMA:
 		// The THUMBNAIL of a shared post, not the post. It is a real, fetchable
-		// image and it is the middle of design/instagram-adoption/social.md's three depths: cheap enough
+		// image and it is the middle of docs/design/instagram-adoption/social.md's three depths: cheap enough
 		// to take at ingest, and enough for Nora to say what a reel looks like
 		// without fetching the video. `kind` is image even for a shared VIDEO,
 		// because these bytes are a still — calling it a video would make her
@@ -654,7 +654,7 @@ func normalizeReaction(room string, r slidetypes.Reaction, messageID string, rem
 
 // editEvent carries the NEW text. The bridge reports the event and never
 // rewrites history; Nora records it beside the message it edits, not over it
-// (design/message-edits/, the same for every network).
+// (docs/design/message-edits/, the same for every network).
 type editEvent struct {
 	Kind      string `json:"kind"`
 	RoomID    string `json:"room_id"`

@@ -51,7 +51,7 @@ edges:
 | surface | new `SocialSurface` | Nora is summoned **on** Threads, and answers **there** | the summons occasion |
 
 They share a **session**, the one token in `threads-bridge`. They do not share
-a port. This is the same split design/instagram-adoption/social.md made for the
+a port. This is the same split docs/design/instagram-adoption/social.md made for the
 instagram-bridge, which serves both messaging and reads from one session.
 Nothing on the read axis can publish, and the surface axis never feeds a
 room.
@@ -120,7 +120,7 @@ saying nothing.
 the first real mention): `/mentions` returns `username`, and `owner` is
 absent even when asked for, on the mention and on its root post.
 `profile_lookup` needs `threads_profile_discovery`, which the OAuth flow did
-not grant. So the block is matched on the username. design/10 §1.3 says a
+not grant. So the block is matched on the username. docs/design/10 §1.3 says a
 name is spoofable and a platform id is not, and a username is spoofable in
 exactly one way: someone renames, releases the handle, and a stranger claims
 it.

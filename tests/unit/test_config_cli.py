@@ -137,7 +137,7 @@ def test_set_preserves_comments(cfg_path: Path):
     run_cli("config", "set", "llm.budgets.web_fetch", "8", "--config", str(cfg_path))
     text = cfg_path.read_text(encoding="utf-8")
     # Local descriptions survive a settings edit; rationale lives in maintained docs.
-    assert "credentials and endpoint examples: docs/configuration.md" in text
+    assert "credentials and endpoint examples: docs/operations/configuration.md" in text
     assert "empty = derive from the signal-cli daemon" in text
 
 

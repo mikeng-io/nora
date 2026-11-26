@@ -11,7 +11,7 @@ arrives on the observation.
 verb with no production caller is what
 `tests/architecture/test_store_methods_have_production_callers.py` refuses. The
 reader of this table is a person with `psql`; the query is in
-`docs/runbook.md` beside the table.
+`docs/operations/runbook.md` beside the table.
 
 **`record_observation`, not `record` or `append`.** Both short names are
 already defined on other classes under `nora/` (`ReplyGuard.record`,

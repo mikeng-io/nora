@@ -1,5 +1,5 @@
 """computer_sessions — one task in progress on Nora's computer per room,
-derived by code (design/sandbox-runtime §15.2, decision 5); and the
+derived by code (docs/design/sandbox-runtime §15.2, decision 5); and the
 `computer_events` changes sessions need.
 
 1. `computer_sessions`: opened by the first computer call in a room with no

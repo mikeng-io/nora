@@ -1,5 +1,5 @@
 /*
- * Print and "save as PDF" for a document (design/artifact/lifecycle.md): the browser's own print
+ * Print and "save as PDF" for a document (docs/design/artifact/lifecycle.md): the browser's own print
  * is the PDF path, and this sheet is what makes the page fit for it. It applies only on a
  * page that holds a `[data-print-document]` (the document page and an old revision), and
  * only in print, so no screen ever sees it.
@@ -11,7 +11,7 @@
  *   - Anything inside the document marked `data-print-hide` is dropped too.
  *   - A Card, a Table, a Code block, an Image, a Chart, a Map or a diagram is never split
  *     across two pages; a heading never ends a page.
- *   - Paper is light: a dark-theme page prints with the light tokens (DESIGN.md's values,
+ *   - Paper is light: a dark-theme page prints with the light tokens (docs/design/appearance/README.md's values,
  *     copied from globals.css; change them together).
  *   - A link prints its address after it where that helps (src/lib/documents/print.ts).
  *   - Maps and Mermaid print as the page draws them; nothing is re-rendered.
