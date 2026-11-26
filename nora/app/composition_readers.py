@@ -13,6 +13,7 @@ from nora.app.startup import StartupError
 from nora.config import Config
 from nora.domain.ports import ExternalFilesSource, ReverseGeocoder, SearchProvider
 from nora.infra.google.auth import GoogleCredentials
+from nora.infra.sql.graph_search_embed import settled_story_frames
 
 """Policy- and persons-derived readers for the composition root."""
 
@@ -254,16 +255,15 @@ def social_unit_rooms(allowlist: Any)-> dict[str, tuple[tuple[str, str], ...]]:
     }
 
 
-def _story_frames_embedded(
+def _settled_story_frames(
     engine: AsyncEngine, model: str,
 ) -> Callable[[Sequence[tuple[str, str]]], Awaitable[set[tuple[str, str]]]]:
-    """The memory index's answer to which story frames are embedded under the"""
-    from nora.infra.sql.memory_index import story_frame_embedded
+    """The Cognitive Graph's answer to which story frames' embeddings are settled."""
 
     async def embedded(frames: Sequence[tuple[str, str]]) -> set[tuple[str, str]]:
 
         async with engine.connect() as conn:
-            return await story_frame_embedded(conn, frames, model=model)
+            return await settled_story_frames(conn, frames, model=model)
 
     return embedded
 

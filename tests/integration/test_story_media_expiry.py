@@ -5,7 +5,7 @@ hand.
 
 Every test ticks the pass on a moving clock rather than seeding a state and
 asking once: «not before the bound», «once», «after a restart» are all state
-carried from one tick to the next. The memory index embeds no social item yet,
+carried from one tick to the next. The graph index embeds no social item yet,
 so at the tick no frame is embedded; when the bytes go once BOTH exist is
 `bytes_due`'s, `tests/unit/test_story_bytes_due.py`.
 
@@ -25,9 +25,10 @@ import psycopg
 import pytest
 import sqlalchemy as sa
 
-from nora.app.composition_readers import _story_frames_embedded
+from nora.app.composition_readers import _settled_story_frames
 from nora.app.social_expiry import EmbeddedFrames, StoryMediaExpiry
 from nora.domain.social_stream import SocialItem
+from nora.infra.sql.cognitive_graph_schema import GRAPH_SEARCH, REGISTRY
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.schema import (
     BLOB_TOMBSTONE,
@@ -93,7 +94,7 @@ class World:
     metrics: Metrics = field(default_factory=Metrics)
     #: Run inside each `delete`, before its check: a writer racing the pass.
     racing: Callable[[str], Awaitable[None]] | None = None
-    #: The memory index's answer, when the pass is given one.
+    #: The graph index's answer, when the pass is given one.
     embedded: EmbeddedFrames | None = None
     blobs: FakeBlobStore = field(init=False)
 
@@ -116,7 +117,7 @@ class World:
 
     async def seed(
         self, item_id: str, *, kind: str = "story_frame", data: bytes | None = None,
-        perceived: bool = False, expires: bool | None = None,
+        perceived: bool = False, expires: bool | None = None, caption: str | None = None,
     ) -> str:
         """One item recorded now with its bytes in custody, the way the poller
         leaves it; a story frame expires a day after it was posted, and so does
@@ -131,7 +132,7 @@ class World:
                 taken_at=taken,
                 expires_at=taken + timedelta(days=1)
                 if (kind == "story_frame" if expires is None else expires) else None,
-                caption=None, alt_text=None, media=(),
+                caption=caption, alt_text=None, media=(),
             ),
             person="ada", origin="poll", seen_at=self.clock.now, media_ref=sha,
         )
@@ -173,6 +174,8 @@ async def world(_db: str) -> AsyncIterator[World]:
                 "messages, sticker_index, computer_events, computer_exports, "
                 "document_revision, compute_jobs, reminders cascade",
             ))
+            await conn.execute(sa.delete(GRAPH_SEARCH))
+            await conn.execute(sa.delete(REGISTRY))
         await engine.dispose()
 
 
@@ -231,8 +234,36 @@ async def test_at_the_first_bound_a_perceived_and_embedded_frame_loses_its_bytes
     assert all(("instagram", "unperceived") not in a for a in asked)
 
 
-async def test_with_the_real_index_an_unprojected_frame_waits_for_the_hard_limit(world) -> None:
-    world.embedded = _story_frames_embedded(world.engine, "a-model")
+async def _graph_row(
+    world: World, item_id: str, *, embedded: bool = False, attempts: int = 0,
+    error: str | None = None,
+) -> None:
+    """The frame's registered searchable row, as its source write and the
+    graph worker leave it; unembedded by default."""
+    graph_id = f"item:generated-{item_id}"
+    unit = "friends"
+    async with world.engine.begin() as conn:
+        await conn.execute(sa.insert(REGISTRY).values(id=graph_id, unit=unit, kind="item"))
+        changed = await conn.execute(sa.update(SOCIAL_ITEM).where(
+            SOCIAL_ITEM.c.network == "instagram", SOCIAL_ITEM.c.item_id == item_id,
+        ).values(graph_id=graph_id, unit=unit, caption="a durable caption"))
+        assert changed.rowcount == 1
+        values = {
+            "embedded_at": 1, "embed_attempts": attempts, "embed_error": error,
+            "embed_input": "text" if attempts or error or embedded else None,
+        }
+        if embedded:
+            values.update({
+                "embedding": [1.0] + [0.0] * 2047,
+                "embedding_model": "a-model",
+            })
+        await conn.execute(sa.update(GRAPH_SEARCH).where(
+            GRAPH_SEARCH.c.graph_id == graph_id, GRAPH_SEARCH.c.unit == unit,
+        ).values(**values))
+
+
+async def test_with_the_real_graph_index_an_absent_row_keeps_the_bytes(world) -> None:
+    world.embedded = _settled_story_frames(world.engine, "a-model")
     sha = await world.seed("s1", perceived=True)
     expiry = world.expiry()
 
@@ -241,6 +272,36 @@ async def test_with_the_real_index_an_unprojected_frame_waits_for_the_hard_limit
 
     assert world.held(sha)
     assert await world.tombstones() == []
+
+
+async def test_with_the_real_graph_index_a_queued_row_keeps_the_bytes(world) -> None:
+    world.embedded = _settled_story_frames(world.engine, "a-model")
+    queued = await world.seed("queued", perceived=True)
+    control = await world.seed("control", perceived=True)
+    await _graph_row(world, "queued", attempts=1, error="rejected:generated")
+    await _graph_row(world, "control", embedded=True)
+    expiry = world.expiry()
+
+    world.clock.days(1 + KEEP)
+    await expiry.tick()
+
+    assert world.held(queued), "a failure still queued for retry is not embedded"
+    assert not world.held(control), "the positive control: an embedded frame's bytes go"
+    assert [r for _, _, r in await world.tombstones()] == ["embedded"]
+
+
+async def test_with_the_real_graph_index_an_embedded_frame_loses_its_bytes(world) -> None:
+    world.embedded = _settled_story_frames(world.engine, "a-model")
+    sha = await world.seed("s1", perceived=True)
+    await _graph_row(world, "s1", embedded=True)
+    expiry = world.expiry()
+
+    world.clock.days(1 + KEEP)
+    await expiry.tick()
+
+    assert not world.held(sha)
+    assert await world.tombstones() == [(sha, "story_frame", "embedded")]
+    assert world.deleted("embedded") == 1
 
 
 async def test_at_the_hard_limit_the_bytes_go_tombstoned_and_counted_unembedded(world) -> None:

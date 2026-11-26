@@ -8,7 +8,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from nora.app.composition_readers import (
-    _story_frames_embedded,
+    _settled_story_frames,
     social_person_rooms,
     social_person_units,
     social_unit_rooms,
@@ -195,7 +195,7 @@ def expiry(blobs: Any, cfg: Any, engine: Any, metrics: Any)-> ExpiryWiring:
             max_days=cfg.social.story_media_keep_max_days,
             tick_seconds=cfg.social.poll.tick_seconds,
             metrics=metrics,
-            embedded=_story_frames_embedded(engine, fingerprint(cfg.memory.index.embedder_model)),
+            embedded=_settled_story_frames(engine, fingerprint(cfg.memory.index.embedder_model)),
         )
         if blobs is not None and cfg.social.story_expiry_enabled
         else None

@@ -1,5 +1,5 @@
 """`StoryMediaExpiry` — a story frame's bytes deleted at their bound
-(design/cognition-loop/observation.md ; design/cognition-loop/data.md).
+(design/18-media-custody.md; design/instagram-adoption/social.md).
 
 **What goes, and when** (`nora.domain.social_stream.bytes_due`). Only a story
 frame's media bytes: a post's and a reel's are never read here. They go
@@ -57,9 +57,9 @@ log = logging.getLogger("nora.app.social_expiry")
 PUT_GRACE_SECONDS = 3600.0
 
 
-#: The memory index's answer: of these `(network, item_id)` frames, the ones
-#: whose every medium is embedded or given up on. None means no index reads
-#: them, so no frame is embedded and each waits for the hard limit.
+#: The graph's answer: of these `(network, item_id)` frames, the ones whose
+#: embedding is settled. None means no index reads them, so no frame is embedded
+#: and each waits for the hard limit.
 EmbeddedFrames = Callable[[Sequence[tuple[str, str]]], Awaitable[set[tuple[str, str]]]]
 
 
