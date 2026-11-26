@@ -15,6 +15,7 @@ from typing import Any
 import pytest
 import sqlalchemy as sa
 
+import nora.subject.sandbox_index as sandbox_index_module
 from nora.infra.sql.cognitive_graph_schema import GRAPH_SEARCH
 from nora.infra.sql.engine import create_sql_engine
 from nora.subject.sandbox import sandbox_database
@@ -180,6 +181,36 @@ async def test_an_applied_index_that_does_not_fit_the_sandbox_is_refused(source,
             await index_sandbox(second[0], source_url=source[0], model_id=MODEL_ID,
                                 cache=cache, key=KEY)
         # Rollback restores the rows the seeding triggers wrote, with no adopted vector.
+        assert await _counts(second[1]) == (3, 0)
+
+
+async def test_a_reuse_whose_written_rows_differ_from_the_image_is_rolled_back(
+    source, pg_template, monkeypatch,
+):
+    """The reviewer's probe: only `embedded_at` drifts after the real insert,
+    the `(graph_id, unit, text)` keys unchanged, so the key comparison passes
+    and only the persisted-row readback can catch it. The refusal must unwind
+    the transaction, not only raise."""
+    real_apply = sandbox_index_module._apply_index_image
+
+    async def corrupting_apply(target, image):
+        await real_apply(target, image)
+        await target.execute(sa.update(GRAPH_SEARCH).values(
+            embedded_at=GRAPH_SEARCH.c.embedded_at + 1))
+
+    monkeypatch.setattr(sandbox_index_module, "_apply_index_image", corrupting_apply)
+    cache = IndexCache()
+    async with AsyncExitStack() as stack:
+        first = await _sandbox(stack, source[0], pg_template)
+        second = await _sandbox(stack, source[0], pg_template)
+        await index_sandbox(first[0], source_url=source[0], model_id=MODEL_ID,
+                            cache=cache, key=KEY)
+        with pytest.raises(GraphIndexRefusedError, match="rows actually written"):
+            await index_sandbox(second[0], source_url=source[0], model_id=MODEL_ID,
+                                cache=cache, key=KEY)
+        # Outcome probe, not an argument pin: read the rows back after the
+        # refusal — the sandbox holds only what its seeding triggers wrote,
+        # no adopted vector and no drifted row.
         assert await _counts(second[1]) == (3, 0)
 
 
