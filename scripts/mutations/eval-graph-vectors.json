@@ -7,6 +7,13 @@
     "target": "tests/integration/test_eval_sandbox_vectors.py::test_an_identical_text_adopts_its_vector_and_a_changed_one_does_not"
   },
   {
+    "name": "verification: the reuse readback compares the persisted rows, not the cached tuple",
+    "file": "nora/subject/sandbox_index.py",
+    "old": "                if (persisted != built.image or applied != set(expected)\n                        or set(expected) != set(built.expected)):",
+    "new": "                if (applied != set(expected)\n                        or set(expected) != set(built.expected)):",
+    "target": "tests/integration/test_eval_sandbox_index_reuse.py::test_a_reuse_whose_written_rows_differ_from_the_image_is_rolled_back"
+  },
+  {
     "name": "identity: another model's vector is never adopted",
     "file": "nora/subject/sandbox_index.py",
     "old": "    current = sa.and_(row.embedding.isnot(None), row.embedding_model == model)\n    result = await conn.execute(sa.select(\n",
