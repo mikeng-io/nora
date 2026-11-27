@@ -17,12 +17,17 @@ FIXTURE = json.loads((Path(__file__).resolve().parents[2]
 
 async def test_whatsapp_roster_decodes_the_bridge_response(aiohttp_server):
     answers = [FIXTURE["response"], {"available": True, "members": [["+85290000101", 7]]},
-               {"available": False, "members": []}]
+               {"available": False, "members": []}, "not json", ["a list"],
+               {"available": True, "members": ["+85290000101"]},
+               {"available": True, "members": [["+85290000101", ""]]}]
     seen = []
 
     async def reads(request):
         seen.append((request.headers["Authorization"], await request.json()))
-        return web.json_response(answers[len(seen) - 1])
+        answer = answers[len(seen) - 1]
+        if isinstance(answer, str):
+            return web.Response(text=answer, content_type="application/json")
+        return web.json_response(answer)
 
     app = web.Application()
     app.router.add_post("/v1/reads", reads)
@@ -36,3 +41,5 @@ async def test_whatsapp_roster_decodes_the_bridge_response(aiohttp_server):
         "op": "roster", "params": {"conversation_id": FIXTURE["conversation_id"]}})
     assert not (await roster.roster(conversation_id="x")).available
     assert not (await roster.roster(conversation_id="x")).available
+    for _ in range(4):
+        assert not (await roster.roster(conversation_id="x")).available
