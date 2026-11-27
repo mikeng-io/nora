@@ -100,7 +100,7 @@ Four ideas run through all of it:
 - **Sessionless.** There is no chat session to resume. Each turn assembles its
   context from persistent state, speaks and ends. Cognition, browser and computer
   work keep bounded sessions of their own, so this does not mean a continuously
-  running model. See the [glossary](docs/glossary.md#nora-as-a-social-agent).
+  running model. See the [glossary](docs/glossary.md).
 - **Silence is an outcome.** When an occasion arrives she reads the situation
   again, and the right answer may be that nothing needs saying.
 - **The unit is the boundary.** Continuity does not grant shared access: people
