@@ -1,3 +1,9 @@
+---
+class: adr
+subject: Honcho is the interpretation; SQLite is the record
+owns: []
+---
+
 # 0001 — Honcho is the interpretation; SQLite is the record
 
 - **Status:** accepted

@@ -2,8 +2,8 @@
 class: design
 subject: a shared provider file is a handle, opened only on request and never kept
 owns:
-  - "link handle: the short code that stands in a message for a file link and holds nothing of the file"
-  - "file adapter: the one component per provider that recognises its links and reads its files"
+  - link handle: "the short code that stands in a message for a file link and holds nothing of the file"
+  - file adapter: "the one component per provider that recognises its links and reads its files"
 area: computer
 links:
   - {to: docs/design/computer/README.md, rel: uses}

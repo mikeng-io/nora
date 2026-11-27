@@ -1,8 +1,7 @@
 ---
-class: design
+class: engineering
 subject: "the isolated subject an evaluation runs against"
 owns: []
-area: evaluation
 ---
 
 # Subject and sandbox
@@ -25,7 +24,7 @@ For the same occasion, state and stimulus, equivalence is checked at the actual
 model boundary: instructions, rendered blocks, tool schemas and parameters,
 read availability and tool-result semantics. Legitimate generated identities
 remain traceable to their source. No normalization hides a behavioural change.
-The assembly contract is owned by [context assembly](../agent/assembly.md).
+The assembly contract is owned by [context assembly](../design/agent/assembly.md).
 
 ## Isolation replaces dependencies
 
@@ -58,7 +57,7 @@ does not turn it into production equivalence.
 Production storage and shared source/template databases remain unchanged.
 Disposable copies may be migrated privately; teardown and cancellation run on
 all exits. Restoration preserves the pinned target's required state. For a
-[Cognitive Graph subject](../cognition/storage.md), its tables are the truth;
+[Cognitive Graph subject](../design/cognition/storage.md), its tables are the truth;
 third-party memory is neither fed nor read. A target that uses external memory
 requires its actual state; an empty workspace is not a reconstruction.
 

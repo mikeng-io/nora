@@ -52,3 +52,9 @@ def test_a_changed_source_makes_its_view_stale(tmp_path):
         source.read_text(encoding="utf-8").replace("how a change is checked", "how review works")
     )
     assert "docs/README.md" in stale(root, _tree(root))
+
+
+def test_the_quoted_term_form_renders_its_definition():
+    text = "---\nclass: engineering\nsubject: x\nowns:\n  - \"gate: a check that can fail\"\n---\n"
+    tree = {"docs/engineering/x.md": text}
+    assert "| gate | a check that can fail |" in render(tree)["docs/glossary.md"]

@@ -1,7 +1,14 @@
 ---
 class: design
 subject: "the agenda: schedules, due deliveries and the kinds a due delivery becomes"
-owns: [agenda, delivery kind, due delivery]
+owns:
+  - agenda
+  - delivery kind
+  - due delivery
+  - reminder: "the scheduled delivery of an intention to its person or room, put to Nora as a request when it comes due and never a stored message replayed"
+  - heartbeat: "the driver that takes each due delivery on a tick and hands it to the fire path; it knows time passed and nothing about why it matters"
+  - delivery claim: "the exclusive move of a due delivery from scheduled to claimed, a compare-and-set inside the statement, so two processes never fire one delivery"
+  - at-most-once: "a delivery fires once ever: one left claimed by a dead process resolves to failed and is never re-queued, so a lost delivery is visible and a doubled one never happens"
 area: agenda
 links:
   - {to: docs/design/cognition/loop.md, rel: uses}

@@ -1,4 +1,4 @@
-"""The Cognition loop eval (`docs/design/evaluation/cognition-loop.md`).
+"""The Cognition loop eval (`docs/engineering/evaluation-cognition-loop.md`).
 
 Runs a real Cognition session — the deployment's own
 `CognitionSessionRunner` in the live lane — over a sequence of recorded

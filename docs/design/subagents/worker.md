@@ -2,9 +2,9 @@
 class: design
 subject: the worker, a coding harness that is not Nora, driven through a session port inside the computer
 owns:
-  - "worker: a coding harness inside the computer that does multi-step work for a sub-agent and is never Nora"
-  - "worker port: start, prompt, cancel and result, shaped on the agent client protocol"
-  - "model relay: the per-session endpoint through which a worker reaches a model without holding a key"
+  - worker: "a coding harness inside the computer that does multi-step work for a sub-agent and is never Nora"
+  - worker port: "start, prompt, cancel and result, shaped on the agent client protocol"
+  - model relay: "the per-session endpoint through which a worker reaches a model without holding a key"
 area: subagents
 links:
   - {to: docs/design/subagents/README.md, rel: uses}

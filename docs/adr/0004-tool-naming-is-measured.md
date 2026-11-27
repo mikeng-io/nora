@@ -1,3 +1,9 @@
+---
+class: adr
+subject: A tool name is measured, not argued
+owns: []
+---
+
 # 0004 — A tool name is measured, not argued
 
 - **Status:** accepted

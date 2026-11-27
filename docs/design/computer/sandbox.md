@@ -2,9 +2,9 @@
 class: design
 subject: the computer runtime, its sessions and audit, and how files move in and out
 owns:
-  - "runtime port: the one interface Nora uses to run commands, read and write files and move bytes in a computer"
-  - "computer session: one task continuing across passes, derived from observed events and never model-written"
-  - "lease: exclusive hold on the resource being changed, not on a room"
+  - runtime port: "the one interface Nora uses to run commands, read and write files and move bytes in a computer"
+  - computer session: "one task continuing across passes, derived from observed events and never model-written"
+  - lease: "exclusive hold on the resource being changed, not on a room"
 area: computer
 links:
   - {to: docs/design/computer/README.md, rel: uses}

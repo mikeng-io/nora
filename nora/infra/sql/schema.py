@@ -3229,7 +3229,7 @@ CULTURE_BODY_CEILING_CHARS = 32_000
 #:
 #: **Keyed on `key` alone, and that key is a `primary_id`** — not
 #: `(platform, conversation_id)` like `standing` and `decision_log`. The rule
-#: is `GLOSSARY.md`'s and it follows from which scheduler hands the key: the
+#: is `docs/glossary.md`'s and it follows from which scheduler hands the key: the
 #: ingest and tag paths get the message that arrived, so they key the thread;
 #: a Dreamer adaptor is handed `scopes()`, so it keys the conversation. A store
 #: keyed differently from its loop matches ZERO rows on the watermark query, so

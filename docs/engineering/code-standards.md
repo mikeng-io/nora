@@ -1,7 +1,11 @@
 ---
 class: engineering
 subject: "the code standards every change follows"
-owns: []
+owns:
+  - "RecordStore: the store port over the message record; SqlRecordStore is its Postgres implementation and FakeRecordStore its shared test fake"
+  - "PersonRef: the typed reference to a resolved identity that code passes instead of a raw platform id"
+  - "row style: how a row renderer writes one row: its fields in a fixed order, escaped, with no prose of its own"
+  - "decorative test: a test that stays green when the code it names is reverted, and so proves nothing"
 ---
 
 # Code standards

@@ -1,3 +1,9 @@
+---
+class: adr
+subject: The relevance gate forms its verdict on a raw completion, not the SDK's structured output
+owns: []
+---
+
 # 0011 — The relevance gate forms its verdict on a raw completion, not the SDK's structured output
 
 - **Status:** accepted

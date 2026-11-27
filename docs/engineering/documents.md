@@ -91,7 +91,7 @@ edited by hand.
 bundle is a directory, so its address never moves. Its `README.md` is the overview and holds the
 bundle's subjects until it reaches the 300-line budget. A subject that outgrows the README moves to
 its own file beside it. Nothing nests deeper than one level. Operations and engineering are
-procedure, so they are plain files (`docs/operations/deploy.md`), with no bundle directories.
+procedure, so they are plain files (`docs/operations/runbook.md`), with no bundle directories.
 
 - A bundle is a code area, named exactly as its package `nora/<area>/`, or a cross-cutting subject
   on the closed list in the bundle map. Adding a cross-cutting subject needs the operator.

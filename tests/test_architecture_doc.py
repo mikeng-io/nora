@@ -1,4 +1,4 @@
-"""ARCHITECTURE.md is a map, and maps rot. This pins it to reality."""
+"""The code map is a map, and maps rot. This pins it to reality."""
 
 from pathlib import Path
 
@@ -10,7 +10,7 @@ def test_architecture_doc_covers_every_package():
     `tag.py`, `persons.py`, ...) under nora/ — a new top-level module follows the
     same "must be in the map" rule a new package does, and is not exempt just
     because it is not a directory."""
-    doc = (ROOT / "ARCHITECTURE.md").read_text()
+    doc = (ROOT / "docs" / "engineering" / "code-map.md").read_text()
     packages = sorted(p.name for p in (ROOT / "nora").iterdir()
                       if p.is_dir() and not p.name.startswith(("_", ".")))
     modules = sorted(p.name for p in (ROOT / "nora").glob("*.py")
@@ -18,7 +18,7 @@ def test_architecture_doc_covers_every_package():
     missing_packages = [p for p in packages if f"`{p}/`" not in doc and f"nora/{p}" not in doc]
     missing_modules = [m for m in modules if f"`{m}`" not in doc and f"nora/{m}" not in doc]
     missing = missing_packages + missing_modules
-    assert not missing, f"ARCHITECTURE.md does not mention: {missing}"
+    assert not missing, f"docs/engineering/code-map.md does not mention: {missing}"
 
 
 def test_agents_md_carries_the_operational_constraints():

@@ -1,3 +1,9 @@
+---
+class: adr
+subject: 'A tool''s name and description are its routing surface: policy'
+owns: []
+---
+
 # 0007 — A tool's name and description are its routing surface: policy
 
 - **Status:** accepted; §3.5, §5 and the sibling-token clause of §3 superseded by [0015](0015-tool-surface-policy-v2.md)

@@ -52,7 +52,7 @@ jobs:
       - name: Require the repository release App
         if: vars.RELEASE_APP_ID == ''
         run: |
-          echo '::error::Configure the release App before preparing or publishing. See docs/engineering/github.md.'
+          echo '::error::Configure the release App before preparing or publishing. See docs/operations/github.md.'
           exit 1
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

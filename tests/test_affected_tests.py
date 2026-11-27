@@ -160,7 +160,7 @@ def test_empty_diff_selects_nothing():
 # --- documentation and data readers: found by scanning tests/, not listed ---
 #
 # Every `.md` is mapped to the tests that open it, not to a hand-kept table:
-# README.md, docs/design/appearance/README.md, docs/operations/runbook.md, ARCHITECTURE.md,
+# README.md, docs/design/appearance/README.md, docs/operations/runbook.md, the code map,
 # AGENTS.md, CONTRIBUTING.md, the decision index, the deploy READMEs and the
 # release-fragment README each have a test that opens them. These cases name
 # the real readers of the real tree, so a change to how a test opens a doc
@@ -184,7 +184,7 @@ def test_generic_docs_markdown_selects_the_universal_doc_reader():
     ("README.md", ["tests/test_docs.py"]),
     ("docs/design/appearance/README.md", ["tests/test_docs.py"]),
     ("docs/operations/runbook.md", ["tests/test_docs.py"]),
-    ("ARCHITECTURE.md", ["tests/test_architecture_doc.py"]),
+    ("docs/engineering/code-map.md", ["tests/test_architecture_doc.py"]),
     ("AGENTS.md", ["tests/architecture/test_agent_skills.py",
                    "tests/test_architecture_doc.py"]),
     (".agents/skills/nora-land/SKILL.md", ["tests/architecture/test_agent_skills.py"]),

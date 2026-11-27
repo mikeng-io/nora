@@ -42,7 +42,7 @@ must move with the rename or the guard test fails on a stale key).
 **METRICS.** `nora_signal_total{kind,cue}` and `nora_signal_pending_age_seconds`
 existed for hours before this rename (`0069`/#615/DEC-233 merged and shipped
 2026-09-28; this lands 2026-09-29) — the one stated exception to "metric
-names are append-only in this repo" (GLOSSARY.md), made explicit here and in
+names are append-only in this repo" (docs/glossary.md), made explicit here and in
 DEC-234 because nothing outside this branch ever depended on the old names:
 no dashboard, no alert rule, no PROMQL committed anywhere greps for them
 (checked: `git grep -n nora_signal_total -- deploy` and

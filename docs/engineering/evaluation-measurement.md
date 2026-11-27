@@ -1,8 +1,7 @@
 ---
-class: design
+class: engineering
 subject: "what a measurement is and how a verdict is reached"
 owns: []
-area: evaluation
 ---
 
 # Measurement and verdicts
@@ -67,7 +66,7 @@ fluent prose or an agreeing judge. Reviewed contrasts calibrate false accepts
 and rejects; calibration examples are distinct from held-out confirmation.
 Permission, disclosure and fabricated-presence failures cannot average away.
 
-Learning claims follow [Cognition's evidence chain](../cognition/learning.md).
+Learning claims follow [Cognition's evidence chain](../design/cognition/learning.md).
 Persistence, exposure, declared dependence and later success do not alone
 establish use. Adaptation compares the same recorded decision with and without
 its learned rows, under matched repeated draws and unchanged-arm controls.
@@ -121,5 +120,5 @@ credentials. Failure retains available evidence without expanding disclosure.
 Backend readback establishes retention and queryability; a frontend claim needs
 frontend evidence. Neither establishes the criterion's truth by itself.
 
-[Observability](../../operations/observability.md) owns sink and transport mechanics;
-[the eval SOP](../../operations/eval-sop.md) owns execution and adjudication procedure.
+[Observability](../operations/observability.md) owns sink and transport mechanics;
+[the eval SOP](../operations/eval-sop.md) owns execution and adjudication procedure.

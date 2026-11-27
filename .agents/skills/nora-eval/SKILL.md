@@ -52,7 +52,7 @@ lock is shared, past an hour it blocks every other PR: `--allow-long` only if th
 On the deploy host (`nora-host`), in an eval worktree, never in the deploy checkout
 `~/workspace/nora` (a run writes `config.evaluation.toml` into the checkout root).
 Composition refuses to start anywhere else with the deployment's features on
-(`docs/design/evaluation/subject.md`, "Where the suite runs"). The
+(`docs/engineering/evaluation-subject.md`, "Where the suite runs"). The
 subject's model comes from the deployment's `config.toml`; there is no `--model`
 flag. The dev-machine tunnel recipe with `--model` belonged to the deleted
 `evals.run` harness.
@@ -192,7 +192,7 @@ carries the budget and the ending:
 ## Adding a case
 
 Extend the corpus that covers the behaviour under `evals/corpora/`; anchor rules
-and parking are `docs/design/evaluation/subject.md`  «Input and causal scope», and
+and parking are `docs/engineering/evaluation-subject.md`  «Input and causal scope», and
 `tests/architecture/test_every_case_is_anchored_or_parked.py` rejects an
 unanchored case before a run.
 

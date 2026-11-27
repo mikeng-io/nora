@@ -2,9 +2,9 @@
 class: design
 subject: a sub-agent takes a long job in the background and reports its result once
 owns:
-  - "sub-agent job: delegated work run by a background agent of Nora's own, with a closed tool surface and no voice"
-  - "brief: the typed hand-over of a job, interpreted once by Nora, from which the sub-agent never re-reads the room"
-  - "checkpoint: a job's own record of what is done, doing, next and decided, kept apart from what code observed"
+  - sub-agent job: "delegated work run by a background agent of Nora's own, with a closed tool surface and no voice"
+  - brief: "the typed hand-over of a job, interpreted once by Nora, from which the sub-agent never re-reads the room"
+  - checkpoint: "a job's own record of what is done, doing, next and decided, kept apart from what code observed"
 area: subagents
 links:
   - {to: docs/design/cognition/acts.md, rel: uses}
