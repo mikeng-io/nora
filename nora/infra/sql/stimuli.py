@@ -709,18 +709,6 @@ class SqlStimulusStore:
             ))
         return len(rows)
 
-    async def count_rollup(
-        self, *, unit: str, person_id: str, item_prefix: str, from_ms: int, to_ms: int,
-    ) -> int:
-        stmt = sa.select(sa.func.count()).select_from(STIMULUS).where(
-            STIMULUS.c.unit == unit, STIMULUS.c.kind == "rollup",
-            STIMULUS.c.person_id == person_id,
-            STIMULUS.c.item.startswith(item_prefix, autoescape=True),
-            STIMULUS.c.at_ms >= from_ms, STIMULUS.c.at_ms < to_ms,
-        )
-        async with self._engine.connect() as conn:
-            return int((await conn.execute(stmt)).scalar_one())
-
     async def retract(
         self, *, unit: str, stimulus_id: int, reason: str, recorded_at_ms: int,
     ) -> bool:

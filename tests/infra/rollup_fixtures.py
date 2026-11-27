@@ -20,7 +20,6 @@ from nora.infra.sql.mobility import SqlMobilityStore
 from nora.infra.sql.rollups import SqlRollupStore, UnitRooms
 from nora.infra.sql.schema import MESSAGES, PRESENCE_FIXES
 from nora.infra.sql.source_health import SqlSourceHealthLog
-from nora.infra.sql.stimuli import SqlStimulusStore
 from nora.obs.metrics import Metrics
 from nora.persons import Persons
 from nora.policy import Conversation, Policy
@@ -92,7 +91,6 @@ class RollupFixture:
                 config=unit_config,
                 units=(self.unit_rooms,),
                 people={p: PersonScope(p, (self.circle,)) for p in people},
-                stimuli=SqlStimulusStore(engine),
             ),
             subjects=self.subjects,
             unit_config=unit_config,

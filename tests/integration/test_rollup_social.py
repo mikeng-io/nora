@@ -104,7 +104,7 @@ def _runner(engine, *, opted_out=frozenset()) -> RollupRunner:
     return RollupRunner(
         mobility=SqlMobilityStore(engine), rollups=rollups, config=CFG,
         unit_rollups=UnitRollups(
-            store=rollups, config=UNITS, units=(UNIT,), people=PEOPLE, clock=lambda: 0.0,
+            store=rollups, config=UNITS, units=(UNIT,), people=PEOPLE,
             social=SqlSocialStreamStore(engine, opted_out=opted_out),
         ),
         subjects=SUBJECTS, unit_config=UNITS,

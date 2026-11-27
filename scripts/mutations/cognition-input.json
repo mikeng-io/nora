@@ -140,20 +140,6 @@
     "target": "tests/unit/test_cognition_session.py::test_message_stimuli_in_one_room_become_one_item_bound_to_that_room"
   },
   {
-    "name": "units: the deviation cap is enforced",
-    "file": "nora/analytics/units.py",
-    "old": "        return raised >= self._cfg.deviation_stimuli_per_person_per_day",
-    "new": "        return False",
-    "target": "tests/unit/test_unit_rollup_deviation_cap.py"
-  },
-  {
-    "name": "store: count_rollup reads the person's deviations (SQL)",
-    "file": "nora/infra/sql/stimuli.py",
-    "old": "            STIMULUS.c.item.startswith(item_prefix, autoescape=True),",
-    "new": "            STIMULUS.c.item.startswith(\"nothing_\", autoescape=True),",
-    "target": "tests/contract/test_stimulus_store_contract.py::test_count_rollup_counts_a_persons_deviations_in_a_window_retracted_included"
-  },
-  {
     "name": "stores: a closed or cancelled outcome records no cause",
     "file": "nora/domain/stimuli.py",
     "old": "    return NO_CAUSE if outcome in (\"closed\", \"cancelled\") else cause",

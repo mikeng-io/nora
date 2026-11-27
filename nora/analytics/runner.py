@@ -131,7 +131,7 @@ class RollupRunner:
         units = await self._units.run(
             build_id=build_id, mark=mark,
             logical_now={s: run.logical_now_ms for s, run in folds.items()},
-            anomalous=anomalous, raise_stimuli=raise_stimuli,
+            raise_stimuli=raise_stimuli,
         )
         if raise_stimuli and self._crossings is not None:
             await self._crossings.publish_crossings(

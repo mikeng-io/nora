@@ -21,7 +21,7 @@ import sqlalchemy as sa
 
 from nora.analytics.rollup import RollupConfig
 from nora.analytics.runner import CODE_VERSION, RollupRunner, Subject
-from nora.analytics.units import EventPlace, PersonScope, UnitConfig, UnitRollups
+from nora.analytics.units import PersonScope, UnitConfig, UnitRollups
 from nora.domain.mobility import TaggedPlace
 from nora.domain.models import mentions_json
 from nora.domain.ports import PlaceArea
@@ -46,8 +46,6 @@ from nora.infra.sql.schema import (
     ROLLUP_TIE,
     SOURCE_HEALTH,
 )
-from nora.infra.sql.stimuli import SqlStimulusStore
-from nora.testing.stimuli import InMemoryStimulusStore
 from tests.fixtures.legacy_projection import (
     ProjectingMemoStore,
     ProjectingMobilityStore,
@@ -69,7 +67,7 @@ CFG = RollupConfig(
 )
 UNITS = UnitConfig(
     colocation_radius_m=150.0, colocation_min_overlap_seconds=600.0,
-    response_window_seconds=3600.0, stimulus_horizon_seconds=3 * 3600.0,
+    response_window_seconds=3600.0,
     deviation_silence_days=1, health_max_poll_gap_seconds=900.0,
 )
 HOME = {"a": (22.4000, 114.1000), "b": (22.3500, 114.2000)}
@@ -180,13 +178,13 @@ async def _seed(engine, mobility, *, polls_fail_at: int | None = None) -> None:
                 await message(_t(0, 15), nora=True, raw='{"tag_id": "u"}')
 
 
-def _runner(engine, stimuli=None, events=None, areas=None) -> RollupRunner:
+def _runner(engine, areas=None) -> RollupRunner:
     rollups = ProjectingRollupStore(engine)
     return RollupRunner(
         mobility=ProjectingMobilityStore(engine), rollups=rollups, config=CFG,
         unit_rollups=UnitRollups(
             store=rollups, config=UNITS, units=(UNIT,), people=PEOPLE,
-            stimuli=stimuli, events=events, clock=lambda: 0.0, areas=areas,
+            areas=areas,
         ),
         subjects=SUBJECTS, unit_config=UNITS,
     )
@@ -316,7 +314,7 @@ async def test_unquoted_answers_are_counted_as_follows_on_the_right_send(clean_p
 
     rollups = ProjectingRollupStore(engine)
     unit_rollups = UnitRollups(
-        store=rollups, config=UNITS, units=(UNIT,), people=PEOPLE, clock=lambda: 0.0,
+        store=rollups, config=UNITS, units=(UNIT,), people=PEOPLE,
     )
     build = await rollups.create_build(code_version=CODE_VERSION, params_sha256="x")
     mark = await rollups.mark(through_ms=base + 5 * _H)
@@ -436,80 +434,6 @@ async def test_ensure_build_rebuilds_a_build_of_other_code_and_keeps_its_own(cle
         status = (await conn.execute(sa.text(
             "SELECT status FROM rollup_build WHERE id = :i"), {"i": legacy.id})).scalar_one()
     assert status == "superseded"
-    await engine.dispose()
-
-
-async def _stimuli_at(engine, *, through: int, polls_fail_at: int | None = None,
-                      events=None) -> InMemoryStimulusStore:
-    mobility = ProjectingMobilityStore(engine)
-    await _seed(engine, mobility, polls_fail_at=polls_fail_at)
-    sink = InMemoryStimulusStore()
-    runner = _runner(engine, stimuli=sink, events=events)
-    build = await runner.ensure_build(through_ms=_START)
-    for t in range(_START + 6 * _H, through + 1, 30 * _MIN):
-        await runner.run(build_id=build, through_ms=t)
-    return sink
-
-
-class _Pub:
-    async def open_event_places(self, *, unit, at_ms):
-        return [EventPlace(ref="event:7", lat=PUB[0], lng=PUB[1], radius_m=200.0)]
-
-
-async def test_a_colocation_start_and_an_arrival_are_raised_once(clean_pg_url):
-    """Through the REAL stimulus store: its `(unit, ref)` conflict target must
-    match migration 0071's partial index, which an in-memory sink never
-    checks."""
-    engine = create_sql_engine(clean_pg_url)
-    mobility = ProjectingMobilityStore(engine)
-    await _seed(engine, mobility)
-    runner = _runner(engine, stimuli=SqlStimulusStore(engine), events=_Pub())
-    build = await runner.ensure_build(through_ms=_START)
-    for t in range(_START + 6 * _H, _t(0, 21) + 1, 30 * _MIN):
-        await runner.run(build_id=build, through_ms=t)
-    async with engine.connect() as conn:
-        rows = (await conn.execute(sa.text(
-            "SELECT unit, item, ref, kind FROM stimulus ORDER BY id"
-        ))).all()
-    items = [(r.unit, r.item, r.ref) for r in rows]
-    assert all(r.kind == "rollup" for r in rows)
-    starts = [i for i in items if i[1] == "colocation_start"]
-    arrivals = [i for i in items if i[1] == "arrival"]
-    assert len(starts) == 1 and starts[0][0] == "friends"
-    assert len(arrivals) == 2  # each member's stay at the event's place
-    await engine.dispose()
-
-
-@pytest.mark.parametrize("outage", [False, True])
-async def test_a_deviation_is_raised_only_on_healthy_sources(clean_pg_url, outage):
-    """A silent day (nothing posted, never at home) raises a deviation
-    only when the collector's polls were proved healthy for the span; a poll
-    outage inside it suppresses the stimulus (R-27: missing data is not
-    absence). Silence here is a synthetic third day with no fixes at home
-    and no message, so the span is day 2."""
-    engine = create_sql_engine(clean_pg_url)
-    mobility = ProjectingMobilityStore(engine)
-    await _seed(engine, mobility, polls_fail_at=_t(1, 3) if outage else None)
-    # Day 1 without messages or home: delete them from the Record the unit reads.
-    async with engine.begin() as conn:
-        await conn.execute(sa.text("SET LOCAL nora.row_history = 'off'"))
-        await conn.execute(sa.delete(MESSAGE_REACTION))
-        await conn.execute(sa.delete(MESSAGE_EDIT))
-        await conn.execute(sa.delete(MESSAGES).where(MESSAGES.c.ts >= _t(1, 0)))
-        await conn.execute(sa.text(
-            "DELETE FROM presence_fixes WHERE person_id = 'a' AND ts >= :a AND ts < :b"
-        ), {"a": _t(1, 0), "b": _t(2, 0)})
-    sink = InMemoryStimulusStore()
-    runner = _runner(engine, stimuli=sink)
-    build = await runner.ensure_build(through_ms=_START)
-    await runner.run(build_id=build, through_ms=_t(2, 6))
-    deviations = [s for s in sink.stimuli if s.item == "deviation_silence"]
-    if outage:
-        assert deviations == []
-    else:
-        assert [(s.person_id, s.ref) for s in deviations] == [
-            ("a", f"deviation|silence|a|{_t(1, 0)}"),
-        ]
     await engine.dispose()
 
 
