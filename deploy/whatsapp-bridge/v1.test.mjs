@@ -1407,3 +1407,20 @@ test('POST /v1/actions links the caller traceparent; invalid context carries non
     assert.equal(spans[1].links.length, 0);
   } finally { await tracer.shutdown().catch(() => {}); }
 });
+
+test('POST /v1/reads roster answers the shape Nora decodes (testdata/roster_read.json)', async () => {
+  const fixture = JSON.parse(readFileSync(new URL('./testdata/roster_read.json', import.meta.url)));
+  const ctx = fakeCtx();
+  ctx.sock.groupMetadata = async (jid) => {
+    assert.equal(jid, fixture.conversation_id);
+    return { participants: fixture.participants };
+  };
+  const v1 = createV1({ store: null, ctx, attachments: null, self: () => null,
+    health: () => ({}), metrics: null });
+  const res = fakeRes();
+  await v1(fakeReq('POST', '/v1/reads', {
+    op: 'roster', params: { conversation_id: fixture.conversation_id },
+  }), res, new URL('http://b/v1/reads'));
+  assert.equal(res.status, 200);
+  assert.deepEqual(res.json, fixture.response);
+});
