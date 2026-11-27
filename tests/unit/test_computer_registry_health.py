@@ -11,7 +11,7 @@ from nora.doctrine.loader import DoctrineStore
 from nora.domain.computer_vms import FileScopeEndpoints
 from nora.obs.health import LLMState, build_health_app
 from nora.obs.metrics import Metrics
-from nora.testing import FakeMemoryStore, FakeRecordStore
+from nora.testing import FakeRecordStore
 from tests.fakes import SinkSender
 
 SCOPE = "a" * 32
@@ -73,7 +73,7 @@ def test_a_registry_path_that_is_not_a_valid_path_is_degraded_and_never_raises()
 def _health_app(**kw):
     metrics = Metrics()
     return build_health_app(
-        adapter=SinkSender(), store=FakeRecordStore(), honcho=FakeMemoryStore(),
+        adapter=SinkSender(), store=FakeRecordStore(),
         doctrine_store=DoctrineStore(Path("nora/doctrine"), canary="C", metrics=metrics),
         metrics=metrics, started_at=0.0, llm_state=LLMState(), **kw,
     )
