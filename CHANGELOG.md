@@ -1,5 +1,23 @@
 # Changelog
 
+## [7.21.7](https://github.com/mikeng-io/nora/compare/v7.21.6...v7.21.7) (2026-11-27)
+
+
+### Features
+
+* **whatsapp-bridge:** draw the pairing QR in the terminal and pair beside the live bridge ([5d718c8](https://github.com/mikeng-io/nora/commit/5d718c8fd37a36763e2d57c0f8a5053a45a65b5a))
+
+
+### Bug Fixes
+
+* **compute:** deliver jobs that finish together in one room as one message ([f99f322](https://github.com/mikeng-io/nora/commit/f99f3223758d008525dc241d562fb8a4bb52b6d9))
+* **compute:** one failing row no longer strands the jobs delivered with it ([34d1e27](https://github.com/mikeng-io/nora/commit/34d1e272f64fbbcc5c563cc53f451e5acdca04e8))
+* **computer:** a registry that lists but cannot be opened, or has an invalid path, degrades ([640b667](https://github.com/mikeng-io/nora/commit/640b6679ae8a8f39cb82792250efeaa534a8ca0d))
+* **computer:** an unreadable scoped registry degrades instead of aborting startup ([8b8fdd6](https://github.com/mikeng-io/nora/commit/8b8fdd624a49968402478ac3c3f65031ab23a5c9))
+* **computer:** say so when the scoped registry mount is absent ([6ef85c6](https://github.com/mikeng-io/nora/commit/6ef85c6bed9c3ae006b5ee70131e3e14892e5060))
+* **whatsapp-bridge:** pair by QR only, drop the phone-number pairing code ([4a11880](https://github.com/mikeng-io/nora/commit/4a1188043d7a98762f0e6c7c2b427206ceef523f))
+* **whatsapp-bridge:** pair with the container log driver off so the QR is not logged ([cfdf7bd](https://github.com/mikeng-io/nora/commit/cfdf7bd432fccf970a30639939e8b3b95663da68))
+
 ## [7.21.6](https://github.com/mikeng-io/nora/compare/v7.21.5...v7.21.6) (2026-11-27)
 
 
