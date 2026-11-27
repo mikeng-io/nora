@@ -100,6 +100,11 @@ _DETAILS = {
 }
 
 
+def origin_marker(row: RetrievedRow, room: RoomFacts, dm_rooms: Set[str]) -> str:
+    """`origin=DM` for a row born in a direct chat the reading room is not."""
+    return "origin=DM" if row.origin_room in dm_rooms and not room.is_room(row.origin_room) else ""
+
+
 def _line(
     row: RetrievedRow, now: datetime, room: RoomFacts, dm_rooms: Set[str],
     show_distance: bool, due: Set[str],
@@ -117,7 +122,6 @@ def _line(
         f"{handle.graph_id} (deleted-source)" if handle.deleted_source else handle.graph_id
         for handle in row.evidence
     )
-    dm_origin = row.origin_room in dm_rooms and not room.is_room(row.origin_room)
     details = _DETAILS[row.kind](row, now)
     if row.exposure == "internal":
         for text in (*text_fragments(row.content), render_graph_content(row.content), *details):
@@ -134,7 +138,7 @@ def _line(
         f"people={people or 'none'}",
         f"edges={edges or 'none'}",
         f"citations={citations}" if citations else "",
-        "origin=DM" if dm_origin else "",
+        origin_marker(row, room, dm_rooms),
         f"unavailable={row.unavailable}" if row.unavailable else "",
         *details,
     ) if field))

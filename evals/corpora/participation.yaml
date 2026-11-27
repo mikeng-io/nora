@@ -279,6 +279,21 @@
 # A real line in a thread between members asking about an event date.
 # The room answers from its own conversation.
 #
+- name: asked-before-known
+  entry: participation
+  expect: speak
+  sample: 5
+  input: 有冇人記得個 deadline 幾時
+  parked:
+    reason: P-A
+    why: |
+      Grounded only on what she told this member a week earlier outside the
+      room. The room's transcript does not carry it, so no instant
+      reconstructs the grounding.
+    returns_when: |
+      A real room holds a moment where a member asks about something she had
+      earlier told them off-transcript.
+
 - name: asked-before-unknown
   entry: participation
   expect: silence

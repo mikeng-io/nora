@@ -464,13 +464,14 @@ async def _room_profiles(c) -> tuple[dict[str, str], ...]:
     if any(read.profile.status == "unavailable" for read in profiles.values()):
         c.metrics.inc("nora_errors_total", stage="room_list_culture", platform=c.room.platform)
     return tuple(
-        _culture_preview(profiles["room", room_key(r.platform, r.conversation_id)].profile,
+        _culture_preview(profiles["room", room_key(r.platform, r.conversation_id)],
                          content_checks=c.content_checks)
         for r in c.unit.rooms
     )
 
 
-def _culture_preview(profile, *, content_checks: bool) -> dict[str, str]:
+def _culture_preview(read, *, content_checks: bool) -> dict[str, str]:
+    profile = read.profile
     result = {"status": profile.status}
     if profile.status in _PROFILE_NOTES:
         result["note"] = _PROFILE_NOTES[profile.status]
@@ -481,11 +482,15 @@ def _culture_preview(profile, *, content_checks: bool) -> dict[str, str]:
             text = row.content.get("text") if isinstance(row.content, dict) else None
             if not isinstance(text, str) or not text.strip():
                 continue
+            if all(cite.deleted_source for cite in row.evidence):
+                continue
             summary = mask_coordinates(text.strip().splitlines()[0])
             if scan_identifiers(summary, content_checks=content_checks) is not None:
                 return {"status": "unavailable", "note": "This room's profile could not be shown."}
             if row.exposure == "internal":
                 remember_internal(summary)
+            marker = read.origin_marker(row)
+            summary = f"{summary} ({marker})" if marker else summary
             return {**result, "part": part, "summary": summary}
     return result
 

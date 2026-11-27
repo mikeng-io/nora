@@ -2,6 +2,7 @@
 
 import asyncio
 from dataclasses import replace
+from datetime import timedelta
 from unittest.mock import patch
 from xml.etree import ElementTree
 
@@ -15,6 +16,7 @@ from nora.agent.tools import build_tools
 from nora.app.fire_engagement import AmbientEngagement
 from nora.domain.blocks import ContextBlock
 from nora.domain.events import Event
+from nora.domain.lineage import ROW, Lineage, message
 from nora.engagement.graph_context import EngagementGraph
 from nora.engagement.self_presence import PresenceReader
 from nora.infra.sql.culture import SqlCultureStore
@@ -29,7 +31,7 @@ from nora.testing.context_blocks import compose_fixture
 from nora.testing.memory_index import FakeQueryEmbedder
 from tests.fakes import SinkSender
 from tests.infra.test_pass_anchors import NOW, SCOPE, pointers, reader
-from tests.infra.test_retrieval_scope import OTHER, PERSON, ROOM, Scenario, write_edge
+from tests.infra.test_retrieval_scope import AT, DM, OTHER, PERSON, ROOM, Scenario, write_edge
 from tests.infra.test_retrieval_scope import scenario as scope_scenario
 from tests.infra.test_situation_staleness import intention, refuse_count
 from tests.unit.test_fire_path import _fire_path, _send_turns
@@ -214,6 +216,8 @@ def _room_list(scenario: Scenario, *, assembler: PassAssembler | None = None):
 async def _trait(scenario: Scenario, key: str, subject: str, body: str, **fields) -> None:
     await scenario.claim(key, part="trait", exposure="external", content={"text": body}, **fields)
     await write_edge(scenario, key, subject, "about")
+    await scenario.item(f"{key}-evidence")
+    await write_edge(scenario, key, f"{key}-evidence", "cites")
 
 
 @pytest.mark.parametrize(("delay", "expected"), [
@@ -259,6 +263,39 @@ async def test_room_list_reads_each_rooms_graph_profile_in_the_turn_audience(sce
     assert "This belongs to the unit." not in str(result)
     assert "Must stay outside this audience." not in str(result)
     assert "Must wait for the live roster." not in str(result)
+
+
+async def test_room_list_culture_skips_an_uncited_dm_claim_and_marks_a_cited_one(scenario):
+    await pointers(scenario)
+    dm_origin = f"signal:{DM}"
+    dm_lineage = Lineage.of({ROW: (message(dm_origin),)}).to_json()
+    await scenario.item("dm-evidence", room=DM, dm=True, person=OTHER)
+    await scenario.claim(
+        "dm-uncited", part="trait", exposure="external", origin_room=dm_origin,
+        content={"text": "Only the direct chat saw this."}, lineage=dm_lineage,
+    )
+    await write_edge(scenario, "dm-uncited", "room-here", "about")
+    await write_edge(scenario, "dm-uncited", "dm-evidence", "cites")
+    await _trait(scenario, "room-claim", "room-here", "Keeps its decisions brief.",
+                 asserted_at=AT - timedelta(days=1))
+
+    def here(result):
+        return next(r["culture"] for r in result["rooms"] if r["here"])
+
+    assert here(await _room_list(scenario)()) == {
+        "status": "ok", "part": "trait", "summary": "Keeps its decisions brief.",
+    }
+
+    await scenario.claim(
+        "dm-cited", part="trait", exposure="external", origin_room=dm_origin,
+        content={"text": "Told in a direct chat."}, lineage=dm_lineage,
+    )
+    await write_edge(scenario, "dm-cited", "room-here", "about")
+    await scenario.item("shared-evidence")
+    await write_edge(scenario, "dm-cited", "shared-evidence", "cites")
+    assert here(await _room_list(scenario)()) == {
+        "status": "ok", "part": "trait", "summary": "Told in a direct chat. (origin=DM)",
+    }
 
 
 async def test_room_list_reports_nothing_found_on_an_empty_graph(scenario) -> None:

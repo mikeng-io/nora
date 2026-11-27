@@ -673,6 +673,16 @@ cases:
   # --- the Record over an interval (docs/design/cognition/loop.md) ------
   # `record_query` filters the room's record by author, words and time.
   # `memory_search` can recover a discussion and its speakers from the graph.
+  - name: route_record_query_a_past_day
+    entry: tag
+    expect: reply
+    mention: true
+    input: 上個禮拜六大家喺度講過啲咩？
+    # `load_transcript` pages back from now with no filter; `memory_search` is
+    # what memory concluded, not what was said.
+    metadata: {tools: [record_query], not_tools: [load_transcript, memory_search]}
+    snapshot: *room_a
+
   - name: route_record_query_who_mentioned_on_graph
     entry: tag
     expect: reply
@@ -1366,6 +1376,44 @@ cases:
     snapshot: *room_a
 
 
+  # Retired routes, kept visible. Each parks with the loader's one reason; none
+  # returns, because the tool each one measured no longer exists.
+  - name: route_record_query_who_mentioned
+    entry: tag
+    expect: reply
+    mention: true
+    input: 之前有冇人提過想去露營？邊個講㗎？
+    parked:
+      reason: P-A
+      why: |
+        Measured `record_query` against `search_memory`, a Honcho tool that is gone. `route_record_query_who_mentioned_on_graph` measures the same question on the graph.
+      returns_when: |
+        Never at this anchor.
+
+  - name: route_keep_own_fact_is_remember
+    entry: tag
+    expect: reply
+    mention: true
+    input: 記低 我食素
+    parked:
+      reason: P-A
+      why: |
+        Measured the `remember` tool, retired with Honcho memory.
+      returns_when: |
+        Never at this anchor.
+
+  - name: route_about_profile_not_memory_search
+    entry: tag
+    expect: reply
+    mention: true
+    input: Miles平時鍾意食咩？
+    parked:
+      reason: P-A
+      why: |
+        Measured the Honcho `about` tool, retired. `route_memory_search_profile_on_graph` measures the same question.
+      returns_when: |
+        Never at this anchor.
+
   - name: route_memory_search_profile_on_graph
     entry: tag
     expect: reply
@@ -1450,6 +1498,18 @@ cases:
       not_tools: [group_members, room_list, record_query]
     snapshot: *room_a
 
+
+  - name: route_message_words_not_poll
+    entry: tag
+    expect: reply
+    mention: true
+    input: 噚日邊個提過食拉麵？
+    # Yesterday can be outside the visible window. Accept a message read or the
+    # graph search; the poll and room-state tools read objects, not words.
+    metadata:
+      tools: [who_said, record_query, load_transcript, memory_search]
+      not_tools: [poll_list, poll_read, room_state_read]
+    snapshot: *room_a
 
   - name: route_reaction_only
     entry: tag
