@@ -1,12 +1,5 @@
 [
   {
-    "name": "5: the live runner reads no usage",
-    "file": "nora/agent/dreamer.py",
-    "old": "            total = (\n                reservation.spent if reservation is not None\n                else _total_tokens(result) if result is not None\n                else _usage(_agent_usage(agent)) if agent is not None\n                else None\n            )",
-    "new": "            total = None",
-    "target": "tests/unit/test_cognition_agent_runner.py::test_a_run_hands_up_the_tokens_the_loop_spent"
-  },
-  {
     "name": "E2: a provider's zero usage is counted as a zero",
     "file": "nora/agent/dreamer.py",
     "old": "ok = isinstance(total, int) and not isinstance(total, bool) and total > 0",
@@ -19,5 +12,12 @@
     "old": "            _fill_spend(\n                spend, total,\n                () if trace is None else tuple(trace.messages), requirements,\n            )",
     "new": "            _fill_spend(\n                None, total,\n                () if trace is None else tuple(trace.messages), requirements,\n            )",
     "target": "tests/unit/test_cognition_agent_runner.py::test_a_loop_that_failed_timed_out_or_was_cut_off_leaves_what_it_spent"
+  },
+  {
+    "name": "5: the live runner reads no usage",
+    "file": "nora/agent/dreamer.py",
+    "old": "            total = (\n                _total_tokens(result) if result is not None\n                else _usage(_agent_usage(agent)) if agent is not None\n                else None\n            )",
+    "new": "            total = None",
+    "target": "tests/unit/test_cognition_agent_runner.py::test_a_run_hands_up_the_tokens_the_loop_spent"
   }
 ]
