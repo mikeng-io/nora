@@ -2,7 +2,7 @@
 class: design
 subject: how Nora answers what version she is, and what has been released
 owns:
-  - "running version: the build stamp baked into the image, the only statement of what this process is"
+  - running version: "the build stamp baked into the image, the only statement of what this process is"
 area: agent
 links:
   - {to: docs/design/agent/tools.md, rel: uses}

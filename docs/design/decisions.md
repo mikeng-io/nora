@@ -1,7 +1,10 @@
 ---
 class: decision
 subject: "every rule that holds now, one line each, with the test that enforces it"
-owns: []
+owns:
+  - R-n: "a behavioural rule that must hold, one row with its design link and its test or NOT ENFORCED"
+  - DEC-n: "a decision that holds now, one row; a row that no longer holds is deleted and its number never reused"
+  - A-n: "an architectural invariant, one row with its design link and its test or NOT ENFORCED"
 ---
 
 # Decisions

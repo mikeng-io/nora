@@ -1,7 +1,18 @@
 ---
 class: design
 subject: "the OODAS stages, the engagement and reflection loops, passes and the debrief"
-owns: []
+owns:
+  - OODAS: "the stage model both loops run: observe, orient, decide, act, study"
+  - engagement loop: "Nora in a room, in the foreground: it reads understanding, composes, delivers or stays silent and closes each pass with a debrief; the only loop that delivers"
+  - reflection loop: "Nora between conversations, in the background: it forms and revises understanding, learns and keeps concerns, and never delivers"
+  - pass: "one run of a loop's stages, started by one trigger that supplies its input"
+  - debrief: "the tools-less model review after every engagement pass that commits the working state the pass left as intentions, before the room's slot is released"
+  - tag: "a message that addresses Nora by mention, reply or trigger text and opens one called pass"
+  - turn: "one engagement pass from admission to reply, made of several model calls that each re-send every retained tool result"
+  - ambient: "a message in a room where Nora is not addressed: recorded as an item, offered to an ambient pass only when room policy admits it, never owed a reply"
+  - proactive: "acting when nobody asked: a pass started when Nora's own intention is due or its watched condition holds, which re-judges the room and delivers or stays silent"
+  - relevance gate: "an optional bounded, tools-less admission occasion in front of the ambient offer that reads a closed transcript window and the room's Standing and writes nothing"
+  - subconscious / conscious: "the operator's words for the reflection loop, which runs underneath, and the engagement loop, which speaks"
 area: cognition
 links:
   - {to: docs/design/cognition/README.md, rel: uses}

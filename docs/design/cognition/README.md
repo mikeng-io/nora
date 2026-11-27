@@ -1,7 +1,11 @@
 ---
 class: design
 subject: "how Nora holds and works what she knows: one Cognitive Graph worked by two loops"
-owns: []
+owns:
+  - Cognitive Graph: "Nora's one cognitive state and only memory: rows and edges, each with a basis, a scope and provenance"
+  - cognition: "the Cognitive Graph worked by its two loops; the graph alone neither thinks nor acts"
+  - social agent: "Nora as a participant in ongoing relationships and shared situations, with messaging, voice, cognition and her computer as connected parts whose availability is configuration"
+  - fails closed: "a guard or step that cannot decide blocks the whole delivery or leaves its input pending, and an unavailable read is unknown, never absence"
 area: cognition
 ---
 

@@ -1,7 +1,20 @@
 ---
 class: design
 subject: identity, platform accounts and identifiers, and the two backends that hold them
-owns: [one identity, many accounts, a display name never authenticates, identifier kind, identity backend, identity suspension, Nora's own accounts]
+owns:
+  - one identity
+  - many accounts
+  - a display name never authenticates
+  - identifier kind
+  - identity backend
+  - identity suspension
+  - Nora's own accounts
+  - identity: "the stable registered subject Nora recognises across every platform, room and unit, to which admitted accounts resolve; humans, agents and bots share one model"
+  - identity resolution: "mapping a platform account to the identity it belongs to by an operator-registered identifier, never by a name or alias"
+  - platform account: "one provider-side registration with one or more typed identifiers, held by one identity"
+  - alias: "a nickname the operator wrote for an identity, trusted because a human authored it, which resolves a lookup target and never a sender"
+  - display name: "what an account's holder set on their own profile: descriptive and untrusted, shown but never matched, indexed or taken as proof of ownership"
+  - unmapped sender: "an account no identity holds, reported as a count and never an id, so its item stays unresolved with no person behind it"
 area: people
 links:
   - {to: docs/design/people/README.md, rel: uses}

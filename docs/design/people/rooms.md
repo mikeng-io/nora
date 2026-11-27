@@ -1,7 +1,17 @@
 ---
 class: design
 subject: the topology of unit, room and conversation, and how a room is resolved, addressed and listed
-owns: [topology, room, conversation id, room name, room resolution and relay, room directory]
+owns:
+  - topology
+  - room: "one conversation on one platform within a unit, with its own transcript and culture, keyed on platform and primary conversation id"
+  - conversation id: "one platform thread identifier, what arrived, which a platform may change; a room may hold several and a conversation id belongs to at most one room"
+  - room name
+  - room resolution and relay
+  - room directory
+  - unit: "the boundary of what is read and shared by a group of people reachable in more than one room; rooms of one unit share state, rooms of different units never do, and one unit is primary while the rest are affiliates"
+  - workspace: "a group of units under one operator, an authority scope only and never a read boundary"
+  - home room: "a unit's one designated room, through whose roster a unit-wide room-scoped read resolves"
+  - conversation: "one platform chat admitted as a room, holding one or more conversation ids of which one is the stable primary"
 area: people
 links:
   - {to: docs/design/people/authority.md, rel: uses}

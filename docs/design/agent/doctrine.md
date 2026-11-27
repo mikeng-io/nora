@@ -2,9 +2,9 @@
 class: design
 subject: where a statement about Nora lives, which source makes it true, and what may override what
 owns:
-  - "placement: the class of a prompt statement, by what makes it true: law, seed, practice, capability or situation"
-  - "authority order: law, seed, practice, tool schemas, skill instructions, message content, tool output"
-  - "skill: a bundle of instructions for one domain, loaded on need and never from a message"
+  - placement: "the class of a prompt statement, by what makes it true: law, seed, practice, capability or situation"
+  - authority order: "law, seed, practice, tool schemas, skill instructions, message content, tool output"
+  - skill: "a bundle of instructions for one domain, loaded on need and never from a message"
 area: agent
 links:
   - {to: docs/design/agent/README.md, rel: uses}

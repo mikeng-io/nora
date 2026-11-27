@@ -2,9 +2,10 @@
 class: design
 subject: the agent, one fresh model run per pass, built from a declared occasion
 owns:
-  - "occasion: any place a prompt reaches a model; each one is declared and assembled, never hand-built"
-  - "continuity: what carries a pass over a previous one is persisted context, never a retained agent"
-  - "capability source: a tool's schema is the only statement of what Nora can do"
+  - occasion: "any place a prompt reaches a model; each one is declared and assembled, never hand-built"
+  - continuity: "what carries a pass over a previous one is persisted context, never a retained agent"
+  - capability source: "a tool's schema is the only statement of what Nora can do"
+  - sessionless: "Nora's continuity lives in persisted records and the graph, not in a retained agent or SDK session; each pass assembles context for a fresh agent, while bounded computer and browser sessions still exist"
 area: agent
 links:
   - {to: docs/design/cognition/context.md, rel: uses}
