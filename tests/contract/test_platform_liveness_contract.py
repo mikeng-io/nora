@@ -1,5 +1,5 @@
 """The liveness half of the `PlatformAdapter` contract, over EVERY adapter the
-platform table builds (design/platform-bridges/platform-liveness.md «One
+platform table builds (docs/design/platform/README.md «One
 contract for every platform»).
 
 Each table row is built in both modes — direct and bridge — so a new row (a

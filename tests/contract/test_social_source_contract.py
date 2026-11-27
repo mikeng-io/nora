@@ -1,7 +1,7 @@
 """One suite, every implementation of `SocialSource`.
 
 The port has two implementations, `InstagramSocialSource` and
-`FakeSocialSource`, so both are held to the same answers here (docs/code-standards.md: a
+`FakeSocialSource`, so both are held to the same answers here (docs/engineering/code-standards.md: a
 port never gains a second implementation without a shared contract suite).
 The poller's tests drive the fake, and they are only evidence about
 production if the fake answers the way the adapter does.

@@ -1,5 +1,5 @@
 """The file backend over the loaded `Persons`/`Policy` snapshots — the
-`file` side of `nora.domain.managed_ports` (`design/managed-identity-access/`).
+`file` side of `nora.domain.managed_ports` (`docs/design/people/README.md`).
 
 Reads answer exactly what the TOML pair already knows: flat sender
 resolution, exact account lookup, alias folding, room admission and the

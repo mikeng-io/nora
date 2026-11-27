@@ -7,54 +7,10 @@
    "persona": 22
   }
  },
- "GLOSSARY.md": {
-  "reason": "Retired-term note and historical decision references.",
-  "matches": {
-   "Persona": 2,
-   "persona": 3
-  }
- },
- "design/09-decision-index.md": {
-  "reason": "Historical design provenance; only the requested standing-ledger call sites change.",
-  "matches": {
-   "Persona": 15,
-   "PersonaStore": 1,
-   "SqlPersonaStore": 3,
-   "_persona": 1,
-   "_persona_settled_at": 1,
-   "nora_persona_reload_failures_total": 1,
-   "persona": 8,
-   "persona_dispute": 1,
-   "persona_leak": 1,
-   "persona_line": 2,
-   "persona_no_change": 1,
-   "persona_sha256": 1,
-   "persona_span": 1,
-   "persona_write": 3
-  }
- },
- "design/13-trace-content-and-redaction.md": {
+ "docs/operations/trace-redaction.md": {
   "reason": "Historical design provenance; only the requested standing-ledger call sites change.",
   "matches": {
    "PERSONA": 2
-  }
- },
- "design/17-prompt-substrate.md": {
-  "reason": "Historical design provenance; only the requested standing-ledger call sites change.",
-  "matches": {
-   "Persona": 3,
-   "PersonaSection": 1,
-   "PersonaStore": 1,
-   "nora_persona": 2,
-   "persona": 14,
-   "persona_sha256": 1,
-   "persona_store": 1
-  }
- },
- "design/computer-unit-scope/00-contract.md": {
-  "reason": "Historical design provenance; only the requested standing-ledger call sites change.",
-  "matches": {
-   "Persona": 1
   }
  },
  "docs/adr/0026-the-character-tier-names-its-entry-parts-profile-traits-hypotheses.md": {

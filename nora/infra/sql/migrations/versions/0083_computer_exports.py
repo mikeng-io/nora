@@ -1,5 +1,5 @@
 """computer_exports — every file that left Nora's computer through
-`computer_export` (design/sandbox-runtime §6, §7; S3a).
+`computer_export` (docs/design/computer/sandbox.md §6, §7; S3a).
 
 One row per export that reached its destination: the room and workspace
 path it came from, the sha256 and size Nora computed on the bytes she

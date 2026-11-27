@@ -1,5 +1,5 @@
 """music_session.last_played_* -- the autoplay re-seed seed for boot-time resume
-(design/voice-channel/music.md, R-67).
+(docs/design/voice/music.md, R-67).
 
 **Why a column and not the now_playing_* trio.** When autoplay's chain ends
 (related() answered empty, or every Mix track was already played this session),

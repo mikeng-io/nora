@@ -6,7 +6,7 @@ loaded-once host edits require the file-name-only `config-reload.json` request
 from SKILL step 3 before manual `DeployStack`; native Compose preserves unchanged
 containers otherwise. The checkout force-recreate examples below remain legacy
 and require a runtime `.env` sufficient for Compose interpolation; see
-[configuration](../../../docs/configuration.md#host-migration-and-installed-files).
+[configuration](../../../docs/operations/configuration.md#host-migration-and-installed-files).
 
 - A host login shell may be zsh, where an unquoted `$VAR` holding several args
   reaches the program as one. Use `bash -s` with a heredoc or `bash -c` to make
@@ -16,7 +16,7 @@ and require a runtime `.env` sufficient for Compose interpolation; see
   `dig +short <domain> @1.1.1.1` tells them apart; the fix is the operator's.
 - Every compose `build:` sets `network: host` (operational constraint 1), so
   `docker compose build` needs no flag. `scripts/build-image.sh`, which
-  `docs/runbook.md` 3b uses, builds the same unstamped `nora:latest`.
+  `docs/operations/runbook.md` 3b uses, builds the same unstamped `nora:latest`.
 - Container python is `/app/.venv/bin/python`. `uv run` in the container
   installs dev extras over the live venv (2026-09-17).
 
@@ -68,7 +68,7 @@ or renames a config key should say so in its PR's Deploy note and in a
 Other images: ADD the service to the build and up lines (voice:
 `nora voice-sidecar voice-wake` together). `verify-deploy.py` sees only
 `nora:latest`, so read each other image back per container, as
-`docs/runbook.md` 3b shows: `docker inspect --format '{{.Image}}' <svc>` must
+`docs/operations/runbook.md` 3b shows: `docker inspect --format '{{.Image}}' <svc>` must
 equal `docker image inspect <svc-image> --format '{{.Id}}'`.
 
 ## A revert PR keeps its migration
@@ -112,7 +112,7 @@ Only after SKILL step 0 confirms checkout mode; Komodo installations use the nat
 - `--force-recreate nora` alone leaves `presence` and `analytics` on the old
   image; both crash-looped 279 times on a new config key (2026-09-16).
 - `nora`, `voice-sidecar` and `voice-wake` images move together or not at all
-  (`docs/runbook.md` 3b). Music lives in `voice-sidecar`: restarting `nora`
+  (`docs/operations/runbook.md` 3b). Music lives in `voice-sidecar`: restarting `nora`
   fixes nothing there (2026-09-21).
 - A read through `docker compose exec` proves the FILE, not the process. A
   loaded-once file is in effect only in a container started after the edit.
@@ -197,7 +197,7 @@ Run step 3's script up to `git log --oneline -1` (no tag, build or up). Check:
 `curl -s localhost:9100/health | jq -r .doctrine_sha256` differs from its
 value before the pull, and `nora_doctrine_reload_failures_total` in
 `localhost:9100/metrics` did not move (a bad parse keeps the last good
-doctrine, `docs/runbook.md` section 2). A dreamer objective shows at its next
+doctrine, `docs/operations/runbook.md` section 2). A dreamer objective shows at its next
 pass: read that pass's trace (nora-readback).
 
 ### 5. Config-only change

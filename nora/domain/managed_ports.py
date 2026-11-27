@@ -1,4 +1,4 @@
-"""Managed identity and scoped access ports (`design/managed-identity-access/`).
+"""Managed identity and scoped access ports (`docs/design/people/README.md`).
 
 The file backend and the managed backend implement the SAME ports — the
 contract suites in tests/contract/ hold both to one behaviour, and the file

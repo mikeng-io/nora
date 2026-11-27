@@ -500,7 +500,7 @@ test('a phone edit wrapped in editedMessage is unwrapped into an edit event', ()
 
 test('non-edit protocol messages and contentless messages produce no event', () => {
   // REVOKE is not in this list any more: it is a `delete` event since
-  // design/cognition-loop step 1 (pinned at the end of this file).
+  // docs/design/cognition/loop.md step 1 (pinned at the end of this file).
   assert.equal(extractMessageEvent({
     key: { id: 'P1', remoteJid: '152099@g.us', participant: '1@s.whatsapp.net' },
     message: { protocolMessage: { type: 'EPHEMERAL_SETTING', key: { id: 'X' } } },
@@ -724,7 +724,7 @@ test('the editor is tried as the original sender, whatsmeow\'s first choice', ()
   assert.ok(opened.msg, `not decrypted: ${opened.reason}`);
 });
 
-// ── reactions and revokes (design/cognition-loop/observation.md) ─────────
+// ── reactions and revokes (docs/design/cognition/loop.md) ─────────
 
 test('a reactionMessage becomes a reaction event naming its target', () => {
   const event = extractMessageEvent({

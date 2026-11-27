@@ -1,4 +1,4 @@
-"""Focused checks for the shared bridge wire contract (design/platform-bridges)."""
+"""Focused checks for the shared bridge wire contract (docs/design/platform/README.md)."""
 
 from nora.platform.bridge.envelope import Envelope, canonical_digest, canonical_source_key, event_id
 from nora.platform.bridge.queue import ENQUEUE_LUA, dedupe_key, src_key

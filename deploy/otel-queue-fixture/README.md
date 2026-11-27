@@ -1,11 +1,11 @@
 # otel-queue-fixture
 
 Disposable collector + Jaeger + synthetic-Langfuse for the durable
-platform-bridge queue work (design/platform-bridges/04-operations.md, issue #422). It
-implements the routing the approved design REQUIRES (`docs/observability.md`
+platform-bridge queue work (docs/operations/bridge-operations.md, issue #422). It
+implements the routing the approved design REQUIRES (`docs/operations/observability.md`
 «How a span reaches a collector» describes the deployed counterpart this
 proposal is derived from). The Jaeger/Langfuse legs are the TRANSITIONAL
-route before deploying the implemented SigNoz backend (`docs/observability.md` «Accepted
+route before deploying the implemented SigNoz backend (`docs/operations/observability.md` «Accepted
 direction: self-hosted SigNoz» / ADR 0034); this fixture attests the
 transitional policy, not SigNoz, and nothing here implements it.
 

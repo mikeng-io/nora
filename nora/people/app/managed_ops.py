@@ -1,5 +1,5 @@
 """The managed operations' journal plumbing — snapshots, replay and the
-per-step bookkeeping both services share (`design/managed-identity-access/`).
+per-step bookkeeping both services share (`docs/design/people/README.md`).
 
 Every mutation journals its intended effect before applying it; these
 helpers build the snapshot an `OperationRecord` carries, re-read it after a

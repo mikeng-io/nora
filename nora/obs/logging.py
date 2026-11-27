@@ -64,7 +64,7 @@ def _make_redactor(secrets: list[str]) -> _Processor:
 #: have.
 #:
 #: `level` stays, uppercase: it is what a human greps and what
-#: `docs/runbook.md`'s saved queries use; `severity_number` is the field a
+#: `docs/operations/runbook.md`'s saved queries use; `severity_number` is the field a
 #: machine filters on.
 SEVERITY_NUMBERS: dict[str, int] = {
     "DEBUG": 5,
@@ -96,7 +96,7 @@ def _exception_fields(_logger: Any, _method_name: str, event_dict: dict[str, Any
     `exception.stacktrace`. The stacktrace is kept WHOLE and the other two are
     derived from its last line, so type and message become field lookups.
 
-    The original `exception` key is left in place, because `docs/runbook.md`'s
+    The original `exception` key is left in place, because `docs/operations/runbook.md`'s
     saved greps read it.
     """
     blob = event_dict.get("exception")
@@ -118,7 +118,7 @@ def _exception_fields(_logger: Any, _method_name: str, event_dict: dict[str, Any
 
 def _uppercase_level(_logger: Any, _method_name: str, event_dict: dict[str, Any]) -> dict:
     # structlog.stdlib.add_log_level renders "info"/"error"/...; the output
-    # is uppercase ("INFO"/"ERROR"/...) because docs/runbook.md's saved queries
+    # is uppercase ("INFO"/"ERROR"/...) because docs/operations/runbook.md's saved queries
     # use that casing.
     if "level" in event_dict:
         event_dict["level"] = str(event_dict["level"]).upper()

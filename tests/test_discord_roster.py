@@ -100,7 +100,7 @@ async def test_a_forbidden_read_names_the_missing_intent_in_the_log(api, caplog)
     The RETURN VALUE is deliberately not what this test pins — 403 falls
     through to the same `available=False` a 500 gives, and asserting only that
     would pass with the whole branch deleted. What the branch buys is the
-    DIAGNOSTIC, and `docs/runbook.md` tells an operator to grep for exactly
+    DIAGNOSTIC, and `docs/operations/runbook.md` tells an operator to grep for exactly
     this line when every room-scoped tool has gone quiet on Discord while
     `/health` says the gateway is fine. That makes the string a contract.
     """

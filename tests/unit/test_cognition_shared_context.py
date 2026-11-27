@@ -245,23 +245,9 @@ def test_hard_total_interleaves_counts_and_escapes_shared_rows():
 
 
 def test_governance_declared_decisions_shared_ownership_and_no_legacy_escape():
-    from pathlib import Path
-
-    spec = Path("design/context-assembly/cognition.md").read_text()
-    import re
-
-    decision_table = spec.split("| Decision |", 1)[1].split("**Read but not injected**", 1)[0]
-    links = set()
-    decision = ""
-    for row in decision_table.splitlines():
-        cells = row.strip().strip("|").split("|")
-        if len(cells) != 3 or not row.startswith("|"):
-            continue
-        decision = cells[0].strip() or decision
-        for name in re.findall(r"`([a-z_]+)`", cells[2].split("(", 1)[0]):
-            links.add((decision, name))
+    # The per-block decision table left the design with the legacy cognition
+    # session's bundle; each declared block still names a store of its own.
     for declaration in _BLOCKS:
-        assert (declaration.decision, declaration.name) in links
         assert BLOCK_TYPES[declaration.name].store
     stores = [v.store for v in BLOCK_TYPES.values() if v.store]
     assert len(stores) == len(set(stores))

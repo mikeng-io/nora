@@ -79,7 +79,7 @@ def test_it_reports_errors_without_starting_a_second_tracing_pipeline(monkeypatc
 
     `sentry_sdk` will instrument spans if asked, and this process already has a
     tracing pipeline whose traces are the provenance every claim about a turn
-    re-derives from (`docs/observability.md`). Two pipelines would write two
+    re-derives from (`docs/operations/observability.md`). Two pipelines would write two
     incompatible trace ids for one turn — a trace that exists twice,
     differently, is worse than one that exists once.
 

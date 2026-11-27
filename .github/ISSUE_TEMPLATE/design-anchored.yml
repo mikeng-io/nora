@@ -7,7 +7,7 @@ body:
     attributes:
       value: |
         Title is still `<Area>: <the gap>`. Every heading below is declared in
-        `docs/maintainers/conventions.md` §Issues; the reasoning lives there.
+        `docs/engineering/conventions.md` §Issues; the reasoning lives there.
 
   - type: dropdown
     id: area
@@ -41,8 +41,8 @@ body:
     id: design
     attributes:
       label: Design anchor
-      description: "`design/<bundle>/<subject>.md` «<heading>» — the section establishing the expected behavior."
-      placeholder: design/self-growth/character.md
+      description: "`docs/design/<bundle>/<subject>.md` «<heading>» — the section establishing the expected behavior."
+      placeholder: docs/design/cognition/learning.md
     validations:
       required: true
 

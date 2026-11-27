@@ -1,6 +1,6 @@
 """Sentry, for the one question the rest of this package cannot answer.
 
-`docs/observability.md` states the boundary: Prometheus answers "how many, how
+`docs/operations/observability.md` states the boundary: Prometheus answers "how many, how
 often, with what outcome", Langfuse holds the traces with a model call in them,
 and logs are forensic. All three answer questions about things that happened;
 none groups many occurrences of the same stack trace into one issue, which is

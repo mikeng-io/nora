@@ -1,5 +1,5 @@
 """withdrawal -- the citation edge table, `unsupported_at` on the derived
-heads that exist, `hidden_at` on messages (design/cognition-loop/data.md;
+heads that exist, `hidden_at` on messages (docs/design/cognition/loop.md;
 WHAT THIS ADDS, all additive:
 
 1. `citation` (new): the edge table 70 §5 lists under step 2 ("the citation

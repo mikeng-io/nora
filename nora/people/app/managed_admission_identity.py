@@ -1,5 +1,5 @@
 """Admission-owned Kratos identities — durable creation evidence and the
-correlated concrete read (`design/managed-identity-access/identity.md`:
+correlated concrete read (`docs/design/people/identity.md`:
 `external_id` correlates, it never proves ownership).
 
 Ordinary `IdentityRegistry.ensure_identity` resolves a 409 by read-back on

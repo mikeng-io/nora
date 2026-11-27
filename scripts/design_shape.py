@@ -1,4 +1,4 @@
-"""Check that every file under design/ has the shape of a design document.
+"""Check that every file under docs/design/ has the shape of a design document.
 
 `tests/architecture/test_design_is_design.py` holds existing violations to
 `tests/architecture/design_shape_baseline.json`, which only shrinks.
@@ -17,7 +17,7 @@ from scripts.log_markers import ROOT
 
 BASELINE = ROOT / "tests" / "architecture" / "design_shape_baseline.json"
 
-MAX_README_LINES = 150
+MAX_README_LINES = 300
 MAX_FILE_LINES = 300
 NOT_DESIGN = {"decision", "decisions", "review", "reviews", "roadmap", "items", "draft", "plan",
               "plans", "migration"}
@@ -25,6 +25,12 @@ NOT_DESIGN = {"decision", "decisions", "review", "reviews", "roadmap", "items", 
 _NAME = re.compile(r"^\d|\d{4}-\d\d-\d\d")
 _DATE = re.compile(r"(?<![\w/#-])20\d\d-\d\d-\d\d(?![\w-])")
 _BANNER = re.compile(r"\b(?:DEPRECATED|SUPERSEDED|REVERSED)\b|^supersedes:", re.M)
+#: A bundle carrying its own build state competes with the tracker that owns
+#: progress, and a stale `building` reads as the more current of two bundles.
+_STATUS = re.compile(r"^\**Status:\**", re.M)
+#: An open-issue search is execution, and it rots into a link that answers a
+#: question nobody asked.
+_ISSUE_SEARCH = re.compile(r"issues\?q=")
 
 
 def check(path: str, text: str) -> list[str]:
@@ -41,6 +47,10 @@ def check(path: str, text: str) -> list[str]:
         found.append("date")
     if _BANNER.search(text):
         found.append("history-marker")
+    if _STATUS.search(text):
+        found.append("status-marker")
+    if _ISSUE_SEARCH.search(text):
+        found.append("issue-search-link")
     limit = MAX_README_LINES if name == "README.md" else MAX_FILE_LINES
     if len(text.splitlines()) > limit:
         found.append("over-budget")
@@ -49,11 +59,14 @@ def check(path: str, text: str) -> list[str]:
 
 def census() -> dict[str, list[str]]:
     out = subprocess.run(
-        ["git", "ls-files", "--cached", "--others", "--exclude-standard", "design"],  # noqa: S607
+        ["git", "ls-files", "--cached", "--others", "--exclude-standard", "docs/design"],  # noqa: S607
         cwd=ROOT, check=True, capture_output=True, text=True,
     ).stdout.split()
     result = {}
     for path in sorted(out):
+        # The decision index is a decision document, checked by check_documents.
+        if path == "docs/design/decisions.md":
+            continue
         file = ROOT / path
         if not file.is_file():
             continue

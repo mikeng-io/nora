@@ -1,4 +1,4 @@
-"""The liveness vocabulary of a platform (design/platform-bridges/platform-liveness.md).
+"""The liveness vocabulary of a platform (docs/design/platform/README.md).
 
 `live` — its own identity is resolved and registered; inbound and outbound run.
 `degraded` — enabled and built, but its identity could not be resolved; it

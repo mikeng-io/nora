@@ -47,7 +47,7 @@ PR_HEADINGS = [
     "Architecture",
     "Also",
     "Gate on the merged tree",
-    "Authored by",
+    "Produced by",
     "Closes",
 ]
 SHAPE_LABELS = {"design-anchored", "freeform"}
@@ -136,9 +136,12 @@ def test_commit_checker_rejects_the_measured_defect_shapes() -> None:
         import tempfile
 
         with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False) as f:
-            # A body, so this test judges the subject shape alone; the body rule has
-            # its own tests (test_commit_body_rule.py).
-            f.write(subject + "\n\nThe reason, stated so the body rule is satisfied.\n")
+            # A body and provenance, so this test judges the subject shape alone; the
+            # body and provenance rules have their own tests (test_commit_body_rule.py).
+            f.write(
+                subject + "\n\nThe reason, stated so the body rule is satisfied.\n\n"
+                "Environment: test\nAgent: test\nModel: test\n"
+            )
             path = f.name
         try:
             # nosec: the script path and args are repo constants; `path` is a

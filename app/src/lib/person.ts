@@ -1,7 +1,7 @@
 import type { CSSProperties } from "react";
 
 // A person keeps one colour everywhere in the portal: their avatar, their
-// pin and route on the map (DESIGN.md, the Person-Hue Rule). The colour is
+// pin and route on the map (docs/design/appearance/README.md, the Person-Hue Rule). The colour is
 // an OKLCH hue at one fixed lightness and chroma per lighting, so no person
 // reads louder than another, and the hues stay at least 25° from the
 // reserved ones: danger and blush (17-31), caution (80), success (166),

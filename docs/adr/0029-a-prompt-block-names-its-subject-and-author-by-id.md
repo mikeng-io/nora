@@ -1,3 +1,9 @@
+---
+class: adr
+subject: A prompt block names its subject and its author by id
+owns: []
+---
+
 # 0029 · A prompt block names its subject and its author by id
 
 - **Status:** proposed (2026-10-25). The operator approved the format the same day, after

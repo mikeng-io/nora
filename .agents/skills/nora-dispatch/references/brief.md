@@ -16,7 +16,7 @@ change needs none. The lifecycle and its routes: `nora-work/references/lifecycle
 
 The issue also carries its Linear fields: one **Type** label, one **Area** label
 (the code area the brief covers), a priority, and the project when it is part of
-a split outcome (`docs/maintainers/conventions.md` «Linear execution»). The
+a split outcome (`docs/engineering/conventions.md` «Linear execution»). The
 builder's delegation prompt (skills to read, selectors, lease rules) belongs in
 the delegation message, not the brief.
 
@@ -40,8 +40,13 @@ Every item passes all of these:
    every legitimate case fails.
 5. **Faithful.** No requirement of the source issue or the design that belongs
    to this outcome is dropped. Moving one out of scope names it in
-   Boundaries.
-6. **Small.** At most 6 items, in one area. More routes to a split.
+   Boundaries. A requirement found only in a bundle the anchor contradicts is
+   a design defect to fix first, not a requirement.
+6. **Small.** At most 6 items, in one area. More routes to a split, and each
+   child names the parent item it advances. A child that advances none, or adds
+   a capability, tool, store or read path to a removal outcome, is a scope
+   amendment for the operator before dispatch. One branch chain carries one
+   outcome; another outcome starts from `master` on its own branch.
 
 Progress, gaps and partial verdicts go in Current state, never in Done when.
 
@@ -52,7 +57,9 @@ author does that discovery first, so that the first review round normally finds
 no BLOCKER.
 
 1. **Census the sources.** List every requirement in the source request, the
-   issue, the design it cites and Mike's rulings, each with its location. Map
+   issue, the design it cites and Mike's rulings, each with its location, read
+   at the brief's base revision. A previous session's notes, handoffs and
+   narratives are leads to check, never evidence. Map
    each one to a Done-when item or to a named exclusion in Boundaries. A
    requirement mapped to neither is a gap to fix now.
 2. **Run the reviewer's checklist yourself.** Apply the finite checklist above,
@@ -63,7 +70,7 @@ no BLOCKER.
    revision. A link behind a login it cannot pass is not an input.
 
 A first-round BLOCKER that this pre-flight would have caught is the author's
-miss. Its fix adds or extends a lesson in `docs/maintainers/lessons.md`
+miss. Its fix adds or extends a lesson in `docs/engineering/lessons.md`
 (`nora-land/reference.md` «Resolve»).
 
 ## Review and lock

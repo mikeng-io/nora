@@ -11,7 +11,7 @@ depends_on = None
 
 METADATA = sa.MetaData()
 
-# Generic memory graph stores (design/unified-memory/graph.md). Vocabularies live in code.
+# Generic memory graph stores (docs/design/cognition/graph.md). Vocabularies live in code.
 ENTITY = sa.Table(
     "entity",
     METADATA,
