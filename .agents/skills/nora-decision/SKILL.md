@@ -86,12 +86,13 @@ execution, spending or deployment authority.
 
 ## 3. Writing a decision-index row
 
-1. **Where.** The last table of `docs/design/09-decision-index.md`,
-   `| ID | Statement | Enforcing test |`. A row is for a LANDED decision.
-2. **Statement.** The rule in bold, then the reading that would reopen it
-   («This holds unless ...»). No provenance, dates or history: the commit and
-   the ADR hold those.
-3. **Enforcing test.** Backticked test paths that exist, or `NOT ENFORCED`. A
+1. **Where.** The one table of `docs/design/decisions.md`,
+   `| ID | Rule | Design | Test | ADR |`. A row is for a LANDED decision.
+2. **Rule.** One present-tense sentence of about 200 characters, with no
+   provenance, dates, "amended" or rationale: the commit, the ADR and the design
+   hold those. **Design** links the bundle file that states the rule, **ADR** the
+   record of the decision or `—`. The whole row stays under 300 characters.
+3. **Test.** One backticked test node id or file that exists, or `NOT ENFORCED`. A
    behavioural rule (R-N) registers its test in `RULE_TESTS` in
    `tests/test_acceptance_rules.py`.
 4. **Check:**
@@ -104,8 +105,8 @@ execution, spending or deployment authority.
    ```
    PASS is `RC=0` and a passed count.
 5. **A decision that no longer holds is deleted** from the index, with its
-   test or its `RULE_TESTS` entry. A changed decision is a rewritten row. Its
-   number is never reused (§4 reads history).
+   `RULE_TESTS` entry. A changed decision is a rewritten row. Its number is
+   never reused (§4 reads history).
 
 ## 4. Taking the number, at merge time
 
@@ -137,7 +138,7 @@ conflict, so the number is chosen immediately before merge (`nora-land` §8).
 ## 5. Citing or reversing a decision
 
 1. **Read the row on origin/master**, not a summary or memory:
-   `git grep -nE 'DEC-<n>([^0-9]|$)' origin/master -- docs/design/09-decision-index.md`.
+   `git grep -nE 'DEC-<n>([^0-9]|$)' origin/master -- docs/design/decisions.md`.
    No row means the decision no longer holds; `git log -S 'DEC-<n>'` finds why.
 2. **Reverse only on new evidence** (a measurement, a read-back, a probe).
    State it in one line and write the new reopen condition.

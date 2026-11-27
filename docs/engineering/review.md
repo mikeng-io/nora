@@ -1,3 +1,9 @@
+---
+class: engineering
+subject: how a change is reviewed against its scope and acceptance
+owns: []
+---
+
 # Reviewing Nora
 
 Review answers: **does this candidate satisfy the agreed change, and what

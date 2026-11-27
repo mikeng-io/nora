@@ -14,8 +14,8 @@ user *journey*, measure the *trajectory* she produces, serialize a *verdict*.
 
 ## Before a paid run
 
-Apply this order to every entrypoint. The [measurement contract](../design/evaluation/measurement.md) and
-[scenario coverage](../design/evaluation/coverage.md) define evidence, judging
+Apply this order to every entrypoint. The [measurement contract](../engineering/evaluation-measurement.md) and
+[scenario coverage](../engineering/evaluation-coverage.md) define evidence, judging
 and the limits of each execution mode. Reuse the existing
 runner, corpus fields, private evidence and trace hierarchy.
 
@@ -259,7 +259,7 @@ against a sandbox database of the case's own, seeds it with what that room
 held at that instant, and drives one entry point. Declared stimuli and
 counterfactuals may be authored; they must not be presented as recorded history.
 The subject uses the corpus's canonical assembly rather than a bespoke
-per-case dependency graph (`docs/design/evaluation/subject.md`
+per-case dependency graph (`docs/engineering/evaluation-subject.md`
 «Production owns the subject» and «Input and causal scope»).
 
 SDK execution uses private `--services FILE` HTTP recordings keyed by corpus

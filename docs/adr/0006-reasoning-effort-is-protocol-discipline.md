@@ -1,3 +1,9 @@
+---
+class: adr
+subject: '`reasoning_effort = "none"`, on the narrowest justification that survived'
+owns: []
+---
+
 # 0006 — `reasoning_effort = "none"`, on the narrowest justification that survived
 
 - **Status:** accepted, with the root cause OPEN.

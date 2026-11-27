@@ -64,6 +64,9 @@ def census() -> dict[str, list[str]]:
     ).stdout.split()
     result = {}
     for path in sorted(out):
+        # The decision index is a decision document, checked by check_documents.
+        if path == "docs/design/decisions.md":
+            continue
         file = ROOT / path
         if not file.is_file():
             continue

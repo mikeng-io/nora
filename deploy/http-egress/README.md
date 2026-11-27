@@ -46,7 +46,7 @@ adoption. Application releases do not install it. This PR makes no host edits.
 
 ## Downloader prerequisite and rollback
 
-Keep the [namespace/seccomp prerequisite](../../docs/security/outbound-fetches.md).
+Keep the [namespace/seccomp prerequisite](../../docs/operations/outbound-fetches.md).
 No app capability is added. Until an operator installs and validates the narrowly
 extended default seccomp profile and user-namespace/LSM permissions, downloads
 refuse rather than run unconfined. Test as the deployed UID against the actual

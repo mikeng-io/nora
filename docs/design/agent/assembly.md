@@ -2,10 +2,14 @@
 class: design
 subject: context assembly, how every model-facing prompt is built from declared blocks
 owns:
-  - "block: one declared unit of a pass's context, with a type, an order and a scope"
-  - "assembler: the one renderer that walks an occasion's declared blocks"
-  - "floor: the context an occasion always carries, never a candidate for removal"
-  - "exposure: which already-built blocks reach the model, decided after retrieval"
+  - block: "one declared unit of a pass's context, with a type, an order and a scope"
+  - assembler: "the one renderer that walks an occasion's declared blocks"
+  - floor: "the context an occasion always carries, never a candidate for removal"
+  - exposure: "which already-built blocks reach the model, decided after retrieval"
+  - block source: "the ordinary function that builds one declared block type; the declaration that places it is the interface"
+  - row renderer: "the one renderer per row kind that turns a record into the same line in every block and occasion, with escaping always on"
+  - block placement: "whether a declared block sits in the cached header or the part rebuilt every turn; one volatile byte in the header ends the prefix-cache hit for everything after it"
+  - context header: "the authored framing that opens a pass's context, stating why the pass is awake and what context is already present"
 area: agent
 links:
   - {to: docs/design/agent/README.md, rel: uses}

@@ -19,7 +19,7 @@ CLI. `alembic check` guards column presence, column type and server defaults;
 it is provably blind to the CHECK constraint and to the `ts DESC` index
 ordering, and `idx_messages_conv_ts` is excluded from autogenerate because the
 expression index otherwise reports drift on every run. Both run in
-`uv run pytest -q`. See DEC-11 in the decision index for the full story,
+`uv run pytest -q`. See DEC-53 in the decision index for the full story,
 including a 2026-08-05 correction to its original server-default claim.
 
 **Dropping the CLI once meant dropping the half of the job it was good at**
@@ -267,7 +267,7 @@ mistake it produced (2026-08-21: eight full gate runs in one session).
   the container fails at boot because `upgrade "head"` refuses two heads.
   **`uv run alembic heads` must print exactly ONE line after every merge.**
 - **Never take a DEC or R number from a chat agreement** — re-read
-  `docs/design/09-decision-index.md` at MERGE time, not at claim time. 2026-08-21:
+  `docs/design/decisions.md` at MERGE time, not at claim time. 2026-08-21:
   two sessions coordinated numbers carefully and a third took DEC-131 anyway;
   it conflicted only because the rows landed on the same line. Allocation and
   duplicate checks now live in `nora-decision`, including origin/master and
@@ -436,8 +436,8 @@ the same way as a `DEPRECATED` decision row: marked, never rewritten to point
 somewhere it does not point.
 
 **Deprecated 2026-09-07 — the knowledge tier (the "fact tier") and the language
-tier.** Both are gone: the code is deleted, the decision-index rows are marked
-(never renumbered), and every design node and spec that describes them carries a
+tier.** Both are gone: the code is deleted, the decision-index rows are deleted
+(numbers never reused), and every design node and spec that describes them carries a
 `DEPRECATED` banner. **Their database tables are NOT dropped** — the code goes,
 the schema stays, and dropping them is a separate explicit decision. The evidence
 that decided it is `docs/design/cognition/loop.md` ; the issue
@@ -835,7 +835,7 @@ clause was the one that shipped the defect.
 
 ## The five operational constraints (spec §2, with corrections)
 
-These came from `docs/design/08-stack-refactor-brief.md` and are preserved here
+These came from the retired stack-refactor brief and are preserved here
 because the spec that retired that document said they were the most
 operationally valuable text in it. Losing any of these wastes an afternoon.
 
@@ -904,7 +904,7 @@ operationally valuable text in it. Losing any of these wastes an afternoon.
   singletons.
 - A port never gains a second implementation — including a test fake —
   without a shared contract suite both pass (`tests/contract/`).
-- A new behavioural rule gets an entry in `docs/design/09-decision-index.md` and a
+- A new behavioural rule gets an entry in `docs/design/decisions.md` and a
   named test registered in `tests/test_acceptance_rules.py::RULE_TESTS`.
 - Where a test LIVES, what config it LOADS and where its FAKES live are the
   three rules of the next section (issue #113), each with its own gate under

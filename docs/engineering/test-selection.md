@@ -1,8 +1,10 @@
+---
+class: engineering
+subject: which tests run automatically on a change and which run on demand
+owns: []
+---
+
 # Test selection
-
-**Status:** built
-
-[Open issues](https://github.com/mikeng-io/nora/issues?q=is%3Aopen+%22design%2Ftest-selection%2F%22)
 
 Automatic validation targets three minutes and has a five-minute ceiling.
 The automatic backend baseline runs unit/domain tests plus the cheap CI plumbing guards, excluding the measured
@@ -31,6 +33,11 @@ Local affected-test selection remains the union of the static import graph,
 recorded dependency map and reader scan. Missing evidence still selects ALL;
 this no longer launches the full backend suite automatically in hosted CI.
 
-[ADR 0038](../../adr/0038-bound-automatic-validation-and-run-full-tests-on-demand.md)
+[ADR 0038](../adr/0038-bound-automatic-validation-and-run-full-tests-on-demand.md)
 records the accepted tradeoff: feedback speed over automatic complete acceptance.
 Reopen the baseline only with measured escaped failures or measured budget excess.
+
+`make gate` runs lint, scoped type checks, import contracts and affected tests. The suite
+includes real database and container tests; model behaviour is evaluated separately
+([evaluation](evaluation.md)). A green gate proves neither production health nor the enabled
+configuration of a running installation.

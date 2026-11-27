@@ -1,3 +1,9 @@
+---
+class: adr
+subject: AGENTS.md is the entry point; CLAUDE.md is a pointer
+owns: []
+---
+
 # 0010 — AGENTS.md is the entry point; CLAUDE.md is a pointer
 
 - **Status:** accepted

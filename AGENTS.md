@@ -64,7 +64,7 @@ code. `nora-design` owns the procedure.
 
 **Git and GitHub are the log.** Commits and PRs record what changed and why;
 GitHub Project owns roadmap; Linear owns execution; GitHub Issues hold reports. The ADRs are
-the one decision record kept as history; `docs/design/09-decision-index.md` lists
+the one decision record kept as history; `docs/design/decisions.md` lists
 the decisions that hold now, each with its test or `NOT ENFORCED` (`nora-decision`).
 
 ## Reporting to the operator
@@ -164,4 +164,4 @@ order of the commands and the check after each; a new skill adds both at once.
 
 ## Reading order
 
-`README.md` → `ARCHITECTURE.md` → the area's design bundle → `docs/engineering/code-standards.md` → `CONTRIBUTING.md`, `docs/engineering/conventions.md`; `docs/design/appearance/README.md` before touching how she looks; `docs/operations/observability.md`, `docs/operations/eval-sop.md`, `docs/operations/runbook.md` as needed.
+`README.md` → `docs/design/cognition/README.md` → the area's design bundle → `docs/engineering/code-standards.md` → `CONTRIBUTING.md`, `docs/engineering/conventions.md`; `docs/design/appearance/README.md` before touching how she looks; `docs/operations/observability.md`, `docs/operations/eval-sop.md`, `docs/operations/runbook.md` as needed.

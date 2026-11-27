@@ -1,3 +1,9 @@
+---
+class: adr
+subject: Reuse proven release artifacts and reconcile containers
+owns: []
+---
+
 # 0032 · Reuse proven release artifacts and reconcile containers
 
 - **Status:** accepted (operator, 2026-10-28)

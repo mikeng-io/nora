@@ -80,7 +80,7 @@ There is no `develop` branch. Use **`<type>/<kebab-slug>`** for maintainers, age
 and fork contributors alike, with a type from the commit table below, for example
 `docs/public-readiness` or `fix/message-delivery`. Describe the change in the slug.
 Every change starts in its own worktree and branch. The `PR content` check rejects any other branch name, and the `master` ruleset
-makes that check blocking (`docs/engineering/github.md`, Merge rules).
+makes that check blocking (`docs/operations/github.md`, Merge rules).
 
 ## Commit messages
 

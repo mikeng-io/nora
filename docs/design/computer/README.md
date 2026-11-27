@@ -2,8 +2,8 @@
 class: design
 subject: the computer, Nora's untrusted place for commands, files and a browser, owned by a scope
 owns:
-  - "computer: the microVM where model-influenced commands, files and browser actions run, outside Nora's trust"
-  - "computer scope: the unit or private-DM binding that owns one computer's workspace, sessions and browser"
+  - computer: "the microVM where model-influenced commands, files and browser actions run, outside Nora's trust"
+  - computer scope: "the unit or private-DM binding that owns one computer's workspace, sessions and browser"
 area: computer
 links:
   - {to: docs/design/cognition/boundaries.md, rel: uses}

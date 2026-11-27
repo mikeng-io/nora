@@ -1,12 +1,18 @@
+---
+class: engineering
+subject: how cognition is measured across wakes and turns as causal journeys
+owns: []
+---
+
 # Cognition journeys
 
 Cognition is measured through the production engagement and reflection loops
-over the [Cognitive Graph](../cognition/README.md). A journey connects new
+over the [Cognitive Graph](../design/cognition/README.md). A journey connects new
 observations, revised understanding, commitments, acts and their outcomes to
 later decisions. Its result is what that continuity enables and prevents.
 
-The [subject](subject.md), [measurement](measurement.md) and
-[coverage](coverage.md) contracts apply unchanged. This subject adds causal
+The [subject](evaluation-subject.md), [measurement](evaluation-measurement.md) and
+[coverage](evaluation-coverage.md) contracts apply unchanged. This subject adds causal
 relationships across wakes, not a separate composition or grading system.
 
 ## State carries forward
@@ -37,7 +43,7 @@ cannot establish candidate engagement. Those limits remain visible in its claim.
 An autonomous journey runs the composed subject's real `App`. Declared world
 input enters through production ingress and admission; production timers
 schedule cognition and fire without forced wakes. World responses and model
-routes follow the [execution mode](coverage.md), preserving composition and control flow.
+routes follow the [execution mode](evaluation-coverage.md), preserving composition and control flow.
 Per-wake evidence, finalization, both judges and retained JSON/HTML reports use
 the canonical pipeline shared with replay. Finite responses establish protocol
 coverage, not real-model behaviour; an unfulfilled dependency invalidates the
@@ -89,4 +95,4 @@ claim rather than measuring it with the wrong instrument, and no version
 silently becomes another.
 
 The production loops, passes and executors are owned by
-[Cognition](../cognition/README.md).
+[Cognition](../design/cognition/README.md).

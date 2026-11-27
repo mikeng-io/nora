@@ -1,3 +1,9 @@
+---
+class: adr
+subject: Content filters are disabled by default and reversible
+owns: []
+---
+
 # 0030 — Content filters are disabled by default and reversible
 
 - **Status:** accepted by operator, 2026-10-25

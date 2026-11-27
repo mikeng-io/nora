@@ -1,7 +1,9 @@
 ---
 class: design
 subject: "verdicts, track records, and lessons graded by consequences"
-owns: []
+owns:
+  - learning: "revising claims and lessons from graded outcomes; never model retraining and never permission to rewrite doctrine"
+  - lesson: "a claim about how to act in a unit, induced from several verdicts or one correction and graded by its later consequences"
 area: cognition
 links:
   - {to: docs/design/cognition/README.md, rel: uses}

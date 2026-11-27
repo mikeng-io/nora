@@ -169,14 +169,13 @@ def test_a_subject_or_term_claimed_twice_fails_in_both_files():
         assert {"subject-duplicate", "owns-duplicate"} <= set(found[path])
 
 
-def test_an_unresolved_link_fails_unless_staged():
+def test_an_unresolved_link_fails():
     tree = _tree()
     tree["docs/engineering/process.md"] = _front(
         "class: engineering\nsubject: how a change is checked\nowns: [review]\n"
-        "links: [{to: docs/missing.md, rel: uses}, {to: docs/glossary.md, rel: uses}]"
+        "links: [{to: docs/missing.md, rel: uses}]"
     )
     assert tree_rules(tree, _exists(tree)) == {"docs/engineering/process.md": ["link-unresolved"]}
-    assert "docs/glossary.md" in STAGED_TARGETS
 
 
 def test_every_staged_target_names_the_unit_that_removes_it():

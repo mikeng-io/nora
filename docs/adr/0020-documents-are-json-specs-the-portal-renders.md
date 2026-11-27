@@ -1,3 +1,9 @@
+---
+class: adr
+subject: Documents are JSON specs the portal renders, not HTML a model writes
+owns: []
+---
+
 # 0020 · Documents are JSON specs the portal renders, not HTML a model writes
 
 - **Status:** accepted as built (2026-10-01, operator): documents are live. Amended in part by [0023](0023-artifacts-are-files-the-portal-shares-and-drop-retires.md) (point 5's "Drop's link shortener stays" is reversed: Drop and every shortener are retired) and by `design/artifact/README.md`
