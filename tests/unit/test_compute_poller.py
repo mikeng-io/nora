@@ -108,13 +108,13 @@ async def test_a_job_never_delivered_twice(fake_slots, fake_metrics):
     delivered.
 
     Calling `tick()` twice would not test it: by the second `tick()` the job is
-    `DONE` and `pending()` excludes it, so `_maybe_deliver` is not called again.
-    Racing two concurrent `_maybe_deliver` calls would not either: it acquires the
+    `DONE` and `pending()` excludes it, so `_deliver` is not called again.
+    Racing two concurrent `_deliver` calls would not either: it acquires the
     conversation SLOT before it claims the row, so the slot gate blocks the second
     call whether or not `claim`'s own CAS works.
 
-    So the test PRE-CLAIMS the row directly (the state `_maybe_deliver` must
-    respect), then calls `_maybe_deliver` on the still-PENDING-looking `job` value
+    So the test PRE-CLAIMS the row directly (the state `_deliver` must
+    respect), then calls `_deliver` on the still-PENDING-looking `job` value
     and confirms it never calls `speak`. A `claim()` that unconditionally returned
     `True` would proceed to deliver a row something else already claimed.
     """
@@ -141,10 +141,10 @@ async def test_a_job_never_delivered_twice(fake_slots, fake_metrics):
 
     # Simulate another poller pass (or another process) having already won
     # the claim on this exact row, between this test's own `poll` seeing it
-    # SUCCEEDED and `_maybe_deliver` reaching its own `claim` call.
+    # SUCCEEDED and `_deliver` reaching its own `claim` call.
     assert await store.claim(job.id) is True
 
-    await poller._maybe_deliver(job)
+    await poller._deliver([job])
     assert spoken == []
 
 
@@ -346,9 +346,9 @@ async def test_each_row_is_polled_by_the_backend_of_its_own_kind(fake_slots, fak
 
     await poller.tick()
 
-    assert sorted(("from subagent" in o.body, "from video" in o.body) for o in spoken) == [
-        (False, True), (True, False),
-    ]
+    # One room, one requester: the two outcomes arrive as one occasion, each from its own kind.
+    assert len(spoken) == 1
+    assert "from subagent" in spoken[0].body and "from video" in spoken[0].body
     assert await store.pending(limit=10) == []
 
 
@@ -681,3 +681,47 @@ async def test_a_lost_job_is_still_told_while_the_grant_stands():
             persons=Persons(by_person={}, index={}), policy=_policy()),
     )
     assert len(spoken) == 1
+
+
+async def test_jobs_finished_together_in_one_conversation_are_one_message(
+    fake_slots, fake_metrics,
+):
+    """A restart that closes N queued jobs for one room must not start N turns. The jobs of
+    one conversation and requester are delivered as ONE occasion that carries every outcome;
+    each row still ends on its own, and a job in another room speaks for itself (the positive
+    control: this is grouping, not suppression)."""
+    store = FakeComputeJobStore()
+    backend = FakeComputeBackend()
+    mine = [
+        _pending_job(backend_job_id=f"job_{n}", task=f"capture {n}") for n in range(3)
+    ]
+    other = _pending_job(backend_job_id="job_x", task="elsewhere", conversation_id="conv-2")
+    running = _pending_job(backend_job_id="job_r", task="still going")
+    for job in [*mine, other, running]:
+        await store.create(job)
+        backend.set_result(
+            job_id=job.backend_job_id,
+            result=JobResult(status=JobStatus.FAILED, error="cancelled"),
+            polls_before_done=99 if job is running else 0,
+        )
+    spoken = []
+
+    async def speak(occ):
+        spoken.append(occ)
+        return "sent"
+
+    poller = ComputeJobPoller(
+        policy=permissive_policy(),
+        store=store, backends={"subagent": backend}, speak=speak, slots=fake_slots,
+        metrics=fake_metrics, tick_seconds=1.0, clock=lambda: datetime.now(UTC),
+    )
+    await poller.tick()
+
+    by_room = {occ.conversation_id: occ for occ in spoken}
+    assert sorted(by_room) == ["conv-1", "conv-2"] and len(spoken) == 2
+    assert all(f"capture {n}" in by_room["conv-1"].body for n in range(3))
+    assert "elsewhere" not in by_room["conv-1"].body
+    assert [(await store.get(j.id)).state for j in mine] == [ComputeJobState.DONE] * 3
+    assert (await store.get(other.id)).state is ComputeJobState.DONE
+    assert (await store.get(running.id)).state is ComputeJobState.PENDING
+    assert fake_metrics.get("nora_compute_jobs_delivered_total", outcome="sent") == 4
