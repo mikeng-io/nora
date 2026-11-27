@@ -61,5 +61,12 @@
     "old": "return f\"poll:{author}:{target_ts}\"",
     "new": "return f\"poll:{target_ts}\"",
     "target": "tests/unit/test_platform_observation_fixtures.py::test_signal_same_timestamp_polls_keep_their_creators_separate"
+  },
+  {
+    "name": "recorded reaction outcome reaches the durable sidecar handoff",
+    "file": "nora/ingest/pipeline.py",
+    "old": "return IngestResult(message=None, decision=None, outcome=done.ending)",
+    "new": "return IngestResult(message=None, decision=None)",
+    "target": "tests/unit/test_ingest_edit_path.py::test_a_recorded_reaction_reports_its_outcome_for_the_durable_handoff"
   }
 ]

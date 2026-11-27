@@ -71,9 +71,7 @@ def _make_social_read(deps):
             for pid, ref in persons.by_person.items()
             if entry_permits(LineageEntry(SOCIAL, subject=pid), target, origin=None)
         ]
-        matches = find_by_name(listed, str(person)) or tuple(
-            ref for ref in listed if by_id and ref.person_id == str(person).strip()
-        )
+        matches = find_by_name(listed, str(person))
         if not matches:
             _record(metrics, "social_read", "nothing_found", reason="person")
             return {"status": "nothing_found", "note": _SOCIAL_NO_PERSON}

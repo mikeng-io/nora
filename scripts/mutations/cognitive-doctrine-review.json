@@ -40,5 +40,12 @@
     "old": "    try:\n        doctrine_store = DoctrineStore(\n            cfg.doctrine.dir,\n            strict=cfg.doctrine.strict,\n            reload=cfg.doctrine.reload,\n            canary=cfg.doctrine.canary,\n            display_name=cfg.doctrine.display_name,\n            trigger=cfg.engagement.trigger.text,\n            language_hint=cfg.doctrine.language_hint,\n            tool_names=ToolRegistry(content_checks=content_checks).tool_names(),\n            metrics=metrics,\n        )\n        doctrine = doctrine_store.get(applies_to=\"tag\")",
     "new": "    doctrine_store = DoctrineStore(\n        cfg.doctrine.dir,\n        strict=cfg.doctrine.strict,\n        reload=cfg.doctrine.reload,\n        canary=cfg.doctrine.canary,\n        display_name=cfg.doctrine.display_name,\n        trigger=cfg.engagement.trigger.text,\n        language_hint=cfg.doctrine.language_hint,\n        tool_names=ToolRegistry(content_checks=content_checks).tool_names(),\n        metrics=metrics,\n    )\n    try:\n        doctrine = doctrine_store.get(applies_to=\"tag\")",
     "target": "tests/test_main.py::test_a_broken_doctrine_refuses_to_start[identity]"
+  },
+  {
+    "name": "composition forwards the Markdown name to the live registry",
+    "file": "nora/app/composition_agent.py",
+    "old": "        display_name=cfg.doctrine.display_name,\n",
+    "new": "",
+    "target": "tests/test_composition.py::test_markdown_identity_reaches_the_live_tools"
   }
 ]
