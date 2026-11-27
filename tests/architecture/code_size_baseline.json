@@ -2371,7 +2371,7 @@
  },
  "tests/test_acceptance_rules.py": {
   "comment_blocks": 33,
-  "file_lines": 927,
+  "file_lines": 926,
   "internal_docstrings": 1
  },
  "tests/test_affected_tests.py": {
@@ -2392,7 +2392,7 @@
  },
  "tests/test_composition.py": {
   "comment_blocks": 7,
-  "file_lines": 1557,
+  "file_lines": 1586,
   "internal_docstrings": 2
  },
  "tests/test_config.py": {
@@ -2941,7 +2941,7 @@
  },
  "tests/unit/test_platform_observation_wired.py": {
   "comment_blocks": 2,
-  "file_lines": 1323
+  "file_lines": 1351
  },
  "tests/unit/test_pr584_astra_readiness.py": {
   "internal_docstrings": 1
