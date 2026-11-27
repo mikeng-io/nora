@@ -20,10 +20,10 @@
  * unreserved effect.
  *
  * Adapted from Hermes' scripts/whatsapp-bridge/ (MIT). Deliberately NOT
- * copied: express (built-in http instead), qrcode-terminal (pairing-code
- * flow instead), long-poll /messages (SSE instead), the silent-overflow
- * messageQueue (drop-and-count instead), media custody, allowlist/mode
- * gating, polls, location, typing, read receipts.
+ * copied: express (built-in http instead), long-poll /messages (SSE
+ * instead), the silent-overflow messageQueue (drop-and-count instead),
+ * media custody, allowlist/mode gating, polls, location, typing, read
+ * receipts.
  *
  * Endpoints:
  *   GET  /health      - liveness + drop counter (always 200 while serving)
@@ -92,6 +92,7 @@ import {
   jidUserDigits,
   normalizeJid,
   redactJid,
+  renderQr,
   resolveIdentity,
   timestampMs,
 } from './bridge_helpers.js';
@@ -105,7 +106,8 @@ function getArg(name, defaultVal) {
 }
 
 const PORT = parseInt(getArg('port', process.env.NORA_BRIDGE_PORT || '18081'), 10);
-const SESSION_DIR = path.resolve(getArg('session', path.join(process.env.HOME || '~', '.nora', 'whatsapp', 'session')));
+const SESSION_DIR = path.resolve(getArg('session', process.env.NORA_BRIDGE_SESSION_DIR
+  || path.join(process.env.HOME || '~', '.nora', 'whatsapp', 'session')));
 const PAIR_MODE = args.includes('--pair');
 const PAIR_PHONE = String(getArg('phone', '')).replace(/\D/g, '');
 // Shared contract name first; the deployed NORA_BRIDGE_TOKEN stays accepted
@@ -358,10 +360,10 @@ async function startSocket() {
     const { connection, lastDisconnect, qr } = update;
 
     if (qr && PAIR_MODE) {
-      // Fallback only: the pairing-code flow is primary. The raw QR string
-      // is printed so an operator can render it elsewhere if needed.
-      log('QR string emitted by WhatsApp (fallback pairing path):');
-      console.log(qr);
+      // WhatsApp rotates the QR about every 20 s; each one is drawn in full
+      // beside the pairing code, and either links the device.
+      log('scan on the phone: Linked Devices -> Link a device (a fresh code replaces this one every ~20 s)');
+      console.log(renderQr(qr));
     }
 
     if (PAIR_MODE && !pairingCodeRequested && sock && !state.creds.registered) {
@@ -962,12 +964,15 @@ const server = http.createServer(async (req, res) => {
 
 // -- Boot ----------------------------------------------------------------------
 
-server.listen(PORT, '0.0.0.0', () => {
-  log(`listening on 0.0.0.0:${PORT} (session: ${SESSION_DIR})`);
-  if (!paired && !PAIR_MODE) {
-    log('NOT PAIRED — no creds.json in session dir. HTTP surface is up; pair with: node bridge.js --pair --phone <digits>');
-  }
-});
+// Pairing serves no HTTP, so it never contends for the live bridge's port.
+if (!PAIR_MODE) {
+  server.listen(PORT, '0.0.0.0', () => {
+    log(`listening on 0.0.0.0:${PORT} (session: ${SESSION_DIR})`);
+    if (!paired) {
+      log('NOT PAIRED — no creds.json in session dir. HTTP surface is up; pair with: node bridge.js --pair --phone <digits>');
+    }
+  });
+}
 
 // Durable bootstrap BEFORE upstream receive: journal probe → custody dir →
 // projection → Redis → journal replay, all ahead of the first stanza.

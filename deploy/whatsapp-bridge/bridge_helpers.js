@@ -15,6 +15,7 @@
 import { createDecipheriv, hkdfSync, timingSafeEqual } from 'node:crypto';
 import { mkdirSync, readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
+import qrcode from 'qrcode-terminal';
 import { lidForm, phoneForm } from './wa_jid.js';
 
 // -- JID parsing and LID<->phone resolution --------------------------------
@@ -902,4 +903,11 @@ export function authorizedBridgeRequest(method, pathname, authorization, token) 
   const expected = Buffer.from(`Bearer ${token}`, 'utf8');
   if (got.length !== expected.length) return false;
   return timingSafeEqual(got, expected);
+}
+
+/** The pairing QR as terminal text (half-block cells, about 30 lines tall). */
+export function renderQr(qr) {
+  let out = '';
+  qrcode.generate(qr, { small: true }, (text) => { out = text; });
+  return out;
 }

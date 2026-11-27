@@ -43,6 +43,7 @@ import {
   deriveEditKey,
   decryptSecretEdit,
   SECRET_ENC_MESSAGE_EDIT,
+  renderQr,
 } from './bridge_helpers.js';
 import { proto } from '@whiskeysockets/baileys';
 import { sendJson } from './http_util.js';
@@ -842,3 +843,11 @@ async function freePort() {
   await once(server, 'close');
   return port;
 }
+
+test('the pairing QR renders as a terminal block that tracks its input', () => {
+  const qr = (n) => `2@${'A'.repeat(n)},BBBB,CCCC,DDDD`;
+  const a = renderQr(qr(120));
+  assert.match(a, /[\u2580\u2584\u2588]/);
+  assert.ok(a.split('\n').length >= 20);
+  assert.notEqual(a, renderQr(qr(121)));
+});

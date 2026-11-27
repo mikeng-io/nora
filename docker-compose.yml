@@ -196,10 +196,10 @@ services:
   #
   # FIRST RUN needs pairing, the one step signal-cli doesn't have: WhatsApp
   # has no headless registration, so an operator runs
-  #   docker compose run --rm whatsapp-bridge --pair --phone <digits>
-  # once (prints a pairing code to type into the phone app: Linked Devices →
-  # Link with phone number), then normal `docker compose up -d` boots with
-  # the saved session. See design/whatsapp-adoption/bridge.md.
+  #   docker compose run --rm --no-deps whatsapp-bridge node bridge.js --pair --phone <digits>
+  # once (draws a QR and prints a pairing code: Linked Devices → Link a
+  # device, or Link with phone number), then normal `docker compose up -d`
+  # boots with the saved session. See design/whatsapp-adoption/bridge.md.
   whatsapp-bridge:
     build:
       context: ./deploy/whatsapp-bridge
