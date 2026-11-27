@@ -722,6 +722,19 @@ def test_an_unknown_analytics_key_is_still_a_startup_failure(toml_path):
         load(toml_path)
 
 
+@pytest.mark.parametrize(
+    "key", ["stimulus_horizon_seconds", "deviation_stimuli_per_person_per_day"],
+)
+def test_removed_analytics_keys_are_refused_naming_the_key(toml_path, key):
+    import tomli_w
+
+    data = tomllib.loads(toml_path.read_text())
+    data.setdefault("analytics", {})[key] = 3600
+    toml_path.write_text(tomli_w.dumps(data))
+    with pytest.raises(ConfigError, match=rf"analytics\.{key}"):
+        load(toml_path)
+
+
 def test_analytics_config_rejects_unknown_keys_directly():
     """Constructing the model directly (not via `load()`) still refuses an
     unknown key — belt-and-braces with the startup-failure test above."""
