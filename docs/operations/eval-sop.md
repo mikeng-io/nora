@@ -363,81 +363,12 @@ work; inability to create the artifact refuses the run. `--list` and
 availability and private evidence retention are separate operational checks;
 this local artifact does not prove delivery to SigNoz or semantic acceptance.
 
-## Anchoring the Cognition session corpus
+## The Cognition session corpus
 
-The thirteen scenarios include two code guarantees and eleven parked model cases
-(three held out). The committed corpus stays parked. Anchors are materialised
-only in the deploy host's eval checkout, never committed or copied off-host.
-No live data or host access is needed to build or test these scripts.
-
-Run the following **on the host**, from its eval checkout at the PR head, with
-the deployment environment loaded privately. Hold the existing eval lock for
-this sequence; do not refresh the snapshot between finding and replaying.
-
-```bash
-exec 9>/tmp/nora-eval.lock
-flock -w 900 9 || exit 75
-umask 077
-set -a; source ~/workspace/nora/.env; set +a
-export NORA_EVAL_PSEUDONYM_MAP=~/.config/nora/eval-pseudonyms.txt
-EVAL_SOURCE_URL="postgresql+asyncpg://nora:${POSTGRES_PASSWORD}@127.0.0.1:5435/nora_eval"
-uv run python -m scripts.find_cognition_anchors \
-  --source-url "$EVAL_SOURCE_URL" > /tmp/cognition-candidates.jsonl
-uv run python -m scripts.confirm_cognition_anchors \
-  --source-url "$EVAL_SOURCE_URL" --config ~/workspace/nora/config.toml \
-  --candidates /tmp/cognition-candidates.jsonl \
-  --services "$CONFIRM_SERVICE_RECORDINGS" > /tmp/cognition-confirmed.jsonl
-uv run python -m scripts.write_cognition_anchors \
-  --source-url "$EVAL_SOURCE_URL" --confirmed /tmp/cognition-confirmed.jsonl
-uv run python -m evals cognition_session --sample 3 --services "$SERVICE_RECORDINGS" \
-  --grading-contract "$GRADING_CONTRACT" --grading-contract-sha256 "$GRADING_CONTRACT_SHA256" \
-  > /tmp/cognition-eval.log 2>&1
-echo "RC=$?" > /tmp/cognition-eval.rc
-```
-
-`--config` is the deployment's own `config.toml`, verbatim: the confirmer
-rebuilds `config.evaluation.toml` against it (the same drift-checked
-`materialise` `python -m evals` runs) into its own private run directory —
-never the checkout's shared file — and binds it to each subject through
-`SubjectSpec.config`. It resolves the `eval_judge` route
-through `nora.subject.obtain.model_endpoint`, so a `host.docker.internal` or
-`honcho` name is rewritten to loopback exactly as a subject's own endpoints
-are. The production route gets one plain POST at temperature zero, without
-`response_format` and without retries. Never show agents the model inputs,
-raw responses or private logs.
-
-The finder joins message-shape matches to `recorded_wake` stimulus batches,
-skipping incomplete batches. It emits only wake ids, explicit `room_*` aliases,
-scenario numbers and strength counts, at most twenty wakes per room/scenario.
-It has no heuristic for scenarios 8 and 10; those stay parked unless the
-operator supplies a real wake candidate privately in the same JSONL shape.
-An empty result means no heuristic candidate, never proof of no instance.
-
-The confirmer restores every store at the session's recorded execution time
-(`started_at_ms`, or the wake's write time without a session), not the wake's
-pending watermark `at_ms` — once per wake, with
-every candidate on the same wake sharing the restore — composes the same
-subject a `cognition_session` draw runs (the corpus's own overrides, the
-full-restore set and the eval workspace), and stops after its normal context
-assembly, before its model call (`CognitionSessionRunner.inspect`).
-It judges the system prompt and rendered agenda/grounding the session would
-see, plus open notes (including their then-current bodies), open events/plans
-(staged, proposed and confirmed) and current/disputed profile lines
-from the restored unit, with the wake time and room explicit. Today's state
-is never substituted. `match` confirms the input situation, not a successful
-session trajectory. `--services` is a JSON object mapping each candidate wake
-id to its recorded-services document (the same finite `RecordedServices`
-schema the eval harness uses); every external call the composed subject and
-the bound judge make must be a recorded response, and a wake without a
-recording confirms nothing. Errors, missing state, refusals and
-truncated/wrong-shape answers are `unavailable`, never `no_match`.
-
-The writer refuses outside the Linux deploy-host layout, revalidates each
-confirmed wake/room, then replaces `parked` with top-level `snapshot` and
-`metadata.wake` in **that checkout only**. Unmatched scenarios remain parked.
-Review anchor-specific argument checks privately before treating the replay as
-acceptance evidence: the existing generic checks do not establish all semantic
-properties. No baseline or confirmed anchor is claimed by this PR.
+The legacy Cognition session is removed, so every case of
+`evals/corpora/cognition_session.yaml`, `tool_selection_cognition.yaml` and
+`standing_unit.yaml` is parked with its reason and returns when a graph wake entry
+runs it. Nothing anchors or replays them meanwhile.
 
 ## Cloud development and private evaluation
 
