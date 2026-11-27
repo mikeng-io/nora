@@ -1,5 +1,12 @@
 # Changelog
 
+## [7.21.5](https://github.com/mikeng-io/nora/compare/v7.21.4...v7.21.5) (2026-11-27)
+
+
+### Security
+
+* **deps:** Bump the base-images group across 3 directories with 3 updates ([9fa12f7](https://github.com/mikeng-io/nora/commit/9fa12f778b7d132838435e76e7c2094e1c1ea050))
+
 ## [7.21.4](https://github.com/mikeng-io/nora/compare/v7.21.3...v7.21.4) (2026-11-27)
 
 
