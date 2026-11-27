@@ -44,8 +44,6 @@ const MOVED: Array<[string, string]> = [
   ["/:locale(zh-Hant|en)/memory", "/:locale/nora/memory"],
   ["/:locale(zh-Hant|en)/doctrine", "/:locale/nora/doctrine"],
   ["/:locale(zh-Hant|en)/tools", "/:locale/nora/abilities"],
-  ["/:locale(zh-Hant|en)/events", "/:locale/plans"],
-  ["/:locale(zh-Hant|en)/events/:id", "/:locale/plans/:id"],
 ];
 
 const nextConfig: NextConfig = {

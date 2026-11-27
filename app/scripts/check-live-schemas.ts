@@ -65,7 +65,6 @@ async function main() {
     { path: "/skills", schema: nora.SkillsSchema },
     { path: "/tools", schema: nora.ToolsSchema },
     { path: "/persons", schema: people.RosterSchema },
-    { path: q("/events"), schema: people.PlansSchema },
     { path: "/presence", schema: zod.array(presence.PresenceEntrySchema) },
     { path: "/presence/places", schema: zod.array(presence.SavedPlaceSchema) },
     { path: "/presence/analytics/places", schema: presence.DerivedPlacesSchema },
@@ -83,11 +82,6 @@ async function main() {
     lines.push(await run({ path: `/presence/${subject}/history?hours=24`, schema: presence.HistorySchema }));
     lines.push(await run({ path: `/presence/analytics/rhythm?subjectId=${subject}&days=30`, schema: presence.RhythmSchema }));
     lines.push(await run({ path: `/presence/analytics/routes?subjectId=${subject}&days=30`, schema: presence.RoutesSchema }));
-  }
-
-  const plans = (await get(q("/events"))).body as Array<{ id: string }> | null;
-  if (PERSON && plans?.[0]) {
-    lines.push(await run({ path: `/events/${plans[0].id}?personId=${encodeURIComponent(PERSON)}`, schema: people.PlanDetailSchema }));
   }
 
   console.log(lines.map(shown).join("\n"));

@@ -11,7 +11,6 @@ const PAGES: Array<{ path: string; heading: RegExp }> = [
   { path: "/en/people/ken", heading: /^Ken$/ },
   { path: "/en/people/ken?tab=rhythm", heading: /^Ken$/ },
   { path: "/en/people/miles?tab=memory", heading: /^Miles$/ },
-  { path: "/en/plans", heading: /^Plans$/ },
   { path: "/en/downloads", heading: /^Downloads$/ },
   { path: "/en/nora", heading: /Nora/ },
   { path: "/en/nora/memory", heading: /account/i },
@@ -52,9 +51,11 @@ test.describe("signed in", () => {
     await expect(page.getByRole("heading", { level: 1 })).toHaveText("Ken");
   });
 
-  test("an unknown plan says it isn't yours rather than failing", async ({ page }) => {
-    await page.goto("/en/plans/not-a-real-plan");
-    await expect(page.getByText("Not one of your plans")).toBeVisible();
+  test("the retired plans page and API are unavailable", async ({ page }) => {
+    await page.goto("/en/today");
+    await expect(page.getByRole("link", { name: "Plans", exact: true })).toHaveCount(0);
+    expect((await page.request.get("/api/v1/events")).status()).toBe(404);
+    expect((await page.goto("/en/plans"))?.status()).toBe(404);
   });
 
   test("the map selects a person from the list and keeps it in the URL", async ({ page }) => {
