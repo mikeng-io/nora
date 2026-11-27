@@ -1629,14 +1629,6 @@ async def _drive_draw(case: Case, spec: Spec, *, recording: RecordedServices) ->
     if port.live_clock:
         return await _drive_journey(case, spec, recording=recording)
     shot = dict(md.get("snapshot") or {})
-    if md.get("corpus") == "cognition_session":
-        from nora.subject.cognition import wake_from_snapshot
-        wake_id = md.get("wake")
-        if type(wake_id) is not int or wake_id <= 0:
-            raise ValueError("cognition_session requires metadata.wake")
-        wake_at, _ = await wake_from_snapshot(spec.source_url, wake_id)
-        shot["before_ms"] = wake_at
-
     if not shot:
         raise ValueError(
             f"case {case.name!r} is UNANCHORED: it names no `snapshot:` "
@@ -1672,8 +1664,7 @@ async def _drive_draw(case: Case, spec: Spec, *, recording: RecordedServices) ->
                 policy=spec.policy if spec.policy is not None else _deployment_policy(), now=now,
                 graph_memory=spec.memory_surface != "off",
             )
-            subject = (await obtain(drawn_subject, legacy_replay=True) if port.legacy_replay
-                       else await obtain(drawn_subject))
+            subject = await obtain(drawn_subject)
             memory_checked = spec.memory_surface in {"graph", "off"}
             if memory_checked:
                 names = surface_tool_names(subject)

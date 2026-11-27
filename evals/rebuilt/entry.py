@@ -252,82 +252,11 @@ async def tag(subject: Subject, case: Case, *, now_ms: int) -> Outcome:
     )
 
 
-async def _cognition_replay(subject: Subject, case: Case, *, now_ms: int) -> Outcome:
-    from nora.subject.cognition import wake_from_snapshot
-
-    wake = case.metadata.get("wake")
-    if type(wake) is not int or wake <= 0:
-        return Outcome(admitted=None, source="fail_closed", error="recorded wake id required")
-    try:
-        at, view = await wake_from_snapshot(
-            case.moment.source_url if case.moment else subject.database_url, wake)
-        if at != now_ms or view.unit != subject.unit:
-            raise ValueError("wake clock or unit differs from restored snapshot")
-        runner = subject.deps.cognition_runner
-        if runner is None:
-            raise ValueError("Cognition session unavailable")
-        await runner.replay(view=view, now_ms=at)
-    except Exception:  # noqa: BLE001 -- private source details stay local
-        return Outcome(admitted=None, source="fail_closed",
-                       error="recorded wake replay unavailable")
-    return Outcome(admitted=None)
-
-
-async def _cognition_probe(subject: Subject, case: Case, *, now_ms: int) -> Outcome:
-    """One Cognition session over the case's agenda-item sentence, graded on
-    the tools it CALLED (`ToolRouteGrader`, from the tool spans).
-
-    ERROR, never a pass, when the subject built no session runner: a
-    deployment whose `[cognition]` is off has no session to measure, and a
-    case that reached no model has measured nothing whatever it
-    prints (`nora.app.cognition_wiring`: off builds nothing)."""
-    runner = getattr(subject.deps, "cognition_runner", None)
-    if runner is None:
-        return Outcome(
-            admitted=None, source="fail_closed",
-            error="the subject built no Cognition session runner "
-                  "([cognition] is off in the eval config)",
-        )
-    try:
-        await runner.probe(unit=subject.unit, summary=case.input, now_ms=now_ms)
-    except Exception as exc:  # noqa: BLE001 -- a session that raised measured nothing
-        return Outcome(
-            admitted=None, source="fail_closed", error=f"{type(exc).__name__}: {exc}",
-        )
-    return Outcome(admitted=None)
-
-
 async def dreamer(subject: Subject, case: Case, *, now_ms: int) -> Outcome:
-    """Replay or probe a Cognition session against the seeded subject."""
-    # `build_dependencies` takes a `clock` and `SubjectSpec.now` sets it, so a
-    # case that states the time is judged AT that time.
-    # AN INPUT THE GRAPH CANNOT HONOUR IS AN ERROR.
-    #
-    # `nora.subject.Knowledge` is single-room — one transcript, one standing,
-    # one `DEFAULT_ROOM`. A case whose metadata carries `row` states an input
-    # that cannot be seeded, so it is refused rather than run: with that input
-    # unseeded the pass finds nothing due, writes nothing, and returns
-    # `nothing_found` with no error, so every case expecting `none` PASSES
-    # having measured an empty workspace. `rooms` and `standing` are seedable
-    # (`knows`).
-    unseeded = [k for k in ("row",) if case.metadata.get(k)]
-    if unseeded:
-        return Outcome(
-            admitted=None,
-            source="fail_closed",
-            error=(
-                f"the case states {unseeded} and `Knowledge` is single-room; "
-                "multi-room seeding does not exist yet"
-            ),
-        )
-    category = case.category
-    if category == "cognition":
-        if case.metadata.get("corpus") == "cognition_session":
-            return await _cognition_replay(subject, case, now_ms=now_ms)
-        return await _cognition_probe(subject, case, now_ms=now_ms)
+    """The legacy Cognition session no longer exists; its cases are parked."""
     return Outcome(
         admitted=None, source="fail_closed",
-        error=f"Dreamer cases require category 'cognition', got {category!r}",
+        error="the legacy Cognition session was removed; its cases are parked",
     )
 
 
@@ -549,26 +478,11 @@ async def standing(subject: Subject, case: Case, *, now_ms: int) -> Outcome:
 
 
 async def standing_unit(subject: Subject, case: Case, *, now_ms: int) -> Outcome:
-    """Judge the composed unit updater on one retained Cognition Record."""
-    from nora.subject.standing_fold import fold_recorded_unit
-
-    if case.moment is None:
-        return Outcome(admitted=None, error="recorded Cognition moment required")
-    dry = bool(case.metadata.get("print_input"))
-    try:
-        folded, shown, evidence = await fold_recorded_unit(
-            subject, source_url=case.moment.source_url,
-            tag_id=str(case.metadata.get("tag_id", "")), now_ms=now_ms, call_model=not dry,
-            generated_record_text=(case.metadata.get("record_text")
-                                   if (case.metadata.get("counterfactual") or {}).get("varies")
-                                   == "unit_record" else None),
-        )
-    except (LookupError, ValueError, RuntimeError) as exc:
-        return Outcome(admitted=None, source="fail_closed", error=str(exc))
-    if dry:
-        return Outcome(admitted=None, shown=shown, error="print-input: no model was called")
-    return Outcome(admitted=None, shown=shown, position=folded.position,
-                   evidence=evidence, outcome_token=folded.outcome)
+    """The unit Standing fold ran on the legacy Cognition session, which was removed."""
+    return Outcome(
+        admitted=None, source="fail_closed",
+        error="the legacy Cognition session was removed; its cases are parked",
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -624,8 +538,6 @@ class EntryPoint:
     #: a `snapshot:` instant and never a forced wake.
     live_clock: bool = False
 
-    legacy_replay: bool = False
-
     #: What a judge grades, when a judge is configured: `"reply"` — what she
     #: said, against the reply rubric — or `"position"` — the standing position
     #: a fold wrote. Data here, not a
@@ -675,7 +587,7 @@ ENTRY_POINTS = {
     # cheapest of the three to drive.
     "tag": EntryPoint(drive=tag, delivers_input=True, drives_a_turn=True),
     # Cognition uses the Dreamer runtime. The corpus sets its session flags.
-    "dreamer": EntryPoint(drive=dreamer, config={"dreamer.enabled": True}, legacy_replay=True),
+    "dreamer": EntryPoint(drive=dreamer, config={"dreamer.enabled": True}),
     # The act turn needs the FIRE PATH, which `[participation]` also builds,
     # and the note tier its row points at. NOT `[heartbeat]`: composition
     # spawns `heartbeat.run()` as an endless task, so a subject with it on
@@ -699,8 +611,8 @@ ENTRY_POINTS = {
         drive=standing, config={"standing.enabled": True}, judged_on="position",
     ),
     "standing_unit": EntryPoint(
-        drive=standing_unit, legacy_replay=True,
-        config={**_PARTICIPATION_SUBSYSTEM, "standing.enabled": True, "cognition.enabled": True},
+        drive=standing_unit,
+        config={**_PARTICIPATION_SUBSYSTEM, "standing.enabled": True},
         judged_on="position",
     ),
     # The `App` itself runs its own timers; the live subsystem is declared
