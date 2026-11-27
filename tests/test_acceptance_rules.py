@@ -38,20 +38,20 @@ _R90_PERSONS = Persons(
 
 ROOT = Path(__file__).resolve().parents[1]
 RULE_TESTS = {
-    "review-grade": "test_review_grades_due_guess_once_and_removes_it_from_anchors",
-    "review-independent": "test_review_fails_startup_when_the_resolved_judge_is_the_writer",
-    "verify-clock": "test_the_first_clock_ending_has_the_deadline_and_no_witness",
-    "verify-health": "test_every_source_must_be_healthy_over_the_whole_lineage_window",
-    "computed-verdict": "test_every_ended_achieve_head_has_one_verdict_and_stimulus",
-    "wake-history-admission": "test_history_admits_understanding_and_stamps_its_evidence_clock",
-    "wake-history-clock": "test_source_ceiling_hides_future_items_without_marking_a_limit",
-    "wake-history-receipt":
+    "R-124": "test_review_grades_due_guess_once_and_removes_it_from_anchors",
+    "R-125": "test_review_fails_startup_when_the_resolved_judge_is_the_writer",
+    "R-110": "test_the_first_clock_ending_has_the_deadline_and_no_witness",
+    "R-111": "test_every_source_must_be_healthy_over_the_whole_lineage_window",
+    "R-112": "test_every_ended_achieve_head_has_one_verdict_and_stimulus",
+    "R-117": "test_history_admits_understanding_and_stamps_its_evidence_clock",
+    "R-118": "test_source_ceiling_hides_future_items_without_marking_a_limit",
+    "R-119":
         "test_a_closed_replay_records_the_exact_inputs_and_a_failed_replay_records_none",
-    "proactive-claim": "test_a_due_intention_delivers_once_and_closes_only_on_a_reply_outcome",
-    "debrief-pass-items": "test_debrief_writes_only_commit_operations_citing_its_pass_items",
-    "cognition-profile-accounts": "test_cognition_offers_no_profile_account_tools",
-    "cognition-event-surface": "test_cognition_offers_reminders_and_wakes_without_event_writes",
-    "DEC-207": "test_room_list_reads_each_rooms_graph_profile_in_the_turn_audience",
+    "R-109": "test_a_due_intention_delivers_once_and_closes_only_on_a_reply_outcome",
+    "R-108": "test_debrief_writes_only_commit_operations_citing_its_pass_items",
+    "R-127": "test_cognition_offers_no_profile_account_tools",
+    "R-107": "test_cognition_offers_reminders_and_wakes_without_event_writes",
+    "R-130": "test_room_list_reads_each_rooms_graph_profile_in_the_turn_audience",
     "DEC-97": "test_running_identity_is_independent_of_the_latest_release",
     "DEC-324": "test_a_server_entry_admits_a_discovered_channel_by_guild_id",
     "DEC-323": "test_policy_reload_admits_the_next_message_from_a_new_room",
@@ -318,19 +318,15 @@ RULE_TESTS = {
     # Nobody outside identity.toml is sent, or recorded from, a direct message.
     "R-101": "test_a_dm_to_an_address_not_in_identity_toml_is_refused",
     "R-102": "test_an_identity_failure_degrades_that_platform_and_the_rest_start_live",
-    "wake-claims-close": "test_a_closed_wake_closes_its_whole_set",
-    "wake-room-busy": "test_engagement_alias_acquisition_blocks_a_wake_write_and_defers_debrief",
-    "wake-never-delivers": "test_wake_offers_only_graph_tools_and_its_one_objective",
-    "wake-subject-links": "test_wake_open_links_a_new_topic_and_rediscover_returns_it",
-    "wake-subject-links-carry": (
-        "test_a_called_revision_carries_only_live_inferred_about_and_derives_people"
-    ),
-    "wake-parks-failures": "test_the_third_counted_failure_parks_the_set",
-    "lesson-admission": "test_three_distinct_verdicts_admit_a_checked_lesson",
-    "lesson-tally": "test_lesson_tallies_resting_verdicts_and_renders_counts",
-    "lesson-relearn": "test_operator_retirement_hides_graph_lesson_and_sets_evidence_floor",
-    "graph-dispute": "test_another_persons_dispute_marks_the_claim_for_weighing",
-    "graph-forget-self-only": "test_only_the_person_a_claim_is_about_may_ask_to_forget_it",
+    "R-113": "test_a_closed_wake_closes_its_whole_set",
+    "R-114": "test_engagement_alias_acquisition_blocks_a_wake_write_and_defers_debrief",
+    "R-116": "test_wake_offers_only_graph_tools_and_its_one_objective",
+    "R-120": "test_wake_open_links_a_new_topic_and_rediscover_returns_it",
+    "R-115": "test_the_third_counted_failure_parks_the_set",
+    "R-121": "test_three_distinct_verdicts_admit_a_checked_lesson",
+    "R-122": "test_lesson_tallies_resting_verdicts_and_renders_counts",
+    "R-123": "test_operator_retirement_hides_graph_lesson_and_sets_evidence_floor",
+    "R-126": "test_only_the_person_a_claim_is_about_may_ask_to_forget_it",
 }
 
 def _collected() -> set[str]:
