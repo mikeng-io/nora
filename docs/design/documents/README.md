@@ -2,8 +2,8 @@
 class: design
 subject: a document is a closed JSON specification Nora writes for a reader and a fixed portal renders
 owns:
-  - "document: a small closed JSON specification the portal renders with its own primitives and theme"
-  - "document link: the address of a stored document, minted by code after publication and never authored by the model"
+  - document: "a small closed JSON specification the portal renders with its own primitives and theme"
+  - document link: "the address of a stored document, minted by code after publication and never authored by the model"
 area: documents
 links:
   - {to: docs/design/cognition/boundaries.md, rel: uses}

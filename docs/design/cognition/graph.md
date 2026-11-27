@@ -1,7 +1,18 @@
 ---
 class: design
 subject: "basis and scope, the planes, the five kinds, intentions, edges and presentations"
-owns: []
+owns:
+  - basis: "the first axis of every row and edge, how it is proven (authored, observed, computed, inferred or committed), which decides who may write it and how it is checked"
+  - scope: "the second axis of every row and edge, who it concerns and where it may be read or go: unit, origin room, persons, excluded persons, lineage and exposure"
+  - entity: "an anchor row for a person, room, unit, Nora, game, place or topic, computed when code resolves it and inferred when its identity is judged"
+  - item: "an observed row of something that happened, appended once and never edited"
+  - aggregate: "a computed row derived over items, such as an episode, rollup, count, baseline, verdict or track record, recomputed and never edited"
+  - claim: "an inferred row, a belief about an entity or relation, supported or contradicted by the observed and computed rows it cites"
+  - intention: "a committed row of what Nora has committed to, open until a recorded outcome closes it or it is dropped"
+  - reasoning: "how an inferred row was reached, told, deduced, induced or abduced, held at low, medium or high confidence"
+  - lineage: "the source restrictions a derived row inherits from what it cites, deciding which rooms may be shown it and checked when context is assembled"
+  - presentation: "a read over rows assembled for an occasion, such as a profile, Standing, lessons or likes, which nothing writes"
+  - Standing: "Nora's current position in a room: what she holds open, owes and has on offer, what was recently settled and where the conversation stands, read from intentions and claims"
 area: cognition
 links:
   - {to: docs/design/cognition/README.md, rel: uses}

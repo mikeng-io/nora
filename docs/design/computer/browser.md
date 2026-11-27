@@ -2,7 +2,7 @@
 class: design
 subject: the scoped anonymous browser, its tasks, capture and security
 owns:
-  - "browser task: one objective with its own tabs in a scope's browser, observed and acted on step by step"
+  - browser task: "one objective with its own tabs in a scope's browser, observed and acted on step by step"
 area: computer
 links:
   - {to: docs/design/computer/README.md, rel: uses}

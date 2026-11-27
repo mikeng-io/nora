@@ -4,6 +4,7 @@ subject: observability, the evidence a claim about a turn is re-derived from
 owns:
   - trace roots own their stages: "one root span per entry point, its stages and actions its children; spawned work attaches its intended context explicitly"
   - trace content boundary: "a trace carries a model call's full input and output, to a sink the operator owns, and nowhere else"
+  - silent failure: "Nora is silent when a turn fails, so broken looks like quiet; failures are made legible by counters and traces, never by error text to the room"
 area: obs
 links:
   - {to: docs/design/cognition/execution.md, rel: uses}

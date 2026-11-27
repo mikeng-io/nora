@@ -2,8 +2,8 @@
 class: design
 subject: the document catalog, its closed vocabulary and the checking every document passes
 owns:
-  - "document catalog: the one source of the envelope, the component vocabulary, the checker, the renderer and the model's guidance"
-  - "document check: the container-side pipeline that normalises then validates a document before anything is stored"
+  - document catalog: "the one source of the envelope, the component vocabulary, the checker, the renderer and the model's guidance"
+  - document check: "the container-side pipeline that normalises then validates a document before anything is stored"
 area: documents
 links:
   - {to: docs/design/documents/README.md, rel: uses}

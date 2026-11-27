@@ -2,10 +2,11 @@
 class: design
 subject: the tool registry, the permit that admits a tool to an occasion, and how results report
 owns:
-  - "tool pool: the tools an occasion may call, one admitted set drawn from the registry"
-  - "permit: an occasion's admission of one tool, by platform, occasion, grant and executor"
-  - "three-state result: every tool answers ok, nothing found or unavailable, and never conflates them"
-  - "tool surface: the resident tools, the shelf and the catalogue, three views of one admitted set"
+  - tool pool: "the tools an occasion may call, one admitted set drawn from the registry"
+  - permit: "an occasion's admission of one tool, by platform, occasion, grant and executor"
+  - three-state result: "every tool answers ok, nothing found or unavailable, and never conflates them"
+  - tool surface: "the resident tools, the shelf and the catalogue, three views of one admitted set"
+  - terminal verb: "a delivery tool that ends the pass, such as the reply tool; a pass allowed to stay silent may end without calling one, and silence is recorded as an outcome"
 area: agent
 links:
   - {to: docs/design/agent/README.md, rel: uses}

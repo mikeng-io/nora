@@ -1,7 +1,13 @@
 ---
 class: design
 subject: "the authority of authored text, scope and egress"
-owns: []
+owns:
+  - doctrine: "the authored law, seed and practice kept outside the graph and changed only by the operator, which learned content never loosens"
+  - tension: "a lesson refused because it would loosen law, recorded with the law it conflicts with at operator exposure and never read by Nora"
+  - egress: "anything leaving Nora, every delivery passing the common guards: credential and doctrine leak protection always, and content checks when the repository's mode enables them"
+  - canary: "a string planted in the doctrine whose appearance in a reply blocks it, a tripwire and not a watermark"
+  - resolve within scope: "a lookup resolves only among what its scope may see, so a row outside it reads exactly as one that does not exist, and is never resolved then filtered"
+  - "enforced at assembly, not at egress": "disclosure is decided when context is built, because by the time text exists it is already authorised and an egress guard cannot catch a roster leak"
 area: cognition
 links:
   - {to: docs/design/cognition/README.md, rel: uses}

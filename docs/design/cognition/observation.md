@@ -1,7 +1,8 @@
 ---
 class: design
 subject: "sources, aggregates and stimuli"
-owns: []
+owns:
+  - stimulus: "a durable change that wakes the loops: a platform item, a watched source changing, an aggregate crossing its baseline, a presence change, the clock, a verdict or a correction; code surfaces it and the model decides what it means"
 area: cognition
 links:
   - {to: docs/design/cognition/README.md, rel: uses}

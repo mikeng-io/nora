@@ -2,8 +2,8 @@
 class: design
 subject: document publication, room scope, revisions and lifecycle
 owns:
-  - "revision: an append-only snapshot of a document that names the base it read"
-  - "document lifecycle: active, archived and deleted, with restoration as a new revision"
+  - revision: "an append-only snapshot of a document that names the base it read"
+  - document lifecycle: "active, archived and deleted, with restoration as a new revision"
 area: documents
 links:
   - {to: docs/design/documents/README.md, rel: uses}

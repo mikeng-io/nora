@@ -1,7 +1,11 @@
 ---
 class: design
 subject: "executors, tool calls and their wait window, waking, replay, time and settlement"
-owns: []
+owns:
+  - Dreamer: "the reflection loop's runtime for wake passes: admission, single-flight per unit, global concurrency, cancellation, budgets and the model call; never a data layer"
+  - fire turn: "an engagement pass nobody addressed to Nora, ambient or proactive, run by the fire path with the same stages and guards as a called pass"
+  - conversation slot: "the one in-flight engagement pass per room, shared by every path, so a reminder and a tag never run at once in one room"
+  - tick: "a logical position on a stable UTC grid, never a count of passes"
 area: cognition
 links:
   - {to: docs/design/cognition/README.md, rel: uses}
