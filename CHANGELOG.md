@@ -1,5 +1,14 @@
 # Changelog
 
+## [7.21.9](https://github.com/mikeng-io/nora/compare/v7.21.8...v7.21.9) (2026-11-27)
+
+
+### Bug Fixes
+
+* **whatsapp:** give each roster member every id form the session knows ([df3a0bc](https://github.com/mikeng-io/nora/commit/df3a0bc926c3ff197444f56662ac462755519694))
+* **whatsapp:** prefer a participant's explicit ids over the session map ([2820bbf](https://github.com/mikeng-io/nora/commit/2820bbf9e9057f5bc869af3d9a115c89fd8b3427))
+* **whatsapp:** read group rosters from the bridge ([c1cae02](https://github.com/mikeng-io/nora/commit/c1cae029ca4a4be25c53ccf786f83b6b6b0eece1))
+
 ## [7.21.8](https://github.com/mikeng-io/nora/compare/v7.21.7...v7.21.8) (2026-11-27)
 
 
