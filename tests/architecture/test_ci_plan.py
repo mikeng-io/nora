@@ -20,7 +20,7 @@ def _explicit_event_environment(monkeypatch):
 @pytest.mark.parametrize(
     ("paths", "selected", "absent"),
     [
-        (["docs/runbook.md"], {"contracts"}, {"python", "codeql-python", "portal"}),
+        (["docs/operations/runbook.md"], {"contracts"}, {"python", "codeql-python", "portal"}),
         (["nora/doctrine/core.md"], {"python", "contracts"}, {"portal", "codeql-python"}),
         (["nora/app.py"], {"python", "codeql-python"}, {"portal", "go"}),
         (["app/src/page.tsx"], {"portal", "codeql-javascript"}, {"python"}),
@@ -162,7 +162,7 @@ def test_document_readers_come_from_the_existing_selector(tmp_path, monkeypatch,
     monkeypatch.setenv("GITHUB_EVENT_PATH", str(event))
     monkeypatch.setenv("GITHUB_OUTPUT", str(output))
     monkeypatch.setattr("sys.argv", ["ci_plan"])
-    monkeypatch.setattr(ci_plan, "changed_paths", lambda event, repo: ["docs/runbook.md"])
+    monkeypatch.setattr(ci_plan, "changed_paths", lambda *_: ["docs/operations/runbook.md"])
     calls = []
 
     def readers(paths, repo, **_kwargs):
@@ -173,7 +173,7 @@ def test_document_readers_come_from_the_existing_selector(tmp_path, monkeypatch,
     assert ci_plan.main() == 0
     values = dict(line.split("=", 1) for line in output.read_text().splitlines())
     if "pull_request" in event_data:
-        assert calls == [["docs/runbook.md"]]
+        assert calls == [["docs/operations/runbook.md"]]
         assert json.loads(values["readers"]) == ["tests/test_docs.py"]
         assert not json.loads(values["plan"])["python"]
     else:
@@ -339,7 +339,7 @@ def test_hosted_go_jobs_cover_each_deployed_module():
     (["tests/conftest.py"], "ALL", False),
     (["uv.lock"], "ALL", False),
     (["unknown.xyz"], "NARROWED", False),
-    (["docs/runbook.md", "nora/app.py"], "NARROWED", True),
+    (["docs/operations/runbook.md", "nora/app.py"], "NARROWED", True),
     (["nora/renamed_away.py", "docs/new.md"], "NARROWED", True),
 ])
 def test_backend_acceptance_uses_the_complete_diff(
@@ -596,7 +596,7 @@ def test_non_pr_classifier_preserves_all_targets_for_manual_acceptance(
     monkeypatch.setenv("GITHUB_EVENT_PATH", str(event_file))
     monkeypatch.setenv("GITHUB_OUTPUT", str(output))
     monkeypatch.setattr("sys.argv", ["ci_plan"])
-    monkeypatch.setattr(ci_plan, "changed_paths", lambda e, r: ["docs/runbook.md"])
+    monkeypatch.setattr(ci_plan, "changed_paths", lambda e, r: ["docs/operations/runbook.md"])
     monkeypatch.setattr(
         ci_plan.affected_tests, "select", lambda p, r, **_k: ["tests/test_docs.py"],
     )
@@ -742,7 +742,7 @@ def test_pull_requests_always_run_the_ory_item1_gate(tmp_path, monkeypatch):
     monkeypatch.setenv("GITHUB_EVENT_PATH", str(event))
     monkeypatch.setenv("GITHUB_OUTPUT", str(output))
     monkeypatch.setattr("sys.argv", ["ci_plan"])
-    monkeypatch.setattr(ci_plan, "changed_paths", lambda event, repo: ["docs/runbook.md"])
+    monkeypatch.setattr(ci_plan, "changed_paths", lambda *_: ["docs/operations/runbook.md"])
     monkeypatch.setattr(ci_plan.affected_tests, "select", lambda paths, repo, **_: [])
     assert ci_plan.main() == 0
     values = dict(line.split("=", 1) for line in output.read_text().splitlines())
@@ -769,7 +769,7 @@ def test_pull_requests_always_run_the_portal_browser_item5_gate(tmp_path, monkey
     monkeypatch.setenv("GITHUB_EVENT_PATH", str(event))
     monkeypatch.setenv("GITHUB_OUTPUT", str(output))
     monkeypatch.setattr("sys.argv", ["ci_plan"])
-    monkeypatch.setattr(ci_plan, "changed_paths", lambda event, repo: ["docs/runbook.md"])
+    monkeypatch.setattr(ci_plan, "changed_paths", lambda *_: ["docs/operations/runbook.md"])
     monkeypatch.setattr(ci_plan.affected_tests, "select", lambda paths, repo, **_: [])
     assert ci_plan.main() == 0
     values = dict(line.split("=", 1) for line in output.read_text().splitlines())

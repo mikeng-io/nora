@@ -154,7 +154,7 @@ class DiscordListener:
             await _touch("delete", payload)
 
         # NON-UTTERANCE dispatches — the platform-observation families
-        # (design/platform-observations/README.md): raw events for `on_raw_message_edit`'s
+        # (docs/design/platform/observations.md): raw events for `on_raw_message_edit`'s
         # reason (cache independence) wherever the SDK offers them. They reach
         # `on_observation_cb` as `(kind, payload)`; nothing is unioned into the
         # message callback, which keeps its old meaning.

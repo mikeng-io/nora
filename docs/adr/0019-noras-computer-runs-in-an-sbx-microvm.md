@@ -1,3 +1,9 @@
+---
+class: adr
+subject: Nora's computer runs in an sbx microVM, behind computerd
+owns: []
+---
+
 # 0019 · Nora's computer runs in an sbx microVM, behind computerd
 
 - **Status:** accepted (2026-09-30, operator); Decision 4 superseded by [0025](0025-group-computer-workspaces-belong-to-units.md)

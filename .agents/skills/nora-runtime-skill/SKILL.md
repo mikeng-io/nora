@@ -9,7 +9,7 @@ This is about the skills NORA loads at runtime (`nora/skills/<name>/SKILL.md`,
 read by `nora/skills/loader.py` and served through the `skills` tool), not the
 agent skills in `.agents/skills/`. The source of truth is
 `docs/adr/0016-skill-policy.md` (status: proposed; read it in full), which
-extends `design/12-prompt-tool-skill-boundaries.md` §1. Its §9 table says which
+extends `docs/design/agent/doctrine.md`. Its §9 table says which
 rule is a test and which is review. This skill is the order and the checks.
 
 ## 1. If a skill "does not load", read her input first
@@ -158,4 +158,4 @@ merge; an error means the container or path is wrong, which is not a pass.
 - Runtime quirks (output-compressing hooks, background notices, sandboxed git): `.agents/runtimes/`.
   Read the log file as written above when a count matters.
 
-Host exec requires the [installed secret-delivery helper](../../../docs/configuration.md#host-migration-and-installed-files).
+Host exec requires the [installed secret-delivery helper](../../../docs/operations/configuration.md#host-migration-and-installed-files).

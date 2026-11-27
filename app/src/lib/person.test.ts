@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { PERSON_HUES, hueOf, initials, oklchToHex, personColorFor } from "./person";
 
 // The rule the hue set exists for: no person reads as Nora or as a state.
-// Reserved OKLCH hues, measured from DESIGN.md's tokens in both lightings:
+// Reserved OKLCH hues, measured from docs/design/appearance/README.md's tokens in both lightings:
 // danger 17-21, blush 30-31, caution 78-80, success 166, denim 265-266.
 const RESERVED = [17, 21, 30, 31, 78, 80, 166, 265, 266];
 const distance = (a: number, b: number) => Math.min(Math.abs(a - b), 360 - Math.abs(a - b));

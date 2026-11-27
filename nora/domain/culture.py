@@ -201,7 +201,7 @@ class Culture:
     """One scope's culture: a key, and a pointer at the current account.
 
     **`key` is a `primary_id`.** Not `(platform, conversation_id)` — the rule is
-    `GLOSSARY.md`'s and it follows from which scheduler hands the key. A Dreamer
+    `docs/glossary.md`'s and it follows from which scheduler hands the key. A Dreamer
     adaptor is handed `scopes()`, so it keys the conversation; the ingest and tag
     paths get the message that arrived, so they key the thread. A store keyed
     differently from its loop matches zero rows on the watermark query, and then
@@ -315,7 +315,7 @@ REVISE_REFUSALS = frozenset({
 _EPISODE = re.compile(r"response:(\d+)")
 
 #: `social:<network>:<item id>`: how a person session cites one of that
-#: person's social items (design/cognition-loop/observation.md). Its own id space: the
+#: person's social items (docs/design/cognition/loop.md). Its own id space: the
 #: item's natural key `(network, item_id)`, the one `social_item` is unique
 #: on, never a Record id, so it cannot be confused with a message.
 _SOCIAL = re.compile(r"social:([a-z]+):(\S+)")

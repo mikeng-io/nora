@@ -1,3 +1,9 @@
+---
+class: adr
+subject: 'Tool contract metadata: side-effect state, idempotency, retry, output contracts'
+owns: []
+---
+
 # 0008 — Tool contract metadata: side-effect state, idempotency, retry, output contracts
 
 - **Status:** accepted

@@ -1,3 +1,9 @@
+---
+class: adr
+subject: Smokescreen is the shared HTTP egress destination firewall
+owns: []
+---
+
 # 0035 · Smokescreen is the shared HTTP egress destination firewall
 
 - **Status:** accepted (operator, 2026-11-05); implementation and rollout pending.

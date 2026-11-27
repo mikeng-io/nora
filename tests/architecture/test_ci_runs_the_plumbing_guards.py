@@ -23,6 +23,8 @@ PLUMBING_GUARDS = (
     "tests/architecture/test_release_config_matches_the_repo.py",
     "tests/architecture/test_dockerfile_bases_are_pinned.py",
     "tests/architecture/test_doc_references_resolve.py",
+    "tests/architecture/test_documents.py",
+    "tests/architecture/test_generated_docs.py",
 )
 
 

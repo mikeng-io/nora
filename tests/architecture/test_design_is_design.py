@@ -1,4 +1,4 @@
-"""Files under design/ are design documents: named by subject, no history
+"""Files under docs/design/ are design documents: named by subject, no history
 markers or dates, within budget. Recorded violations only shrink."""
 
 from __future__ import annotations
@@ -9,16 +9,23 @@ from scripts.design_shape import BASELINE, MAX_FILE_LINES, census, check
 
 
 def test_detector_sees_each_violation() -> None:
-    assert check("design/a/notes.md", "A note is a claim.\n") == []
-    assert check("design/a/README.md", "x\n" * 151) == ["over-budget"]
-    assert check("design/a/notes.md", "x\n" * (MAX_FILE_LINES + 1)) == ["over-budget"]
-    assert check("design/a/03-decisions.md", "") == ["numbered-or-dated-name", "not-a-design-file"]
-    assert check("design/a/_index.yaml", "") == ["not-a-design-file"]
-    assert check("design/a/planner.md", "") == []
-    assert check("design/a/open-items.md", "") == ["not-a-design-file"]
-    assert check("design/a/x.md", "> **DEPRECATED** in part\n") == ["history-marker"]
-    assert check("design/a/x.md", "---\nsupersedes: other\n---\n") == ["history-marker"]
-    assert check("design/a/x.md", "Decided 2026-09-07.\n") == ["date"]
+    assert check("docs/design/a/notes.md", "A note is a claim.\n") == []
+    assert check("docs/design/a/README.md", "x\n" * 301) == ["over-budget"]
+    assert check("docs/design/a/notes.md", "x\n" * (MAX_FILE_LINES + 1)) == ["over-budget"]
+    assert check("docs/design/a/03-decisions.md", "") == [
+        "numbered-or-dated-name", "not-a-design-file",
+    ]
+    assert check("docs/design/a/_index.yaml", "") == ["not-a-design-file"]
+    assert check("docs/design/a/planner.md", "") == []
+    assert check("docs/design/a/open-items.md", "") == ["not-a-design-file"]
+    assert check("docs/design/a/x.md", "> **DEPRECATED** in part\n") == ["history-marker"]
+    assert check("docs/design/a/x.md", "---\nsupersedes: other\n---\n") == ["history-marker"]
+    assert check("docs/design/a/x.md", "Decided 2026-09-07.\n") == ["date"]
+    assert check("docs/design/a/x.md", "**Status:** building\n") == ["status-marker"]
+    assert check("docs/design/a/x.md", "Status: proposed\n") == ["status-marker"]
+    assert check(
+        "docs/design/a/x.md", "[Open issues](https://github.com/o/r/issues?q=is%3Aopen+x)\n",
+    ) == ["issue-search-link"]
 
 
 def test_design_matches_the_baseline() -> None:

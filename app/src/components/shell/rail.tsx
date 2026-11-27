@@ -11,7 +11,7 @@ import { NavIcon } from "./nav-icon";
 import { NoraPresenceDot } from "./nora-presence";
 import { useCommandPalette } from "./command-palette";
 
-// Desktop navigation (DESIGN.md §7): a left rail on surface with a hairline
+// Desktop navigation (docs/design/appearance/README.md §7): a left rail on surface with a hairline
 // edge, icon and sentence-case label, the active item in denim on hoodie.
 export function Rail() {
   const t = useTranslations("nav");

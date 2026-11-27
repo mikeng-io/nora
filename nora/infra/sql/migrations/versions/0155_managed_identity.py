@@ -1,6 +1,6 @@
 """Managed identity and scoped access — the binding store's tables.
 
-design/managed-identity-access/. `managed_person` is the canonical person
+docs/design/people/README.md. `managed_person` is the canonical person
 with its Kratos correlation; `managed_account` + `managed_identifier` carry
 provider-qualified bindings where one matchable `(platform, kind, value)`
 identifier names exactly one account — the primary key IS the ownership

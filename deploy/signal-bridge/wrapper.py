@@ -1,4 +1,4 @@
-"""signal-bridge — the durable Signal boundary (design/platform-bridges).
+"""signal-bridge — the durable Signal boundary (docs/design/platform/README.md).
 
 Wraps an UNCHANGED signal-cli child: preflights the capture journal BEFORE the
 CLI may start receiving (on every restart, not once), captures the daemon's
@@ -409,7 +409,7 @@ class Bridge:
                 ) if msg is not None else observations[0].object_kind
         # The ONE short producer root for this capture — its context is
         # frozen onto the envelope BEFORE the journal append inside
-        # `_sink.capture` (design/platform-bridges/04-operations.md).
+        # `_sink.capture` (docs/design/platform/README.md).
         with bt.producer_span(PLATFORM, kind=kind) as carrier:
             if msg is not None and msg.media:
                 with bt.operation_span(

@@ -6,13 +6,13 @@ description: Start or resume Nora engineering work. Triage it to a route, hold t
 # Nora work
 
 The lifecycle, routes and gates: [references/lifecycle.md](references/lifecycle.md).
-Ownership and policy: [ORCHESTRATION.md](../../../ORCHESTRATION.md#the-lifecycle).
+Ownership and policy: [docs/engineering/orchestration.md](../../../docs/engineering/orchestration.md#the-lifecycle).
 This skill is the entry router; it does not repeat the other procedures.
 
 1. **Recover the work.** Read the operator request, the current work brief, the
    project's Intent, holds and the latest handoff. The orchestrator, not a
    delegated worker, then retires settled artifacts (`make gc APPLY=1`, a
-   standing authority; `docs/maintainers/conventions.md` «Cleanup»). Follow only the references
+   standing authority; `docs/engineering/conventions.md` «Cleanup»). Follow only the references
    needed to settle the current question. Check the checkout, head and actual
    artifacts before treating recorded progress as current.
    Check: state the intended outcome, what remains and the next action briefly.

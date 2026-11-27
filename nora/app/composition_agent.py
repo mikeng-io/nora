@@ -252,7 +252,7 @@ def _memory_tool_args(
         # Built once above: the assembler's pre-fetch holds the same one.
         "memory_search": memory_search,
         # The graph surface's `remember` writes a Profile `told` line
-        # (design/unified-memory/profiles.md); wired with `memory_search`, never alone.
+        # (docs/design/cognition/graph.md); wired with `memory_search`, never alone.
         "profile": (
             SqlProfileStore(
                 engine,
@@ -292,7 +292,7 @@ def _record_tool_args(
         # `[record_query] enabled` (ships off): without the read the registry
         # withholds the tool from every turn.
         "record": SqlRecordQuery(engine) if cfg.record_query.enabled else None,
-        # `record_query`'s typed `kind` branch (design/platform-observations
+        # `record_query`'s typed `kind` branch (docs/design/platform/observations.md
         # 05): the same store the bridge writes; `None` only in a harness.
         "observations": observation_store,
         # `social_read`: the social stream's recorded items, a SELECT, so no flag (an empty
@@ -529,7 +529,7 @@ def backends_check(cfg: Any, compute_backends: Any)-> BackendsCheckWiring:
     if cfg.compute.enabled and not compute_backends:
         log.warning(
             "[compute] enabled = true but no ComputeBackend is registered (the "
-            "per-job container backend was retired, design/sandbox-runtime "
+            "per-job container backend was retired, docs/design/computer/sandbox.md "
             "decision 4; `[subagent] enabled` registers the sub-agent worker, `[video_gen]` "
             "the video backend); the "
             "compute-job poller stays idle. Set enabled = false."

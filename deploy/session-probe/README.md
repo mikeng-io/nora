@@ -150,5 +150,5 @@ channel — the retired `deploy/alert-bridge` path's replacement. Each
 | `sync_capped` | 3 syncs in a row did not restore the bridge; the probe stopped restarting it |
 
 **The fix for every one of them is a human login in Chrome over VNC**
-(`<tailscale-ip>:5902`, see `docs/runbook.md` §10). Once Chrome holds a fresh
+(`<tailscale-ip>:5902`, see `docs/operations/runbook.md` §10). Once Chrome holds a fresh
 session, the next run syncs the bridge by itself.

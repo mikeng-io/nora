@@ -1,5 +1,5 @@
 """computerd's per-request instance enforcement and caller-loss kill
-(`deploy/computer/computerd.py`, design/browser-runtime «the instance»).
+(`deploy/computer/computerd.py`, docs/design/computer/browser.md «the instance»).
 
 What is covered, against the real server and real subprocesses:
 

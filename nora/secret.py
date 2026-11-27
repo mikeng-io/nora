@@ -1,4 +1,4 @@
-"""Private boot-time credential resolution. See docs/configuration.md."""
+"""Private boot-time credential resolution. See docs/operations/configuration.md."""
 
 from __future__ import annotations
 

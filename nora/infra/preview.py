@@ -46,7 +46,7 @@ with it, in the narrowest form that does the job:
 
 Connections use the shared public-only connector, including literal addresses.
 The original hostname remains on the request for Host, SNI and certificate checks.
-See docs/security/outbound-fetches.md for the connection boundary.
+See docs/operations/outbound-fetches.md for the connection boundary.
 """
 
 from __future__ import annotations

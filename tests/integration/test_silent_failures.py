@@ -103,7 +103,7 @@ async def test_participation_silence_is_healthy_not_a_silent_failure(harness_fac
     assert await h.participation_trigger.close_due_windows() == 1
     assert h.sink.sent == []
     assert h.metrics.get("nora_participation_silence_total", platform="signal") == 1
-    # The load-bearing part (docs/runbook.md): a quiet participation turn is
+    # The load-bearing part (docs/operations/runbook.md): a quiet participation turn is
     # NEVER charged to the tag audience's silent-failure budget.
     assert h.metrics.get("nora_silent_failures_total", audience="participation") == 0
     assert h.metrics.get("nora_silent_failures_total", audience="tag") == 0

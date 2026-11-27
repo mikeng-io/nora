@@ -3,7 +3,7 @@
 // fsynced capture journal, the Redis Streams producer, the admission
 // projection reader and the action/custody facade behind /v1.
 //
-// The wire contract is frozen in design/platform-bridges/00-contract.md and
+// The wire contract is frozen in docs/design/platform/README.md and
 // mirrored field-for-field from the lead's Python reference
 // (nora/platform/bridge/envelope.py). Nothing here invents a competing
 // format: a divergence is a contract failure, not a style choice.

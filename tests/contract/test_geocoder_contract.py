@@ -181,7 +181,7 @@ async def test_the_areas_of_a_coordinate_are_stored_beside_its_address(adapter):
     """Both backends name the district and the city from their structured
     address fields, joined «中文 / English» like the address, and the store
     keeps them beside it: `nora.analytics` places an outing by them
-    (design/unified-memory 00 step 3a)."""
+    (docs/design/cognition/graph.md 00 step 3a)."""
     store = FakeGeocodeCacheStore()
     geo = adapter.with_store(store)
     assert await geo.address_for(lat=1.0, lng=2.0) == "元朗形點 / Yoho Mall"

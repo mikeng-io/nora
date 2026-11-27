@@ -1,6 +1,6 @@
 """persona.settled_at: when the account's own session last settled it.
 
-design/unified-memory/profiles.md. A turn's `told` line
+docs/design/cognition/graph.md A turn's `told` line
 (`written_by_session = 'tag'`) wakes the person's Persona session at once.
 "Pending" is every such line written after the session last settled; a
 session that settles with nothing to add (`persona_no_change`) inserts no

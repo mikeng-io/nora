@@ -121,7 +121,7 @@ Body: `{user_id, text, conversation_id}` (JSON). Behaviour:
 - `uv add` for dependencies — never raw pip.
 - Commit in small focused commits on `feat/voice-channel-design`; do not
   merge, do not push to master, do not touch other profiles/repos.
-- Follow `docs/maintainers/conventions-rationale.md` (one stage one module; no `*_fn` test hooks;
+- Follow `docs/engineering/conventions-rationale.md` (one stage one module; no `*_fn` test hooks;
   contract suites for ports).
 - Do NOT modify `deploy/voice-sidecar/` (stage 2 is done and verified).
 - Do NOT modify `~/workspace/voice-lab/` (training lab, out of scope here).

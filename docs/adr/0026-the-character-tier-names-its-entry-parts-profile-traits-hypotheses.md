@@ -1,3 +1,9 @@
+---
+class: adr
+subject: The Character tier's entry parts are profile, traits and hypotheses
+owns: []
+---
+
 # 0026 · The Character tier's entry parts are profile, traits and hypotheses
 
 - **Status:** superseded by [0029](0029-a-prompt-block-names-its-subject-and-author-by-id.md)

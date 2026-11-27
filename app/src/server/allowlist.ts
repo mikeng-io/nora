@@ -1,7 +1,7 @@
 import { parse } from "smol-toml";
 
 /**
- * identity.toml's shape (design/10-identity-and-policy-schema.md):
+ * identity.toml's shape (docs/design/people/identity.md):
  *
  *   [persons.miles]
  *   name = "Miles"
@@ -10,7 +10,7 @@ import { parse } from "smol-toml";
  *
  * `user_id` is the ONLY discord field ever matched on. `username` is
  * accepted in the file for readability and never indexed, because it can be
- * renamed (design/10-identity-and-policy-schema.md §3.1).
+ * renamed (docs/design/people/identity.md).
  */
 interface IdentityToml {
   persons?: Record<string, { name?: string; discord?: Array<{ user_id?: string }> }>;

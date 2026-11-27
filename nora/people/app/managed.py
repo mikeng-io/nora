@@ -1,5 +1,5 @@
 """The managed-backend use cases: registration, scoped authority and
-reconciliation (`design/managed-identity-access/management.md`,
+reconciliation (`docs/design/people/authority.md`,
 `authorization.md`).
 
 Every mutation flows one path: journal the intended effect → revalidate the

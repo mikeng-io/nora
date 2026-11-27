@@ -4,7 +4,7 @@
 # Ownership, overlays and retirement boundaries: deploy/README.md.
 
 services:
-  # redis — the durable inbound handoff (design/platform-bridges). AOF everysec
+  # redis — the durable inbound handoff (docs/design/platform/README.md). AOF everysec
   # + named volume + noeviction; survives app-only releases and ordinary
   # restarts. Honest limit: `everysec` can lose the last second on host power
   # failure, and no AOF survives destroyed storage — the journal covers bridge
@@ -22,7 +22,7 @@ services:
       - NORA_REDIS_PRODUCER_PASSWORD=${NORA_REDIS_PRODUCER_PASSWORD:?set NORA_REDIS_PRODUCER_PASSWORD in .env}
       - NORA_REDIS_CONSUMER_PASSWORD=${NORA_REDIS_CONSUMER_PASSWORD:?set NORA_REDIS_CONSUMER_PASSWORD in .env}
       - NORA_REDIS_INSPECTOR_PASSWORD=${NORA_REDIS_INSPECTOR_PASSWORD:?set NORA_REDIS_INSPECTOR_PASSWORD in .env}
-    # Scoped ACLs (design/platform-bridges §04): one user per role, all held
+    # Scoped ACLs (docs/design/platform/README.md §04): one user per role, all held
     # to the `nq:*` queue namespace — producers may only enqueue/dedupe, the
     # consumer claims/acks/inspects, the inspector reads for telemetry and
     # ops. `default` is OFF: nothing authenticates into the unrestricted user
@@ -186,7 +186,7 @@ services:
       options: {max-size: "10m", max-file: "3"}
 
 
-  # whatsapp-bridge — Nora's WhatsApp transport (design/whatsapp-adoption/README.md).
+  # whatsapp-bridge — Nora's WhatsApp transport (docs/design/platform/whatsapp.md).
   # A containerized Baileys (Node) daemon, the transport TWIN of signal-cli
   # above: same private `nora` network, same no-published-ports posture, same
   # ./state/ volume discipline. The bridge holds the full WhatsApp session
@@ -199,7 +199,7 @@ services:
   #   docker compose run --rm whatsapp-bridge --pair --phone <digits>
   # once (prints a pairing code to type into the phone app: Linked Devices →
   # Link with phone number), then normal `docker compose up -d` boots with
-  # the saved session. See design/whatsapp-adoption/bridge.md.
+  # the saved session. See docs/design/platform/whatsapp.md
   whatsapp-bridge:
     build:
       context: ./deploy/whatsapp-bridge
@@ -229,7 +229,7 @@ services:
       # not authentication: any co-networked container can reach the account
       # routes, so the bridge refuses to start without this.
       - NORA_BRIDGE_TOKEN=${NORA_BRIDGE_TOKEN:?set NORA_BRIDGE_TOKEN in the host environment first}
-      # Durable-handoff wiring (design/platform-bridges): the stream the app
+      # Durable-handoff wiring (docs/design/platform/README.md): the stream the app
       # consumes, its opaque account leg (must equal [platforms.whatsapp]
       # account_key), and the shared event-id correlation key.
       - NORA_REDIS_URL=redis://nq-producer:${NORA_REDIS_PRODUCER_PASSWORD:?}@redis:6379/0
@@ -297,7 +297,7 @@ services:
     environment:
       - IG_SESSION_DIR=/session
       - NORA_BRIDGE_TOKEN=${NORA_BRIDGE_TOKEN:?set NORA_BRIDGE_TOKEN in the host environment first}
-      # Durable-handoff wiring (design/platform-bridges) — same contract as
+      # Durable-handoff wiring (docs/design/platform/README.md) — same contract as
       # signal-bridge/discord-bridge: stream leg, correlation key, journal,
       # projection, Redis, action-store DSN.
       - NORA_REDIS_URL=redis://nq-producer:${NORA_REDIS_PRODUCER_PASSWORD:?}@redis:6379/0
@@ -308,7 +308,7 @@ services:
       - NORA_BRIDGE_JOURNAL=/data/bridge/journal/instagram.jsonl
       - NORA_BRIDGE_PROJECTION_DIR=/bridge-projection
       - DATABASE_URL=postgresql+asyncpg://nora:${POSTGRES_PASSWORD:?}@db:5432/nora
-      # Tracing (design/instagram-adoption/bridge.md): OTLP to the host's
+      # Tracing (docs/design/platform/instagram.md): OTLP to the host's
       # collector, the same endpoint Nora exports to. The collector routes the
       # spans to Jaeger (and to Langfuse when a trace carries a model call).
       - OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://host.docker.internal:4318/v1/traces
@@ -319,8 +319,8 @@ services:
       - INSTAGRAM_COMMENT_WRITES=${INSTAGRAM_COMMENT_WRITES:-off}
       - INSTAGRAM_COMMENT_DAILY_CAP=${INSTAGRAM_COMMENT_DAILY_CAP:-10}
       - INSTAGRAM_COMMENT_MIN_INTERVAL=${INSTAGRAM_COMMENT_MIN_INTERVAL:-90s}
-      # The story and timeline reads' GraphQL doc_ids (design/cognition-loop/
-      # design/cognition-loop/observation.md), from the host's .env: they rotate with
+      # The story and timeline reads' GraphQL doc_ids (docs/design/cognition/loop.md
+      # docs/design/cognition/loop.md), from the host's .env: they rotate with
       # Instagram's web builds and are never in the repo. Unset is a 501.
       - INSTAGRAM_STORY_DOC_ID=${INSTAGRAM_STORY_DOC_ID:-}
       - INSTAGRAM_TIMELINE_DOC_ID=${INSTAGRAM_TIMELINE_DOC_ID:-}
@@ -344,7 +344,7 @@ services:
       options: {max-size: "10m", max-file: "3"}
 
   # bridge-projection — the standalone admission-projection publisher
-  # (design/platform-bridges §02). ONE process hosts all four platforms'
+  # (docs/design/platform/README.md §02). ONE process hosts all four platforms'
   # publishers (`entry.py --all`), each writing `{platform}.json` atomically
   # into the shared named volume every bridge above mounts READ-ONLY. It
   # reads config/policy/identity through the same loaders the app composes
@@ -457,9 +457,9 @@ services:
     # so it is NOT published on 0.0.0.0. It publishes on 127.0.0.1 only (host
     # evals, the tailnet forward) and nora reaches it BY NAME, `honcho:8000`, on
     # the `honcho` network below, which holds Honcho's api and this one service.
-    # docs/runbook.md §"Closing Honcho" has the order the steps must go in.
+    # docs/operations/runbook.md §"Closing Honcho" has the order the steps must go in.
     #
-    # `embedder` (design/unified-memory/graph.md V1): the
+    # `embedder` (docs/design/cognition/graph.md V1): the
     # internal network that holds the embedding server and this one service.
     networks: [nora, honcho, embedder]
     logging:
@@ -528,7 +528,7 @@ services:
       - RUSTFS_ROOT_USER=${RUSTFS_ROOT_USER:-}
       - RUSTFS_ROOT_PASSWORD=${RUSTFS_ROOT_PASSWORD:-}
       #   NORA_COMPUTER_TOKEN   — computerd's bearer token ([computer].token_env,
-      #   design/sandbox-runtime, DEC-243). Nora refuses to start with
+      #   docs/design/computer/sandbox.md, DEC-243). Nora refuses to start with
       #   [computer] enabled and this empty: it was missing here on
       #   2026-09-30 and the first enable crash-looped nora for about three
       #   minutes. tests/test_env_template.py now checks every *_env name.
@@ -546,7 +546,7 @@ services:
       - HKGOV_MAPS_TOKEN=${HKGOV_MAPS_TOKEN:-}
       #   GOOGLE_OAUTH_CLIENT_ID / _CLIENT_SECRET / _REFRESH_TOKEN —
       #   [google], Nora's ONE Google identity shared by every Google service
-      #   she uses (design/external-files §4). Read only when one is switched
+      #   she uses (docs/design/computer/external-files.md §4). Read only when one is switched
       #   on; recording a link as a handle needs none of them.
       - GOOGLE_OAUTH_CLIENT_ID=${GOOGLE_OAUTH_CLIENT_ID:-}
       - GOOGLE_OAUTH_CLIENT_SECRET=${GOOGLE_OAUTH_CLIENT_SECRET:-}
@@ -561,7 +561,7 @@ services:
       - TAVILY_API_KEY=${TAVILY_API_KEY:-}
       - EXA_API_KEY=${EXA_API_KEY:-}
       #   STEAM_WEB_API_KEY   — the `online_now` Steam half ([online],
-      #   design/online-status/, PR #252). Same OPTIONAL posture: `[online]
+      #   docs/design/presence/README.md, PR #252). Same OPTIONAL posture: `[online]
       #   enabled` AND this key present turns the Steam arms on; unset logs
       #   "online enabled but STEAM_WEB_API_KEY is unset" and everything
       #   stays `unavailable`. Must be passed explicitly — Compose does not
@@ -606,7 +606,7 @@ services:
       #   crash-loop, not a degraded feature. Left `:-` so a deployment with
       #   Discord DISABLED still starts without it.
       - DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN:-}
-      # Voice reply closure (design/voice-channel/audio.md): the TTS provider key
+      # Voice reply closure (docs/design/voice/README.md): the TTS provider key
       # must reach the nora DAEMON container — Compose does not pass through
       # unlisted vars, and without it composition.py logs "no speaker is
       # wired; voice answers stay text-only" (found live 2026-09-16 while
@@ -801,7 +801,7 @@ services:
     volumes:
       - ./config.toml:/app/config.toml:ro
       - ./identity.toml:/app/identity.toml:ro
-      # The unit rollups (step 2, design/cognition-loop/observation.md) read
+      # The unit rollups (step 2, docs/design/cognition/loop.md) read
       # which rooms make up each unit and who its members are. Without it the
       # presence Rollup still runs and the unit rollups compute nothing.
       - ./policy.toml:/app/policy.toml:ro
@@ -863,7 +863,7 @@ services:
       retries: 5
 
   # embedder — the memory index's embedding model
-  # (design/unified-memory/graph.md): Qwen3-VL-Embedding-2B,
+  # (docs/design/cognition/graph.md): Qwen3-VL-Embedding-2B,
   # the Q4_K_M GGUF and its f16 projector, served by llama.cpp's server with
   # `--embedding --pooling last`, the setup the bake-off measured (#22, #24:
   # ~3.06 GB peak RSS, ~0.4 s a text and ~3.4 s an image on norty's CPU).
@@ -974,7 +974,7 @@ services:
   # lives in this repo" shape.
   #
   # Two engines behind one OpenAI-compatible /v1/audio/transcriptions
-  # (decision: design/voice-channel/receive.md, 2026-09-15):
+  # (decision: docs/design/voice/README.md, 2026-09-15):
   # the DEFAULT is JackyHoCL whisper-large-v3-turbo-cantonese-noise-detection
   # (transformers, fp32 CPU) — the only A/B engine that kept both `RV` and
   # `discord` intact on real Discord voice audio, Hant + punctuation out of
@@ -1041,7 +1041,7 @@ services:
       retries: 3
 
   # voice-sidecar — stage 2 of the voice-channel design
-  # (design/voice-channel/receive.md): a Node receive-only sidecar
+  # (docs/design/voice/README.md): a Node receive-only sidecar
   # (@discordjs/voice + libdave, Discord's own stack) that joins a Discord
   # voice channel, DAVE-decrypts per-user Opus, decodes to PCM, and forwards
   # {user_id, pcm} over a local TCP seam to the FUTURE Python wake gate
@@ -1096,7 +1096,7 @@ services:
       # above).
       - HOST=0.0.0.0
       # Audio-controller durable desired-state + event callback
-      # (design/voice-channel/audio.md). Both match the defaults in
+      # (docs/design/voice/README.md). Both match the defaults in
       # src/service.mjs; pinned here so the posture is explicit. The state
       # lives on the NAMED volume below, not a host bind mount (B-1: a bind
       # mount MASKS the image's chown of /var/lib/audio-controller — a fresh
@@ -1132,7 +1132,7 @@ services:
       retries: 3
 
   # voice-wake — stage 3 of the voice-channel design
-  # (design/voice-channel/README.md): the Python wake gate, and the ONLY
+  # (docs/design/voice/README.md): the Python wake gate, and the ONLY
   # consumer of the sidecar's seam. Per-user PCM in, openWakeWord 「喂 Nora」
   # detection (the v3 ONNX is baked into the image), utterance collection,
   # transcription via the local `stt` service, and the TRANSCRIPT forwarded
@@ -1239,7 +1239,7 @@ volumes:
   # inside the container) — pins the ~3.2GB noise-detection whisper download
   # (the DEFAULT model since 2026-09-15) the same way.
   stt-huggingface-cache:
-  # audio-controller's desired-state file (design/voice-channel/audio.md).
+  # audio-controller's desired-state file (docs/design/voice/README.md).
   # Named (not a bind mount) so the volume inherits the image's
   # `chown node:node /var/lib/audio-controller` on first use (B-1).
   audio-controller-state:

@@ -1,3 +1,9 @@
+---
+class: adr
+subject: Artifacts are files the portal shares behind sign-in; Drop and every link shortener retire
+owns: []
+---
+
 # 0023 · Artifacts are files the portal shares behind sign-in; Drop and every link shortener retire
 
 - **Status:** accepted (2026-10-08, operator), as built: part 1 #758 and part 2 #759 are live on

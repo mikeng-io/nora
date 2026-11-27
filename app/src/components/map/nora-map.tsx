@@ -20,7 +20,7 @@ import { HK_BOUNDS, noraMapStyle } from "./map-style";
 // One map component for every map in the portal: the live map, a person's
 // places and routes, a trip. Declarative in, imperative underneath: the
 // props say what is on the map, and this keeps one MapLibre instance in
-// step with them. Every moving camera change is capped at 320ms (DESIGN.md
+// step with them. Every moving camera change is capped at 320ms (docs/design/appearance/README.md
 // §6), and becomes a jump under reduced motion.
 
 export interface MapPerson {
