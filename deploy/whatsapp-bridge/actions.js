@@ -10,7 +10,7 @@
  * blindly. `unsupported` means the platform has no such op.
  */
 import { ACTION_OPS, OWNER_KINDS, actionResponse } from './store.js';
-import { isValidTargetJid, isGroupJid, jidUserDigits, buildMediaPayload, resolveIdentity, timestampMs } from './bridge_helpers.js';
+import { isValidTargetJid, isGroupJid, jidUserDigits, buildMediaPayload, jidDomain, timestampMs } from './bridge_helpers.js';
 import { lidForm, phoneForm } from './wa_jid.js';
 import { readBody, sendJson } from './http_util.js';
 
@@ -340,15 +340,13 @@ export function createV1(deps) {
             for (const p of meta?.participants || []) {
               // Every form the session knows, so a member registered by phone
               // still resolves when metadata names them by lid alone.
-              let phone = p.phoneNumber ? jidUserDigits(p.phoneNumber) : null;
-              let lid = null;
-              for (const jid of [p.id, p.lid]) {
-                if (!jid) continue;
-                const id = resolveIdentity(jid, lidToPhone, phoneToLid);
-                phone = phone || id.phone;
-                lid = lid || id.lid;
-              }
-              if (phone && !lid) lid = phoneToLid[phone] || null;
+              // Explicit metadata forms win; the session map only fills gaps.
+              const explicit = (jid, want) => (jid && jidDomain(jid) === want ? jidUserDigits(jid) : null);
+              let phone = (p.phoneNumber && jidUserDigits(p.phoneNumber))
+                || explicit(p.id, 's.whatsapp.net') || null;
+              let lid = (p.lid && jidUserDigits(p.lid)) || explicit(p.id, 'lid') || null;
+              if (!phone && lid) phone = lidToPhone[lid] || null;
+              if (!lid && phone) lid = phoneToLid[phone] || null;
               const forms = [phone && phoneForm(phone), lid && lidForm(lid)].filter(Boolean);
               if (forms.length) members.push(forms);
             }
