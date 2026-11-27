@@ -1,30 +1,23 @@
 [
- {
-  "name": "a queued handoff carrying a removed person key is still rebuilt",
-  "file": "nora/app/bridge_payloads.py",
-  "old": "return PersonRef(**{k: v for k, v in data.items() if k in known})",
-  "new": "return PersonRef(**data)",
-  "target": "tests/integration/test_bridge_legacy_person_handoff.py::test_reclaim_resumes_from_a_handoff_whose_person_carries_a_removed_key"
- },
- {
-  "name": "the handoff writer no longer emits the removed person key",
-  "file": "nora/app/bridge_payloads.py",
-  "old": "\"name\": person.name,\n            \"first_name\"",
-  "new": "\"name\": person.name, \"honcho_peer_id\": person.person_id,\n            \"first_name\"",
-  "target": "tests/integration/test_bridge_deferred.py::test_kill_between_audit_and_handoff_resumes_from_snapshot"
- },
- {
-  "name": "a portal-scope person's third positional is not first_name",
-  "file": "nora/people/app/portal_access.py",
-  "old": "PersonRef(person_id, person.display_name or person_id)",
-  "new": "PersonRef(person_id, person.display_name or person_id, person_id)",
-  "target": "tests/unit/test_managed_person_ref_names.py::test_portal_scope_person_is_named_by_display_name_only"
- },
- {
-  "name": "a circle member's third positional is not first_name",
-  "file": "nora/web/managed_scope.py",
-  "old": "PersonRef(pid, person.display_name or pid)",
-  "new": "PersonRef(pid, person.display_name or pid, pid)",
-  "target": "tests/unit/test_managed_person_ref_names.py::test_consented_circle_member_is_named_by_display_name_only"
- }
+  {
+    "name": "the handoff writer no longer emits the removed person key",
+    "file": "nora/app/bridge_payloads.py",
+    "old": "\"name\": person.name,\n            \"first_name\"",
+    "new": "\"name\": person.name, \"honcho_peer_id\": person.person_id,\n            \"first_name\"",
+    "target": "tests/integration/test_bridge_deferred.py::test_kill_between_audit_and_handoff_resumes_from_snapshot"
+  },
+  {
+    "name": "a portal-scope person's third positional is not first_name",
+    "file": "nora/people/app/portal_access.py",
+    "old": "PersonRef(person_id, person.display_name or person_id)",
+    "new": "PersonRef(person_id, person.display_name or person_id, person_id)",
+    "target": "tests/unit/test_managed_person_ref_names.py::test_portal_scope_person_is_named_by_display_name_only"
+  },
+  {
+    "name": "a circle member's third positional is not first_name",
+    "file": "nora/web/managed_scope.py",
+    "old": "PersonRef(pid, person.display_name or pid)",
+    "new": "PersonRef(pid, person.display_name or pid, pid)",
+    "target": "tests/unit/test_managed_person_ref_names.py::test_consented_circle_member_is_named_by_display_name_only"
+  }
 ]

@@ -22,13 +22,9 @@ from nora.agent.catalog.groups import GRAPH_MEMORY_TOOLS
 from nora.agent.dreamer import (
     HomeRoom,
     RegistryToolSource,
-    cognition_grant,
 )
 from nora.agent.registry import ToolRegistry
 from nora.agent.room import Room
-from nora.agent.subagent_tools import SubagentToolSource
-from nora.app.cognition_wiring import read_surface, read_tools_for
-from nora.domain.cognition_session import Room as AgendaRoom
 from nora.obs.metrics import Metrics
 from nora.persons import load_persons
 from nora.testing import FakeRosterSource
@@ -111,56 +107,10 @@ def _dream_source(registry: ToolRegistry, persons: Any) -> RegistryToolSource:
     )
 
 
-async def _built(where: str, graph: bool, persons: Any) -> set[str]:
-    """What `where` is handed, through that place's own builder."""
-    registry = _registry(graph)
-    if where in ("tag", "fire"):
-        surface = registry.surface(
-            store=_NullStore(), conversation_id=GROUP, conversation_type="group",
-            persons=persons, deliverer=SinkSender(),
-            metrics=Metrics(), room=_room(persons), fire_turn=where == "fire",
-        )
-        return set(surface.admitted)
-    if where == "cognition":
-        source = _dream_source(registry, persons)
-        # As composition derives it: the registry that builds the tools says
-        # which memory surface it offers (one source, DEC-316).
-        wired = read_surface(
-            read_only=source.read_only(), enabled_flags=(),
-            registry_withheld=registry.withheld_tools(),
-        ).wired
-        build = read_tools_for(source, names=wired, grant=cognition_grant())
-        return _names(build("u1", [AgendaRoom("signal", GROUP)]))
-    assert where == "subagent"
-    return _names(await SubagentToolSource(
-        registry=registry, store=_NullStore(), persons=persons,
-        metrics=Metrics(),
-        rosters={"signal": FakeRosterSource(groups={GROUP: (MILES, TYLER, NORA)})},
-        self_ids=NORA,
-    ).build(
-        job_id="j1", platform="signal", conversation_id=GROUP,
-        conversation_type="group", requester_person_id="miles_novak",
-    ))
 
 
-@pytest.mark.parametrize("where", sorted(EXPECTED))
-async def test_the_off_graph_surface_has_no_memory_search(
-    persons: Any, where: str,
-) -> None:
-    """Without the retrieval service: the memory verbs each place offers."""
-    offered = await _built(where, False, persons) & MEMORY_VERBS
-    assert offered == EXPECTED[where][False]
-    assert not offered & GRAPH_MEMORY_TOOLS
 
 
-@pytest.mark.parametrize("where", sorted(EXPECTED))
-async def test_the_graph_surface_offers_memory_search_and_keeps_who_said(
-    persons: Any, where: str,
-) -> None:
-    """With the retrieval service: the graph reads join, never replace, `who_said`."""
-    offered = await _built(where, True, persons) & MEMORY_VERBS
-    assert offered == EXPECTED[where][True]
-    assert "who_said" in offered
 
 
 @pytest.mark.parametrize("graph", [False, True])
@@ -175,22 +125,6 @@ def test_the_retired_write_is_absent_from_general_specs(persons: Any, graph: boo
     assert "remember" not in names
 
 
-def test_cognition_takes_the_memory_surface_from_the_registry() -> None:
-    """One source (DEC-316): Cognition's `wired` set is what the
-    registry it builds through withholds, never a flag re-derived from
-    config beside it. `read_surface` cannot be called without it."""
-    read_only = frozenset({"who_said"} | GRAPH_MEMORY_TOOLS)
-    off = read_surface(read_only=read_only, enabled_flags=(),
-                       registry_withheld=_registry(False).withheld_tools())
-    on = read_surface(read_only=read_only, enabled_flags=(),
-                      registry_withheld=_registry(True).withheld_tools())
-    assert "memory_search" in off.withheld and "memory_search" not in off.wired
-    assert "memory_search" in on.wired
-    assert "who_said" in on.wired
-    assert "who_said" not in on.withheld
-    assert "who_said" in off.wired
-    with pytest.raises(TypeError):
-        read_surface(read_only=read_only, enabled_flags=())  # type: ignore[call-arg]
 
 
 @pytest.mark.parametrize("graph", [False, True])

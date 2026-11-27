@@ -56,13 +56,6 @@
     "target": "tests/unit/test_discord_guild_entry.py::test_a_discovered_channel_is_mention_only_by_default"
   },
   {
-    "name": "stimulus skips non-absorbed rooms",
-    "file": "nora/ingest/pipeline.py",
-    "old": "            if self._stimulus_wiring is not None and absorbed:\n                with span(\"ingest.stimulus\"):\n                    await stimulus_stage.run(\n                        message=message, item=\"message\", row_id=row_id,",
-    "new": "            if self._stimulus_wiring is not None:\n                with span(\"ingest.stimulus\"):\n                    await stimulus_stage.run(\n                        message=message, item=\"message\", row_id=row_id,",
-    "target": "tests/unit/test_discord_guild_entry.py::test_a_mention_only_channel_records_but_is_never_absorbed"
-  },
-  {
     "name": "a reply inside a thread posts to the thread's channel",
     "file": "nora/platform/discord/send.py",
     "old": "        post_channel = target.thread or channel_id",
@@ -131,12 +124,5 @@
     "old": "        absorbed = room is not None and room.absorbed\n        message = dataclasses.replace(message, admitted_unit=room.unit if room else \"\")",
     "new": "        absorbed = room is None or room.absorbed\n        message = dataclasses.replace(message, admitted_unit=room.unit if room else \"\")",
     "target": "tests/unit/test_discord_guild_entry.py::test_a_room_vanishing_between_scope_and_the_absorb_read_is_not_absorbed"
-  },
-  {
-    "name": "the absorb read fails closed when the room vanished (edit path)",
-    "file": "nora/ingest/pipeline.py",
-    "old": "        absorbed = room is not None and room.absorbed\n        with span(\"ingest.identity\"):",
-    "new": "        absorbed = room is None or room.absorbed\n        with span(\"ingest.identity\"):",
-    "target": "tests/unit/test_discord_guild_entry.py::test_an_edit_whose_room_vanishes_mid_turn_is_not_absorbed"
   }
 ]

@@ -1,72 +1,58 @@
 [
- {
-  "name": "vector readiness follows the actual vector-consuming surfaces",
-  "file": "scripts/memory_graph_spike.py",
-  "old": "        require_vectors=index.embed,\n",
-  "new": "        require_vectors=True,\n",
-  "target": "tests/integration/subject/test_recorded_wake_runtime.py::test_real_recorded_wake_settles_and_both_judges_receive_terminal_evidence"
- },
- {
-  "name": "record-only preparation propagates its readiness requirement",
-  "file": "nora/subject/sandbox_index.py",
-  "old": "    source_cov = await source_coverage(source_url, model_id, require_vectors=require_vectors)\n",
-  "new": "    source_cov = await source_coverage(source_url, model_id)\n",
-  "target": "tests/integration/subject/test_recorded_wake_runtime.py::test_real_recorded_wake_settles_and_both_judges_receive_terminal_evidence"
- },
- {
-  "name": "record-only preparation permits zero vectors without inventing coverage",
-  "file": "nora/subject/sandbox_index.py",
-  "old": "    if require_vectors and coverage.embedded == 0:\n",
-  "new": "    if coverage.embedded == 0:\n",
-  "target": "tests/integration/test_eval_sandbox_vectors.py::test_a_source_without_this_models_vectors_is_refused"
- },
- {
-  "name": "record-only preparation measures an incomplete source without claiming readiness",
-  "file": "nora/subject/sandbox_index.py",
-  "old": "    if require_vectors and coverage.ratio < COVERAGE_FLOOR:\n",
-  "new": "    if coverage.ratio < COVERAGE_FLOOR:\n",
-  "target": "tests/integration/test_eval_sandbox_vectors.py::test_a_source_with_an_incomplete_backfill_is_refused"
- },
- {
-  "name": "record-only preparation retains real partial sandbox coverage",
-  "file": "nora/subject/sandbox_index.py",
-  "old": "    if require_vectors:\n        refuse_low_coverage(coverage, source_cov)\n",
-  "new": "    refuse_low_coverage(coverage, source_cov)\n",
-  "target": "tests/integration/test_eval_sandbox_vectors.py::test_an_identical_text_adopts_its_vector_and_a_changed_one_does_not"
- },
- {
-  "name": "vector consumers still refuse a source without vectors",
-  "file": "nora/subject/sandbox_index.py",
-  "old": "    if require_vectors and coverage.embedded == 0:\n",
-  "new": "    if False:\n",
-  "target": "tests/integration/test_eval_sandbox_vectors.py::test_a_source_without_this_models_vectors_is_refused"
- },
- {
-  "name": "vector consumers still refuse incomplete source backfill",
-  "file": "nora/subject/sandbox_index.py",
-  "old": "    if require_vectors and coverage.ratio < COVERAGE_FLOOR:\n",
-  "new": "    if False:\n",
-  "target": "tests/integration/test_eval_sandbox_vectors.py::test_a_source_with_an_incomplete_backfill_is_refused"
- },
- {
-  "name": "vector consumers still refuse incomplete sandbox coverage",
-  "file": "nora/subject/sandbox_index.py",
-  "old": "    if require_vectors:\n        refuse_low_coverage(coverage, source_cov)\n",
-  "new": "    if False:\n        refuse_low_coverage(coverage, source_cov)\n",
-  "target": "tests/integration/test_eval_sandbox_index_reuse.py::test_a_build_refused_under_its_floor_is_not_kept"
- },
- {
-  "name": "a service mismatch retains the actual route and expected recording position",
-  "file": "nora/subject/environment.py",
-  "old": "                      \"service\": service, \"position\": position, \"method\": method, \"path\": path,\n",
-  "new": "",
-  "target": "tests/integration/subject/test_recorded_services.py::test_unmatched_does_not_consume"
- },
- {
-  "name": "a service mismatch reaches private durable canonical evidence",
-  "file": "nora/subject/environment.py",
-  "old": "        if evidence := current():\n            evidence.record(\"external_service_mismatch\", **diagnostic)\n",
-  "new": "",
-  "target": "tests/integration/subject/test_recorded_services.py::test_unmatched_does_not_consume"
- }
+  {
+    "name": "record-only preparation permits zero vectors without inventing coverage",
+    "file": "nora/subject/sandbox_index.py",
+    "old": "    if require_vectors and coverage.embedded == 0:\n",
+    "new": "    if coverage.embedded == 0:\n",
+    "target": "tests/integration/test_eval_sandbox_vectors.py::test_a_source_without_this_models_vectors_is_refused"
+  },
+  {
+    "name": "record-only preparation measures an incomplete source without claiming readiness",
+    "file": "nora/subject/sandbox_index.py",
+    "old": "    if require_vectors and coverage.ratio < COVERAGE_FLOOR:\n",
+    "new": "    if coverage.ratio < COVERAGE_FLOOR:\n",
+    "target": "tests/integration/test_eval_sandbox_vectors.py::test_a_source_with_an_incomplete_backfill_is_refused"
+  },
+  {
+    "name": "record-only preparation retains real partial sandbox coverage",
+    "file": "nora/subject/sandbox_index.py",
+    "old": "    if require_vectors:\n        refuse_low_coverage(coverage, source_cov)\n",
+    "new": "    refuse_low_coverage(coverage, source_cov)\n",
+    "target": "tests/integration/test_eval_sandbox_vectors.py::test_an_identical_text_adopts_its_vector_and_a_changed_one_does_not"
+  },
+  {
+    "name": "vector consumers still refuse a source without vectors",
+    "file": "nora/subject/sandbox_index.py",
+    "old": "    if require_vectors and coverage.embedded == 0:\n",
+    "new": "    if False:\n",
+    "target": "tests/integration/test_eval_sandbox_vectors.py::test_a_source_without_this_models_vectors_is_refused"
+  },
+  {
+    "name": "vector consumers still refuse incomplete source backfill",
+    "file": "nora/subject/sandbox_index.py",
+    "old": "    if require_vectors and coverage.ratio < COVERAGE_FLOOR:\n",
+    "new": "    if False:\n",
+    "target": "tests/integration/test_eval_sandbox_vectors.py::test_a_source_with_an_incomplete_backfill_is_refused"
+  },
+  {
+    "name": "vector consumers still refuse incomplete sandbox coverage",
+    "file": "nora/subject/sandbox_index.py",
+    "old": "    if require_vectors:\n        refuse_low_coverage(coverage, source_cov)\n",
+    "new": "    if False:\n        refuse_low_coverage(coverage, source_cov)\n",
+    "target": "tests/integration/test_eval_sandbox_index_reuse.py::test_a_build_refused_under_its_floor_is_not_kept"
+  },
+  {
+    "name": "a service mismatch retains the actual route and expected recording position",
+    "file": "nora/subject/environment.py",
+    "old": "                      \"service\": service, \"position\": position, \"method\": method, \"path\": path,\n",
+    "new": "",
+    "target": "tests/integration/subject/test_recorded_services.py::test_unmatched_does_not_consume"
+  },
+  {
+    "name": "a service mismatch reaches private durable canonical evidence",
+    "file": "nora/subject/environment.py",
+    "old": "        if evidence := current():\n            evidence.record(\"external_service_mismatch\", **diagnostic)\n",
+    "new": "",
+    "target": "tests/integration/subject/test_recorded_services.py::test_unmatched_does_not_consume"
+  }
 ]

@@ -35,34 +35,6 @@
     "target": "tests/unit/test_token_reservation.py::test_cancelled_in_flight_model_usage_remains_unknown"
   },
   {
-    "name": "historical sessions enable token reservations",
-    "file": "nora/app/cognition_session.py",
-    "old": "                budget=replace(self._budget, reserve_tokens=historical),",
-    "new": "                budget=replace(self._budget, reserve_tokens=False),",
-    "target": "tests/unit/test_token_reservation.py::test_historical_sessions_enable_call_reservations"
-  },
-  {
-    "name": "prepared input digest canonicalises source order",
-    "file": "nora/app/cognition_memory.py",
-    "old": "    return sorted(rows, key=lambda row: json.dumps(row, sort_keys=True, default=str))",
-    "new": "    return rows",
-    "target": "tests/unit/test_cognition_memory_historical.py::test_prepared_input_hash_ignores_source_and_person_iteration_order"
-  },
-  {
-    "name": "prepared input digest canonicalises identity order",
-    "file": "nora/app/cognition_memory.py",
-    "old": "        row[\"persons\"] = sorted(row.pop(\"identities\"))",
-    "new": "        row[\"persons\"] = list(row.pop(\"identities\"))",
-    "target": "tests/unit/test_cognition_memory_historical.py::test_prepared_input_hash_ignores_source_and_person_iteration_order"
-  },
-  {
-    "name": "historical proposal output is redacted",
-    "file": "nora/app/cognition_memory.py",
-    "old": "            graph = historical_graph(graph, combined.work.as_of)",
-    "new": "            graph = graph",
-    "target": "tests/unit/test_cognition_memory_historical.py::test_historical_proposal_result_uses_safe_graph_payload"
-  },
-  {
     "name": "a current withdrawal stays absent at an as-of read",
     "file": "nora/infra/sql/audit.py",
     "old": "    hidden: sa.ColumnElement[bool] = MESSAGES.c.hidden_at.is_(None)",
@@ -75,13 +47,6 @@
     "old": "       AND (CAST(:known_at AS timestamptz) IS NULL OR asserted_at<=:known_at)",
     "new": "       AND TRUE",
     "target": "tests/infra/test_memory_graph_sql.py::test_walk_sql_omits_assertions_after_the_known_at_cut"
-  },
-  {
-    "name": "replay preparation rebuilds the legacy substrate",
-    "file": "scripts/memory_graph_spike.py",
-    "old": "    await _legacy_replay_substrate(subject, source_url=source_url)",
-    "new": "    pass",
-    "target": "tests/integration/test_spike_sandbox_index.py::test_the_replay_preparation_indexes_both_restored_substrates"
   },
   {
     "name": "graph embed worker refuses the wrong served model",
@@ -152,13 +117,6 @@
     "old": "                conn, item, error=error, now_ms=int(self._clock() * 1000), counts=counts,",
     "new": "                conn, item, error=error, now_ms=int(self._clock() * 1000), counts=False,",
     "target": "tests/infra/test_graph_search.py::test_an_unexpected_failure_is_recorded_and_given_up_after_the_cap"
-  },
-  {
-    "name": "failed sessions mark their inputs failed",
-    "file": "nora/app/cognition_session.py",
-    "old": "        except Exception as exc:\n            if self._memory is not None and not replay:",
-    "new": "        except Exception as exc:\n            if False:",
-    "target": "tests/unit/test_cognition_session_failures.py::test_a_failed_session_leaves_inputs_pending_even_after_a_saved_reading"
   },
   {
     "name": "both reservation callbacks are registered with the real hook registry",

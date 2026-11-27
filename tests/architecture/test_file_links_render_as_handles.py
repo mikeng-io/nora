@@ -111,22 +111,6 @@ def _record_item(text: str):
     )
 
 
-def _cognition_message() -> str:
-    from nora.language.cognition_render import _message_row
-
-    return _message_row(
-        _record_item(f"budget {URL}"), (), now_ms=2_000, tz=UTC, message_chars=400,
-    ).show(None)
-
-
-def _cognition_own() -> str:
-    from nora.language.cognition_render import _own_row
-
-    return _own_row(
-        _record_item(f"budget {URL}"), now_ms=2_000, tz=UTC, message_chars=400,
-    ).show(None)
-
-
 def _affected_target() -> str:
     from nora.domain.observations import target_context
 
@@ -158,8 +142,6 @@ RENDERERS = {
     "blocks.render_bullets": _bullets,
     "reaction.render_recent": _reaction,
     "tools._transcript_messages": _tool_result,
-    "cognition_render._message_row": _cognition_message,
-    "cognition_render._own_row": _cognition_own,
     "observations.target_context": _affected_target,
     "grading.bind_evidence": _judge_lifecycle,
 }
@@ -174,26 +156,6 @@ def test_each_renderer_shows_the_handle_and_never_the_file_id(name):
 
 def _leaks(out: str) -> bool:
     return "google.com" in out.lower() or "https" in out or ID[:4] in out
-
-
-@pytest.mark.parametrize("own", [False, True])
-def test_a_cut_never_splits_a_link_into_a_raw_stub(own):
-    """The Cognition agenda swaps the link BEFORE cutting a message to its
-    allowance; cutting first would leave half a URL and a prefix of the file id
-    for the model, and a stub long enough to parse would carry a wrong code.
-    Swap first, then cut, at every length and through `_shrunk`'s search."""
-    from nora.language.cognition_render import _message_row, _own_row, _shrunk
-
-    rec = _record_item("y" * 60 + " budget " + URL + " ok")
-    for chars in range(1, 160):
-        row = (
-            _own_row(rec, now_ms=2_000, tz=UTC, message_chars=chars) if own
-            else _message_row(rec, (), now_ms=2_000, tz=UTC, message_chars=chars)
-        )
-        out = row.show(None)
-        assert not _leaks(out), (chars, out)
-        for room in (60, 120, 180, 240):
-            assert not _leaks(_shrunk(row, room)), (chars, room)
 
 
 def test_affected_target_renders_links_before_its_text_cap():
@@ -236,8 +198,6 @@ HAND_BUILT = {
     ("nora/agent/toolkit/transcript.py", "_transcript_messages"):
         "load_transcript / room_read / record_query results",
     ("nora/conversation/adapters/tools/record.py", "who_said"): "who_said hits",
-    ("nora/language/cognition_render.py", "_words"):
-        "the Cognition agenda's message and own-send words (record hits, own_sends)",
     ("nora/domain/blocks.py", "render_rows"): "every line renderer",
     ("nora/domain/blocks.py", "render_elements"): "every element renderer",
     ("nora/domain/blocks.py", "render_bullets"): "every Honcho conclusion and card",
@@ -292,13 +252,11 @@ BUILDERS: dict[str, str | tuple[str, ...]] = {
         "renders record hits through the shared _transcript_messages (HAND_BUILT)",
     "nora/app/fire.py": "blocks: prefill.render_transcript (render_messages)",
     "nora/engagement/context.py": "blocks: prefill.render_transcript (render_messages)",
-    "nora/app/cognition_context.py": "blocks: shared context_render through render_messages",
     "nora/app/wake_floor.py": "blocks: shared context_render through render_messages",
     "nora/engagement/stages/debrief.py": "blocks: debrief_render.render_elements",
     "nora/memory/adapters/debrief_store.py": "graph_debrief._evidence_body (HAND_BUILT)",
     "nora/ingest/relevance_gate.py": "blocks: render_messages",
     "nora/subject/sandbox.py": "blocks: prefill.render_transcript (render_messages)",
-    "nora/infra/sql/character.py": "blocks: character.py's render_row_window",
     "nora/infra/sql/snapshot.py": "blocks: the snapshot's rows reach the eval subject's renderers",
 }
 
@@ -337,10 +295,6 @@ def _mentions_message_text(node: ast.AST) -> bool:
 #: (module, function, keyword) sites that pass a message's text into a DATA
 #: carrier, not a model, each with where the text is rendered later.
 _INPUT_EXEMPT = {
-    ("nora/app/cognition_grounding.py", "_own_sends", "text"):
-        "a RecordItem; cognition_render._words renders it",
-    ("nora/infra/sql/character.py", "episodes", "text"):
-        "an Episode; character and lessons render it through render_row_window",
     ("nora/ingest/stages/edit_gate.py", "run", "message"):
         "a NormalizedMessage for the trigger gate, which reads no model",
     ("nora/subject/knowledge.py", "know", "message"):

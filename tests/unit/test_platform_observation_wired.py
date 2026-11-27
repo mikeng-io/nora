@@ -22,18 +22,12 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
+from nora.agent.dreamer import AdaptorBudget
 from nora.agent.lineage import LineagePolicy
 from nora.agent.prefill import build_prefill
 from nora.agent.room import Room as AgentRoom
 from nora.agent.tools import build_tools
-from nora.app.cognition_grounding import build_grounder
-from nora.app.cognition_session import (
-    AdaptorBudget,
-    CognitionRunResult,
-    CognitionSessionRunner,
-)
-from nora.app.wake import WakeEvaluator
-from nora.domain.cognition_session import Room
+from nora.app.cognition_agent_runner import CognitionRunResult
 from nora.domain.models import EditTarget, NormalizedMessage, PersonRef, Touch
 from nora.domain.notes import SourceRef
 from nora.domain.observations import (
@@ -50,7 +44,6 @@ from nora.domain.observations import (
     revision_label,
 )
 from nora.domain.ports import EngageDecision, EngagementRequest
-from nora.domain.stimuli import NewStimulus, WakePolicy
 from nora.engagement.context import (
     _OBSERVATION_TARGET_MAX,
     _SOURCE_OBJECT_MAX,
@@ -65,10 +58,8 @@ from nora.platform.bridge.rehydrate import (
 )
 from nora.policy import Conversation, Policy
 from nora.testing import FakeRecordStore
-from nora.testing.cognition_store import InMemoryCognitionStore
 from nora.testing.note_store import InMemoryNoteStore
 from nora.testing.observations import FakeObservationStore
-from nora.testing.stimuli import InMemoryStimulusStore
 from tests.fakes import SinkSender
 
 HK = ZoneInfo("Asia/Hong_Kong")
@@ -226,36 +217,6 @@ async def test_old_poll_pushed_beyond_40_messages_still_surfaces():
     assert "room-a" not in prompt and "acct" not in prompt
 
 
-async def test_source_objects_and_shared_state_render_in_one_standing_block():
-    from nora.domain.cognition_ground import Grounding
-    from nora.domain.cognition_session import AgendaItem
-    from nora.domain.shared_state import SharedEntry, SharedView
-    from nora.language.cognition_render import render_agenda
-
-    audit, store = FakeRecordStore(), FakeObservationStore()
-    await _seed(store)
-    ctx = await _assembler(audit, store).assemble(request=_request())
-    shared = SharedView(
-        unit="u1", status="ok", as_of_ms=NOW_MS,
-        entries=(SharedEntry(
-            kind="decision", id="d-generated", scope="unit", status="open",
-            subject="Generated choice remains conditional",
-        ),),
-    )
-    tagged = _prompt(dataclasses.replace(ctx, shared=shared))
-    item = AgendaItem(
-        kind="message", room=Room("signal", CID), summary="",
-        stimulus_ids=(), cues=(), surprise=0.0,
-    )
-    cognition = render_agenda(
-        [item], grounding=Grounding(source_objects={f"signal:{CID}": ctx.source_objects}),
-        now_ms=NOW_MS, tz=HK, shared=shared,
-    )
-    for prompt in (tagged, cognition):
-        assert prompt.count("<standing ") == 1
-        assert "Generated choice remains conditional" in prompt
-        assert '<source_object kind="poll"' in prompt
-        assert "closed" in prompt
 
 
 async def test_vote_and_close_with_no_new_human_message_still_render():
@@ -443,145 +404,6 @@ async def _ret(value: Any) -> Any:
     return value
 
 
-@pytest.mark.parametrize("target_deleted", [False, True])
-async def test_the_session_runner_assembles_and_consumes_an_observation_stimulus(target_deleted):
-    """The REAL `CognitionSessionRunner` + `WakeEvaluator`: an observation
-    stimulus wakes a session, the REAL grounder grounds it, the model's
-    prompt carries the event — and the stimulus is consumed exactly once."""
-    obs_store = FakeObservationStore()
-    ids = await _seed(obs_store)
-    for name, kind, payload, subject in (
-        ("share", "artifact", ArtifactPayload(artifact_kind="post", custody="declared"), ""),
-        ("join", "membership", MembershipPayload(state="member"), "new-member"),
-    ):
-        ids[name] = await obs_store.append(
-            observation=_obs(kind=kind, ref=name, op="create" if kind == "artifact" else "add",
-                             payload=payload, subject=subject, ago=1),
-            event_id=f"session-{name}", source_digest=f"session-{name}")
-        assert ids[name] is not None
-
-    ids["delivery"] = await obs_store.append(
-        observation=_obs(kind="artifact", ref="delivery", op="create", ago=1,
-                         payload=ArtifactPayload(artifact_kind="post", custody="declared")),
-        event_id="delivery", source_digest="delivery",
-        target_message_id=8, delivered_message_id=9)
-
-    ledger = InMemoryCognitionStore()
-    stimuli = InMemoryStimulusStore(ledger=ledger)
-    agent = _CaptureAgent()
-    notes = InMemoryNoteStore()
-    await _note_with_ref(notes, _POLL_HANDLE)
-    await _newer_heads(obs_store, 9)
-
-    async def no_notes(unit: str) -> Any:
-        return await notes.standing(unit=unit)
-
-    async def no_events(unit: str, platform: str, cid: str) -> Any:
-        return ()
-
-    class _NoRecords:
-        async def by_refs(self, refs: Any, rooms: Any, **kw: Any) -> Any:
-            from nora.domain.models import TranscriptRow
-            from nora.domain.record_query import RecordHit, RecordRefHit
-
-            if ("signal", CID) not in rooms:
-                return ()
-            hits = []
-            if ("messages", 9) in refs:
-                hits.append(RecordRefHit("messages", 9, RecordHit(
-                    "signal", CID,
-                    TranscriptRow(9, "author", "Ada", NOW_MS,
-                                  "This is the co-delivered utterance",
-                                  False, "observed", None))))
-            # The AFFECTED row — `target_message_id`, an older message the
-            # event acted on, independent of the co-delivered caption.
-            if ("messages", 8) in refs:
-                hits.append(RecordRefHit("messages", 8, RecordHit(
-                    "signal", CID,
-                    TranscriptRow(8, "target-author", "Target Author", NOW_MS - 60_000,
-                                  "the affected words",
-                                  False, "observed", None, person_id="target-person"),
-                    deleted=target_deleted)))
-            return tuple(hits)
-
-        async def own_sends(self, rooms: Any, *, start_ms: int,
-                            end_ms: int, limit: int, **kw: Any) -> Any:
-            return ()
-
-    grounder = build_grounder(
-        records=_NoRecords(), persons=PERSONS, media_join=None,
-        note_index=no_notes, events_in=no_events,
-        lineage=LineagePolicy(rooms=(), mode="off"),
-        unit_rooms=lambda unit: {("signal", CID)},
-        room_label=lambda platform, cid: "Room A",
-        observations=obs_store)
-
-    policy = WakePolicy(
-        quiet_seconds=0, cue_quiet_seconds=0, batch_max=100,
-        max_age_seconds=3600, cooldown_seconds=0, max_concurrent_sessions=2,
-        session_seconds=60, session_timeout_seconds=900)
-    clock_ms = [NOW_MS]
-
-    runner = CognitionSessionRunner(
-        store=ledger, stimulus_store=stimuli, agent_runner=agent,
-        home_rooms={"u1": Room("signal", CID)},
-        read_tools_for=lambda unit, rooms: [],
-        skill_text_for=lambda: "", grounder=grounder,
-        doctrine_text="DOCTRINE", doctrine_sha256="sha",
-        open_note_titles=lambda *a, **k: _ret(()),
-        open_events=lambda *a, **k: _ret(()),
-        prior_standing=lambda *a, **k: _ret(None),
-        budget=AdaptorBudget(turns=4, total_tokens=1000, output_tokens=100,
-                             timeout_seconds=30.0),
-        cooldown_seconds=0.0, units=("u1",),
-        session_timeout_seconds=policy.session_timeout_seconds,
-        max_items=12, metrics=Metrics(),
-        clock=lambda: clock_ms[0] / 1000)
-    ev = WakeEvaluator(
-        store=stimuli, units=lambda: ("u1",), policy=policy, metrics=Metrics(),
-        tz=HK, clock=lambda: clock_ms[0] / 1000, settle_seconds=0,
-        on_wake=runner.on_wake)
-
-    for name, kind in (("close", "poll"), ("pin", "pin"),
-                       ("share", "artifact"), ("join", "membership"),
-                       ("delivery", "artifact")):
-        sid = await stimuli.append(stimulus=NewStimulus(
-            unit="u1", kind="observation", item=kind,
-            ref=f"platform_observation:{ids[name]}", at_ms=NOW_MS,
-            platform="signal", conversation_id=CID), recorded_at_ms=NOW_MS)
-        assert sid is not None
-
-    await ev.tick()
-    await ev.drain()
-
-    assert agent.calls == 1
-    (prompt,) = agent.prompts
-    assert '<retained_objects' in prompt
-    assert f'object="{_POLL_HANDLE}" matter="Dinner venue still open"' in prompt
-    assert "<observation" in prompt and 'kind="poll"' in prompt
-    for kind in ("pin", "artifact", "membership"):
-        assert f'kind="{kind}"' in prompt
-    assert 'op="revise"' in prompt
-    assert f'rev="{revision_label(3, "rev")}"' in prompt
-    assert "closed" in prompt and "p1" not in prompt
-    assert "This is the co-delivered utterance" in prompt
-    # The two links stay independent: the co-delivered utterance is a plain
-    # `<m>` sibling, the AFFECTED message a marked `target` row — labelled
-    # context, never a fresh utterance and never attributed to the actor.
-    affected = next(ln for ln in prompt.splitlines() if ln.startswith('<m n="8"'))
-    assert 'target="yes"' in affected and 'from="Target Author"' in affected
-    if target_deleted:
-        assert 'deleted="yes"' in affected
-        assert "the affected words" not in prompt
-    else:
-        assert "the affected words" in affected
-    delivered = next(ln for ln in prompt.splitlines() if ln.startswith('<m n="9"'))
-    assert "target=" not in delivered
-
-    clock_ms[0] += 120_000
-    await ev.tick()
-    await ev.drain()
-    assert agent.calls == 1
 
 
 async def test_the_wire_contract_refuses_a_wrong_scope_and_a_malformed_row():
@@ -1351,52 +1173,6 @@ async def test_scope_invalid_and_unresolvable_refs_are_explicit_never_dropped():
     assert 'unresolved="yes"' in prompt
 
 
-async def test_the_grounder_keeps_a_retained_poll_past_eight_newer_objects():
-    """The Cognition seam: `build_grounder` resolves the note's ref beside
-    the 8-head discovery page — the retained object keeps its CURRENT state
-    and never doubles a head the page already shows."""
-    obs_store = FakeObservationStore()
-    await _seed(obs_store)
-    await _newer_heads(obs_store, 9)
-    notes = InMemoryNoteStore()
-    await _note_with_ref(notes, _POLL_HANDLE)
-
-    async def _index(unit: str) -> Any:
-        return await notes.standing(unit=unit)
-
-    async def _no_events(unit: str, platform: str, cid: str) -> Any:
-        return ()
-
-    class _NoRecords:
-        async def by_refs(self, refs: Any, rooms: Any, **kw: Any) -> Any:
-            return ()
-
-        async def own_sends(self, rooms: Any, *, start_ms: int,
-                            end_ms: int, limit: int, **kw: Any) -> Any:
-            return ()
-
-    grounder = build_grounder(
-        records=_NoRecords(), persons=PERSONS, media_join=None,
-        note_index=_index, events_in=_no_events,
-        lineage=LineagePolicy(rooms=(), mode="off"),
-        unit_rooms=lambda unit: {("signal", CID)},
-        observations=obs_store)
-    from nora.domain.cognition_session import AgendaItem
-    item = AgendaItem(
-        kind="message", room=Room("signal", CID), summary="",
-        stimulus_ids=(), cues=(), surprise=0.0)
-
-    grounding = await grounder("u1", [item], [])
-
-    key = f"signal:{CID}"
-    assert len(grounding.source_objects.get(key, ())) == 8
-    assert _POLL_HANDLE not in {
-        o.handle for o in grounding.source_objects.get(key, ())}
-    retained = grounding.retained_objects.get(key, ())
-    assert len(retained) == 1
-    assert retained[0].head is not None
-    assert "closed" in (retained[0].head.state or "")
-    assert retained[0].matter == "Dinner venue still open"
 
 
 async def test_note_revision_replaces_object_refs_atomically():
@@ -1424,106 +1200,8 @@ async def test_note_revision_replaces_object_refs_atomically():
     assert [r.handle for r in found[0].object_refs] == [other]
 
 
-async def test_retained_ref_verbs_accept_shown_handles_and_refuse_unseen_objects():
-    from nora.domain.cognition_ground import Grounding
-    from nora.testing.cognition_grounding import StaticGrounder
-    from tests.unit.cognition_rig import GOOD_BODY, NOTE, RECORDS, session
-
-    audit, store = FakeRecordStore(), FakeObservationStore()
-    await _seed(store)
-    ctx = await _assembler(audit, store).assemble(request=_request())
-    grounding = Grounding(
-        records=dict(RECORDS), source_objects={f"signal:{CID}": ctx.source_objects})
-    answers = []
-    forged = object_handle("poll", "unseen", account_key="acct")
-    await store.append(
-        observation=_obs(kind="poll", ref="unseen", op="create", ago=1,
-                         payload=PollPayload(question="Unshown question", options=(("a", "A"),))),
-        event_id="unshown", source_digest="unshown")
-
-    async def behave(by, tools):
-        # The model needs only the object handle, never internal room/account ids.
-        for refs in ([{"handle": _POLL_HANDLE, "conversation_id": CID}],
-                     [_POLL_HANDLE, _POLL_HANDLE], [_POLL_HANDLE] * 9):
-            denied = await by["note_create"](body=GOOD_BODY, object_refs=refs, **NOTE)
-            assert denied["status"] == "refused"
-            assert await stores.notes.standing(unit="u") == ()
-        answers.append(await by["note_create"](
-            body=GOOD_BODY, object_refs=[_POLL_HANDLE], **NOTE))
-        if answers[-1]["status"] != "ok":
-            return
-        nid = answers[-1]["note_id"]
-        note, revision = await stores.notes.read(unit="u", note_id=nid)
-        assert note.object_refs == (SourceRef("signal", CID, _POLL_HANDLE),)
-        answers.append(await by["note_revise"](
-            note_id=nid, body=GOOD_BODY, parent_revision_id=revision.id,
-            object_refs=[forged]))
-        assert answers[-1]["status"] == "refused"
-        assert (await stores.notes.read(unit="u", note_id=nid))[1].id == revision.id
-        answers.append(await by["note_revise"](
-            note_id=nid, body=GOOD_BODY, parent_revision_id=revision.id,
-            object_refs=[]))
-        assert answers[-1]["status"] == "ok"
-        assert (await stores.notes.read(unit="u", note_id=nid))[0].object_refs == ()
-
-    from tests.unit.cognition_rig import Stores
-    stores = Stores()
-    await session(behave, stores=stores, runner_kwargs={
-        "grounder": StaticGrounder(grounding), "observations": store})
-    assert answers and answers[0]["status"] == "ok", answers
 
 
-async def test_retained_sources_report_the_bound_and_never_read_another_room():
-    from nora.domain.cognition_session import AgendaItem
-    from nora.domain.notes import NOTE_OBJECT_REFS_MAX
-    from nora.domain.observations import handle_of
-    from nora.language.cognition_render import render_agenda
-    audit, store, notes = FakeRecordStore(), FakeObservationStore(), InMemoryNoteStore()
-    handles = []
-    for i in range(14):
-        rid = await store.append(
-            observation=_obs(kind="poll", ref=f"tracked-{i}", op="create", ago=1,
-                             payload=PollPayload(question=f"Tracked question {i}",
-                                                 options=(("a", "A"),))),
-            event_id=f"tracked-{i}", source_digest=f"tracked-{i}")
-        assert rid
-        head = await store.current(scope=SCOPE, kind="poll", object_ref=f"tracked-{i}")
-        handles.append(handle_of(head))
-    for i in range(0, len(handles), NOTE_OBJECT_REFS_MAX):
-        note = await _note_with_ref(notes, handles[i])
-        await notes.append_revision(
-            unit="u1", note_id=note.id, body="tracked questions", now_ms=NOW_MS,
-            parent_revision_id=note.head_revision_id, established_by="test",
-            object_refs=tuple(SourceRef("signal", CID, h)
-                              for h in handles[i:i+NOTE_OBJECT_REFS_MAX]))
-    await _newer_heads(store, 14)
-    ctx = await _retained_source_view(audit, store, notes)
-    assert len(ctx.retained_sources) == 12 and ctx.retained_sources_more == 2
-    assert '<source_objects_more count="2"' in _prompt(ctx)
-    async def index(unit):
-        return await notes.standing(unit=unit)
-    class NoRecords:
-        async def by_refs(self, refs, rooms, **kw):
-            return ()
-        async def own_sends(self, rooms, *, start_ms, end_ms, limit, **kw):
-            return ()
-    async def no_events(unit, platform, cid):
-        return ()
-    grounder = build_grounder(
-        records=NoRecords(), persons=PERSONS, media_join=None, note_index=index,
-        events_in=no_events, lineage=LineagePolicy(rooms=(), mode="off"),
-        unit_rooms=lambda unit: {("signal", CID)}, observations=store)
-    item = AgendaItem(kind="message", room=Room("signal", CID), summary="",
-                      stimulus_ids=(), cues=(), surprise=0.0)
-    grounded = await grounder("u1", [item], [])
-    assert len(grounded.retained_objects[f"signal:{CID}"]) == 8
-    assert grounded.retained_objects_more[f"signal:{CID}"] == 6
-    prompt = render_agenda([item], stimuli={}, grounding=grounded, now_ms=NOW_MS)
-    assert '<retained_objects' in prompt and 'not_listed="6"' in prompt
-    note = (await notes.standing(unit="u1"))[0]
-    with pytest.raises(ValueError, match="at most"):
-        dataclasses.replace(note, object_refs=tuple(SourceRef("signal", CID, h)
-                            for h in handles[:NOTE_OBJECT_REFS_MAX+1]))
 
 
 async def test_a_withheld_note_does_not_leak_its_title_through_retained_sources():
@@ -1571,36 +1249,6 @@ async def test_forwarded_metadata_detail_projects_its_source_reference():
     assert head.state["fields"]["forward_origin"] == origin
 
 
-async def test_a_handle_shown_for_two_rooms_cannot_silently_bind_the_last_room():
-    from nora.domain.cognition_ground import Grounding
-    from nora.testing.cognition_grounding import StaticGrounder
-    from tests.unit.cognition_rig import GOOD_BODY, NOTE, RECORDS, A, B, session
-    store, audit = FakeObservationStore(), FakeRecordStore()
-    # Signal really uses object_ref=pin_set under the same account in every group.
-    for room in (A, B):
-        await store.append(
-            observation=_obs(kind="pin", ref="pin_set", op="add", ago=1,
-                             room=room.conversation_id,
-                             payload=PinPayload(message=EditTarget(message_id=room.conversation_id))),
-            event_id=f"pins-{room.conversation_id}", source_digest=f"pins-{room.conversation_id}")
-    a = await _assembler(audit, store).assemble(request=_request())
-    b_request = dataclasses.replace(
-        _request(), message=dataclasses.replace(
-            _request().message, conversation_id=B.conversation_id))
-    b = await _assembler(audit, store).assemble(request=b_request)
-    assert a.source_objects[0].handle == b.source_objects[0].handle
-    grounding = Grounding(records=dict(RECORDS), source_objects={
-        f"signal:{A.conversation_id}": a.source_objects,
-        f"signal:{B.conversation_id}": b.source_objects})
-    answers=[]
-    async def behave(by, tools):
-        answers.append(await by["note_create"](
-            body=GOOD_BODY, item=0, object_refs=[a.source_objects[0].handle], **NOTE))
-    stores, _ = await session(behave, rooms=(A,B), runner_kwargs={
-        "grounder":StaticGrounder(grounding), "observations":store})
-    assert answers[0]["status"] == "refused", answers
-    assert answers[0]["reason"] == "ambiguous_object_ref"
-    assert await stores.notes.standing(unit="u") == ()
 
 
 async def test_a_retained_signal_contact_keeps_top_level_values():

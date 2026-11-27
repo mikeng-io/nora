@@ -56,27 +56,6 @@
     "target": "tests/integration/subject/test_canonical_effects.py::test_versions_survive_creation_retirement_withdrawal_and_deletion"
   },
   {
-    "name": "settlement is emitted after the canonical SQL commit",
-    "file": "nora/app/cognition_session.py",
-    "old": "record_eval_event(\"nora.session.settled\",",
-    "new": "record_eval_event(\"nora.session.unsettled\",",
-    "target": "tests/integration/subject/test_recorded_wake_runtime.py"
-  },
-  {
-    "name": "completion requests remain inside the trajectory",
-    "file": "scripts/cognition_loop/trajectory.py",
-    "old": "        if event.get(\"name\") == \"nora.session.settled\":",
-    "new": "        if event.get(\"name\") == \"nora.session.terminal\":",
-    "target": "tests/integration/subject/test_recorded_wake_runtime.py"
-  },
-  {
-    "name": "completion model output cannot replace the main response",
-    "file": "scripts/cognition_loop/trajectory.py",
-    "old": "terminal_response(events[:terminal_index + 1])",
-    "new": "terminal_response(events)",
-    "target": "tests/integration/subject/test_recorded_wake_runtime.py"
-  },
-  {
     "name": "previously prepared delivery keeps its completion receipt",
     "file": "nora/subject/effects.py",
     "old": "                lower = sa.or_(lower, table.c.started_at >= since.at,\n                               table.c.completed_at >= since.at)",

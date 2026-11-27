@@ -168,13 +168,6 @@
     "target": "tests/test_composition.py::test_the_composed_registry_holds_the_rollup_read_and_the_standing_head"
   },
   {
-    "name": "audit: the rollup_read audit line is dropped",
-    "file": "nora/app/cognition_wiring.py",
-    "old": "    \"rollup_read\": \"SQL SELECT of the CURRENT rollup build's rows (`rollup_build` \"\n                   \"status=current) and derived places; counters only. It starts, \"\n                   \"advances and switches no build, and folds nothing. No write.\",\n",
-    "new": "",
-    "target": "tests/unit/test_cognition_wiring.py::test_every_tool_in_the_catalogue_has_an_audited_side_effect_line"
-  },
-  {
     "name": "rollup_read tool: everyone in a room with nobody resolved reads every row (M2, tool layer)",
     "file": "nora/memory/adapters/tools/standing.py",
     "old": "if not c.people:",

@@ -53,12 +53,6 @@ CONVERTED = {
     "nora/engagement/debrief_render.py":
         "the window the fold and the grounding verdict read",
     "nora/language/context_render.py": "shared chronological transcript via render_messages",
-    "nora/language/register_render.py": "source objects and retained events via render_elements",
-    "nora/language/cognition_render.py":
-        "the Cognition session's agenda: each item's messages through "
-        "`render_row_window` (`n` is the message's own id, so what the model "
-        "reads is what `note_create` requires) and its Rollup rows through "
-        "`render_elements`",
 }
 
 #: Modules that call a row renderer and are NOT rendering a transcript. The
@@ -76,7 +70,6 @@ _NOT_A_TRANSCRIPT = {
     "nora/language/note_render.py": "renders the note index, not a transcript",
     "nora/language/memo_render.py": "renders the memo index (DEC-306), not a transcript",
     # The `<lessons>` block: one element per active lesson, her own practice.
-    "nora/language/lesson_render.py": "renders her lessons, not a transcript",
     # The doctrine check's law list: one element per law rule, doctrine text.
     "nora/language/doctrine_check.py": "renders law rules for the doctrine check, not a transcript",
     # The SKILL CATALOGUE — one element per installed skill, name and
@@ -88,7 +81,6 @@ _NOT_A_TRANSCRIPT = {
     # when, venue, revision, the title as content), through the same `render_elements` the
     # transcripts use. `note_render.py`'s own reason one index over: it renders no
     # message.
-    "nora/language/event_render.py": "renders the event index, not a transcript",
     # THE SUB-AGENT'S BRIEF, not a transcript: its objective, inputs and documents and
     # each decision (question, answer, who made it) as elements through `render_elements`.
     # The worker starts with no conversation at all.
@@ -97,7 +89,6 @@ _NOT_A_TRANSCRIPT = {
     # page as `part` elements for the browse agent, like the sub-agent's.
     "nora/language/web_browse_render.py": "renders web retrieval evidence and action choices",
     # THE HELD TOPIC INDEX — one element per held account, its own words, no message.
-    "nora/language/topic_render.py": "renders the topic account index, not a transcript",
     "nora/memory/adapters/graph_row_render.py": "renders scoped Cognitive Graph presentation rows",
     "nora/memory/adapters/review_blocks.py": "renders the judge's due claims and scoped evidence",
 }

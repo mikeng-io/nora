@@ -34,8 +34,8 @@ from nora.testing.managed import (
     FakeTopologySource,
 )
 from tests.fakes import SinkSender
-from tests.unit.test_cognition_record_query_ids import NOW, ROOM, _Record, _stream
-from tests.unit.test_cognition_record_query_ids import policy as policy
+from tests.unit.record_query_support import NOW, ROOM, _Record, _stream
+from tests.unit.record_query_support import policy as policy
 
 PERSON = 'p1'
 SCOPE = Scope(ScopeKind.ROOM, 'signal/' + ROOM)
@@ -231,7 +231,7 @@ async def test_a_later_read_uses_its_actual_room_and_only_shown_names_stay_priva
     tmp_path, example_config,
 ):
     from nora.policy import load_policy
-    from tests.unit.test_cognition_record_query_ids import _POLICY
+    from tests.unit.record_query_support import _POLICY
     from tests.unit.test_managed_memory_scope import _screened_lookup
 
     path = tmp_path / 'policy.toml'
@@ -291,6 +291,7 @@ def test_name_custody_uses_supplied_canonical_speaker_labels(person_name, sender
     from types import SimpleNamespace
 
     from nora.agent.comprehend_tools import LookupState
+
     from nora.agent.fetch_watch import GraphFetched
 
     state = LookupState(GraphFetched(), "generated-unit", 1, None, None, ())

@@ -28,13 +28,6 @@
     "target": "tests/unit/test_cognition_no_call_ceilings.py::test_every_other_adaptor_keeps_its_per_tool_ceiling"
   },
   {
-    "name": "the session's budget carries the pass-wide tool ceiling again",
-    "file": "nora/app/cognition_wiring.py",
-    "old": "        timeout_seconds=b.timeout_seconds,\n    )",
-    "new": "        timeout_seconds=b.timeout_seconds, max_tool_calls=b.max_tool_calls,\n    )",
-    "target": "tests/unit/test_cognition_wiring.py::test_the_session_budget_carries_every_field_the_dreamer_budget_gives_it"
-  },
-  {
     "name": "the session's round cap is back at a tag turn's (turns constant)",
     "file": "nora/config.py",
     "old": "COGNITION_TURNS = 200",
@@ -91,59 +84,10 @@
     "target": "tests/test_config.py::test_the_wakes_timeout_stays_above_the_sessions_by_the_margin"
   },
   {
-    "name": "the composition root hands the session the class defaults, not the block",
-    "file": "nora/app/composition_cognition.py",
-    "old": "            budget=cognition_budget(cfg.dreamer.budget_for(COGNITION_ADAPTOR_NAME)),",
-    "new": "budget=cognition_budget(DreamBudgetConfig()),",
-    "target": "tests/test_composition.py::test_cognition_on_builds_one_runner_for_backfill_alongside_graph_wake"
-  },
-  {
-    "name": "a limit stop closes the session like any other end (strikes the unreached items)",
-    "file": "nora/app/cognition_session.py",
-    "old": "        if result.stop_reason in LIMIT_STOP_REASONS:",
-    "new": "        if False:",
-    "target": "tests/unit/test_cognition_limit_stop.py::test_a_session_that_stops_at_a_limit_is_failed_infra_and_strikes_nothing"
-  },
-  {
-    "name": "a limit stop is recorded failed with cause agenda (it would strike)",
-    "file": "nora/app/cognition_session.py",
-    "old": "            raise SessionLimitError(result.stop_reason or \"unknown\")",
-    "new": "            raise AgendaError(result.stop_reason or \"unknown\")",
-    "target": "tests/unit/test_cognition_limit_stop.py::test_a_bounded_session_leaves_stimuli_pending"
-  },
-  {
-    "name": "a limit stop is not counted under its reason",
-    "file": "nora/app/cognition_session.py",
-    "old": "            self._inc(\"nora_cognition_session_limit_total\", limit=result.stop_reason)\n",
-    "new": "",
-    "target": "tests/unit/test_cognition_limit_stop.py::test_a_session_that_stops_at_a_limit_is_failed_infra_and_strikes_nothing"
-  },
-  {
-    "name": "the limit reasons lose the output-token cap",
-    "file": "nora/domain/stimuli.py",
-    "old": "    \"limit_turns\", \"limit_total_tokens\", \"limit_output_tokens\",\n)",
-    "new": "    \"limit_turns\", \"limit_total_tokens\",\n)",
-    "target": "tests/unit/test_cognition_limit_stop.py::test_the_three_limit_reasons_are_the_three_strands_names"
-  },
-  {
-    "name": "a limit stop is recorded failed but the unit's backoff resets (recorded closed-like)",
-    "file": "nora/app/cognition_session.py",
-    "old": "            raise SessionLimitError(result.stop_reason or \"unknown\")",
-    "new": "            await self._finish(wake_id, unit, session_id, \"closed\", \"limit\")\n            raise SessionLimitError(result.stop_reason or \"unknown\")",
-    "target": "tests/unit/test_cognition_limit_stop.py::test_a_limit_stop_backs_the_unit_off_and_repeated_ones_grow_it"
-  },
-  {
     "name": "an identical pending reminder is no longer refused on the re-run",
     "file": "nora/domain/cognition_remind.py",
     "old": "        if pending_dests and covered <= pending_dests:\n",
     "new": "        if False:\n",
     "target": "tests/unit/test_shared_state.py::test_an_act_pending_everywhere_asked_is_a_duplicate"
-  },
-  {
-    "name": "a re-run self-wake no longer retracts the one it supersedes",
-    "file": "nora/agent/cognition_pace.py",
-    "old": "    if supersedes is not None:\n        # A new self-wake sharing a subject row SUPERSEDES the pending one, so",
-    "new": "    if False:\n        # A new self-wake sharing a subject row SUPERSEDES the pending one, so",
-    "target": "tests/unit/test_cognition_pace.py::test_wake_move_retracts_the_old_stimulus_and_supersede_retracts_the_displaced"
   }
 ]

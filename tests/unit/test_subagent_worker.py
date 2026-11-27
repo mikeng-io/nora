@@ -23,6 +23,7 @@ from strands.models.model import Model
 
 from nora.agent import factory, subagent_tools
 from nora.agent.dream_guard import DreamGuard
+from nora.agent.dreamer import AdaptorBudget
 from nora.agent.registry import ToolRegistry
 from nora.agent.room import Room
 from nora.agent.subagent_tools import (
@@ -33,7 +34,6 @@ from nora.agent.subagent_tools import (
     SubagentToolSource,
     granted_names,
 )
-from nora.app.cognition_session import AdaptorBudget
 from nora.app.documents_service import DocumentService
 from nora.app.subagent_backend import SubagentBackend
 from nora.app.subagent_runner import SubagentRunner, load_system_prompt

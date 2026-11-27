@@ -161,12 +161,12 @@ _MAY_DIFFER = {
     # image_gen.enabled is the LIVE operator decision; the template stays the ships-OFF
     # default (DEC-43 posture) so a fresh deployment is inert by default.
     "image_gen.enabled",
-    # The LIVE operator's ON/OFF decisions: the cognition loop, obs error reporting,
+    # The LIVE operator's ON/OFF decisions: obs error reporting,
     # online/participation/relevance-gate/whatsapp/tts are all enabled in the deployment
     # while the template ships every one OFF (DEC-43 posture: a copied config must never
     # start speaking, reporting or participating on its own). Same class as
     # image_gen.enabled above.
-    "cognition.enabled", "obs.errors.enabled",
+    "obs.errors.enabled",
     "obs.errors.environment", "online.enabled", "participation.enabled",
     "platforms.whatsapp.enabled", "relevance_gate.enabled",
     "relevance_gate.shadow", "speech.tts.enabled",
@@ -188,7 +188,7 @@ _MAY_DIFFER = {
     "speech.tts.provider", "speech.tts.sidecars",
     # The LIVE operator's ON decision for the culture fold; the template ships the DEC-43
     # posture, OFF, so a copied config does not start folding a room it has never read.
-    # Same class as `cognition.enabled` above.
+    # Same class as `image_gen.enabled` above.
     "culture.enabled",
     # `[dreamer] max_tokens` — the Dreamer's own per-call ceiling, `0` meaning «inherit
     # `[llm] max_tokens`». The TEMPLATE must keep the sentinel: the field's whole posture

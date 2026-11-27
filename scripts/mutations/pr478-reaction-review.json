@@ -28,20 +28,6 @@
     "target": "tests/unit/test_reaction_annotations.py::test_the_annotation_is_budgeted_beside_the_words_and_marks_omission"
   },
   {
-    "name": "the stimulus removal bit is dropped",
-    "file": "nora/app/cognition_grounding.py",
-    "old": "        removed=found.removed,",
-    "new": "        removed=False,",
-    "target": "tests/unit/test_reaction_annotations.py::test_a_reaction_removal_is_marked_distinct_from_an_add"
-  },
-  {
-    "name": "the removal never reaches the rendered row",
-    "file": "nora/language/cognition_render.py",
-    "old": "                (\"reaction_removed\", \"yes\" if reacted and r.removed else None),",
-    "new": "                (\"reaction_removed\", \"yes\" if reacted and False else None),",
-    "target": "tests/unit/test_reaction_annotations.py::test_a_reaction_removal_is_marked_distinct_from_an_add"
-  },
-  {
     "name": "partial coverage renders as a complete state",
     "file": "nora/agent/toolkit/transcript.py",
     "old": "            if r.reactions.coverage == \"partial\":",

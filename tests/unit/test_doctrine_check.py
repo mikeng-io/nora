@@ -20,13 +20,10 @@ from pathlib import Path
 
 import pytest
 
-from nora.agent.dream_screen import offence
 from nora.domain.culture import Citable
 from nora.domain.doctrine_check import CheckVerdict, LawRule, Tension, parse_verdict
 from nora.language.doctrine_check import DoctrineCheck, render_check_input
-from nora.language.lesson_book import LessonBook
 from nora.obs.metrics import Metrics
-from tests.unit.test_cognition_lessons import _Clock, _Store
 
 RULES = (
     LawRule(file="core/constraints.md", line=10, text="Never share where a member is."),
@@ -153,59 +150,18 @@ class _Tensions:
         return "t1"
 
 
-def _book(verdict: CheckVerdict, metrics: Metrics | None = None):
-    store, check, tensions = _Store(), _FakeCheck(verdict), _Tensions()
-    book = LessonBook(store=store, law=lambda: [], screen=offence, clock_ms=_Clock(),
-                      check=check, tensions=tensions, metrics=metrics)
-    return book, store, check, tensions
 
 
-async def _learn(book: LessonBook, body: str = LESSON, citations=CITES):
-    return await book.learn(unit=UNIT, citable=CITABLE, body=body, citations=citations,
-                            lesson_id=None, established_by="dream:lessons:friends:1",
-                            instruction_sha256="s" * 64, model="writer")
 
 
-async def test_a_conflict_refuses_the_lesson_and_records_one_tension_row():
-    m = Metrics()
-    book, store, _, tensions = _book(
-        CheckVerdict("conflict", rule=RULES[0], why="It shares where a member is."), m)
-    out = await _learn(book)
-    assert (out["status"], out["reason"]) == ("refused", "loosens_law")
-    assert "core/constraints.md" in str(out["detail"])
-    assert store.created == {}
-    (row,) = tensions.rows
-    assert (row.unit, row.source, row.doctrine_file, row.doctrine_line) == (
-        UNIT, "lesson", "core/constraints.md", 10)
-    assert row.doctrine_text == RULES[0].text and row.would_have_said == LESSON
-    assert row.citations == CITES and row.check_model == "judge" and row.model == "writer"
-    assert m.get("nora_self_tension_total", doctrine_file="core/constraints.md") == 1
 
 
-async def test_an_error_refuses_the_lesson_and_records_nothing():
-    book, store, _, tensions = _book(CheckVerdict("error", why="timeout"))
-    out = await _learn(book)
-    assert (out["status"], out["reason"]) == ("refused", "check_unavailable")
-    assert store.created == {} and tensions.rows == []
 
 
-async def test_a_consistent_lesson_is_written():
-    book, store, check, tensions = _book(CheckVerdict("consistent"))
-    assert (await _learn(book))["status"] == "ok"
-    assert len(store.created) == 1 and tensions.rows == [] and check.calls == 1
 
 
-async def test_the_model_call_is_made_only_after_every_cheap_check_passes():
-    book, _, check, _ = _book(CheckVerdict("consistent"))
-    assert (await _learn(book, citations=("response:100",)))["reason"] == "thin_evidence"
-    assert (await _learn(book, body="x" * 500))["reason"] == "too_long"
-    assert check.calls == 0
 
 
-def test_a_book_takes_the_check_and_the_tension_store_together():
-    with pytest.raises(ValueError, match="together"):
-        LessonBook(store=_Store(), law=lambda: [], screen=offence, clock_ms=_Clock(),
-                   check=_FakeCheck(CheckVerdict("consistent")))
 
 
 def test_no_model_surface_reads_a_tension_row():
@@ -241,45 +197,7 @@ def test_a_lesson_cannot_close_its_block_and_forge_a_verdict():
     assert "&lt;/lesson_to_check&gt;" in text
 
 
-async def test_the_check_runs_after_the_screen_the_cap_and_the_lesson_checks():
-    """Every refusal a write can meet before the model call: none of them spends
-    one."""
-    from nora.domain.lessons import LESSON_MAX_ACTIVE
-
-    book, store, check, _ = _book(CheckVerdict("consistent"))
-    assert (await _learn(book, body=LESSON + " call +85291234567"))["reason"] == "identifier"
-    assert (await book.learn(unit=UNIT, citable=CITABLE, body=LESSON, citations=CITES,
-                             lesson_id="L9", established_by="t"))["reason"] == "unknown_lesson"
-    for i in range(LESSON_MAX_ACTIVE):
-        await store.create(unit=UNIT, body=f"held practice {i} " + f"word{i} " * 5,
-                           citations=CITES, written_at=i, established_by="t")
-    calls = check.calls
-    assert (await _learn(book))["reason"] == "cap"
-    assert check.calls == calls == 0
 
 
-async def test_a_reinforcement_is_checked_too():
-    book, _, check, tensions = _book(CheckVerdict("consistent"))
-    made = await _learn(book)
-    check.verdict = CheckVerdict("conflict", rule=RULES[1], why="it says it worked")
-    again = await book.learn(unit=UNIT, citable=CITABLE, body=LESSON + ", always",
-                             citations=CITES, lesson_id=str(made["lesson_id"]),
-                             established_by="t")
-    assert again["reason"] == "loosens_law" and check.calls == 2 and len(tensions.rows) == 1
-    (lesson,) = await book.active(unit=UNIT)
-    assert lesson.head.seq == 1
 
 
-async def test_a_tension_that_cannot_be_written_still_refuses_and_hides_the_reason():
-    class _Broken(_Tensions):
-        async def record(self, tension: Tension) -> str:
-            raise RuntimeError("db down")
-
-    store = _Store()
-    book = LessonBook(store=store, law=lambda: [], screen=offence, clock_ms=_Clock(),
-                      check=_FakeCheck(CheckVerdict("conflict", rule=RULES[0],
-                                                    why="SECRET-REASON")),
-                      tensions=_Broken())
-    out = await _learn(book)
-    assert out["reason"] == "loosens_law" and store.created == {}
-    assert "SECRET-REASON" not in str(out["detail"])

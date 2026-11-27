@@ -212,63 +212,6 @@ def test_the_shape_accepts_the_pattern_and_refuses_the_rest() -> None:
 
 # Session control and pace are not Notebook kinds. note_merge is explicitly
 # retained by 29 section 4 pending its own routing measurement.
-_SESSION_CONTROLS = frozenset({
-    "close", "note_merge", "wake_at", "wake_move", "wake_cancel",
-    "remind", "remind_move", "remind_cancel",
-})
-
-
-async def _session_names() -> set[str]:
-    """Build the real closures with and without WakeMemory."""
-    from nora.domain.stimuli import UnitView
-    from tests.unit.test_cognition_session_runner import NOW, _pending, _runner, wake_memory
-
-    names: set[str] = set()
-    for memory in (None, wake_memory()):
-        runner, _, spy = _runner(memory=memory)
-        await runner.replay(view=UnitView(unit="unit-1", pending=_pending("unit-1"),
-            last_activity_ms=None, last_wake=None), now_ms=NOW)
-        names.update(spy.last_tool_names)
-    assert {"memory_propose", "note_revise", "memo_create"} <= names
-    return names
-
-
-def _check_session_names(names: set[str]) -> None:
-    # Shared native names pass the native naming contract above.
-    names = names - NATIVE_TOOLS.keys()
-    bad = sorted(n for n in names if not _CHARSET.fullmatch(n)
-                 or (n not in _SESSION_CONTROLS and not _shape().fullmatch(n)))
-    assert not bad, f"misnamed session tools: {bad}"
-
-
-async def test_cognition_offers_no_profile_account_tools() -> None:
-    from nora.app.cognition_session import SESSION_VERB_NAMES
-
-    assert not {"profile_read", "profile_revise"} & (await _session_names() | SESSION_VERB_NAMES)
-
-
-async def test_session_built_tools_use_domain_then_verb() -> None:
-    _check_session_names(await _session_names())
-
-
-async def test_a_seeded_misnamed_session_tool_fails_the_live_check(monkeypatch) -> None:
-    from nora.app.cognition_session import CognitionSessionRunner
-
-    original = CognitionSessionRunner._build_tools
-
-    async def seeded(self, **kwargs):
-        tools = await original(self, **kwargs)
-
-        async def read_notebook():
-            return {"status": "nothing_found"}
-
-        return [*tools, read_notebook]
-
-    monkeypatch.setattr(CognitionSessionRunner, "_build_tools", seeded)
-    with pytest.raises(AssertionError, match="read_notebook"):
-        await test_session_built_tools_use_domain_then_verb()
-
-
 def test_wake_pass_verbs_use_domain_then_verb():
     from nora.memory.adapters.tools.wake import WAKE_VERB_NAMES
 

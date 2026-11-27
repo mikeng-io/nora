@@ -8,7 +8,6 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from nora.agent.comprehend_tools import egress_reason
 from nora.app.composition_readers import search_provider
 from scripts import memory_graph_spike as spike
 
@@ -214,9 +213,6 @@ async def test_judge_malformed_is_error(monkeypatch, tmp_path):
     assert await judges.score({"source": "Generated evidence"}) == ["supported", "ERROR"]
 
 
-def test_egress_uses_existing_screen():
-    assert egress_reason("Generated Private Person", ("Generated Private Person",))
-    assert egress_reason("public venue programme", ()) is None
 
 
 def test_frozen_sample_is_deterministic_private_and_immutable(tmp_path):

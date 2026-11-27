@@ -43,7 +43,7 @@ from nora.subject.eval_evidence import read_events
 from nora.subject.obtain import build_config
 from nora.subject.recorded_services import RecordedServices
 from scripts import snapshot_block_equivalence as snap
-from tests.integration.test_cognition_anchor_finder import (
+from tests.integration.eval_clone_support import (
     IDENTITY,
     POLICY,
     ROOM,

@@ -27,7 +27,7 @@ from nora.subject.sandbox import eval_host_lock
 from nora.testing.causal_protocol import completion
 from nora.testing.signal_daemon import FakeSignalDaemon
 from scripts.memory_graph_spike import measured_run_budget
-from tests.integration.subject.test_recorded_wake_runtime import services
+from tests.integration.subject.protocol_services import services
 
 
 @pytest.fixture

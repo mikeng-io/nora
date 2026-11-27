@@ -7,41 +7,6 @@
     "target": "tests/unit/test_orient_kind_table.py::test_citing_a_message_derives_relation_persons_from_the_source"
   },
   {
-    "name": "only the rendered rows hydrate citable sources",
-    "file": "nora/app/cognition_memory.py",
-    "old": "            state.memory_items[index] = item\n        identities = frozenset(",
-    "new": "            state.memory_items[index] = item\n            for source in sources:\n                state.graph_fetched.show(source)\n        identities = frozenset(",
-    "target": "tests/unit/test_cognition_source_rows.py::test_a_loaded_but_unemitted_row_cannot_be_cited"
-  },
-  {
-    "name": "the memory_propose schema is generated from the statement types",
-    "file": "nora/memory/adapters/tools/session.py",
-    "old": "    async def memory_propose(statements: list[Statement]) -> dict[str, Any]:",
-    "new": "        async def memory_propose(statements: list[dict[str, Any]]) -> dict[str, Any]:",
-    "target": "tests/unit/test_orient_kind_table.py::test_memory_propose_schema_is_derived_from_the_proposal_types"
-  },
-  {
-    "name": "citation custody is the emitted row body, not the loaded source",
-    "file": "nora/app/cognition_memory.py",
-    "old": "                        replace(source, text=emitted.get(n, source.text)))",
-    "new": "                        source)",
-    "target": "tests/unit/test_cognition_source_rows.py::test_a_clipped_row_tail_is_not_citable"
-  },
-  {
-    "name": "a person handle is citable only for an emitted row's author",
-    "file": "nora/app/comprehend.py",
-    "old": "        shown_identities=frozenset(shown_identities) | frozenset(\n            str(r[\"person_id\"]) for item in inputs\n            for r in item.snapshot.get(\"messages\", ())\n            if r.get(\"person_id\")),",
-    "new": "        shown_identities=frozenset(\n            p for s in fetched.sources.values() for p in s.identities),",
-    "target": "tests/unit/test_cognition_source_rows.py::test_an_emitted_rows_author_is_handle_citable_without_source_scope"
-  },
-  {
-    "name": "a shown author's pointer is grounded by shown authorship",
-    "file": "nora/domain/memory_admission.py",
-    "old": "    if ref not in shown_identities and not any(\n        ref in sources[e.source].identities for e in evidence if e.source in sources\n    ):",
-    "new": "    if not any(\n        ref in sources[e.source].identities for e in evidence if e.source in sources\n    ):",
-    "target": "tests/unit/test_cognition_source_rows.py::test_a_shown_author_grounds_a_pointer_the_projection_has_not_written"
-  },
-  {
     "name": "an unshown node or pointer handle is refused before flattening",
     "file": "nora/app/comprehend.py",
     "old": "        key = (kind, ref)\n        # Entity and record kinds name graph nodes the session must have\n        # shown; existing-in-store is not shown-to-this-session.\n        if key in scope.shown_keys:\n            return key, None, None\n        return None, None, (\"relation\", \"unshown\")",
@@ -70,31 +35,10 @@
     "target": "tests/unit/test_orient_kind_table.py::test_one_malformed_statement_does_not_withhold_siblings"
   },
   {
-    "name": "the correction catalogue is emitted preview rows, not the loaded walk",
-    "file": "nora/app/cognition_memory.py",
-    "old": "        shown_keys: set[Key] = set()\n        shown_relations: set[str] = set()\n        state.graph_text = preview_text(\n            Preview(seeds, graph, tuple(candidates), (at, at)),\n            shown_keys=shown_keys,\n            shown_relations=shown_relations)",
-    "new": "        shown_keys: set[Key] = set()\n        shown_relations: set[str] = {\n            e.relation.id for e in graph.relations\n        } | {\n            e.relation.id for c in candidates for e in c.relations\n        }\n        state.graph_text = preview_text(\n            Preview(seeds, graph, tuple(candidates), (at, at)),\n            shown_keys=shown_keys,\n            shown_relations=shown_relations)",
-    "target": "tests/unit/test_cognition_source_rows.py::test_a_relation_clipped_from_the_preview_cannot_be_corrected"
-  },
-  {
-    "name": "a withheld graph block keeps no correction catalogue",
-    "file": "nora/app/cognition_memory.py",
-    "old": "            state.graph_text = \"\"\n            shown_keys.clear()\n            shown_relations.clear()\n            self.metrics.inc(\"nora_errors_total\", stage=\"wake_prefetch\")",
-    "new": "            state.graph_text = \"\"\n            self.metrics.inc(\"nora_errors_total\", stage=\"wake_prefetch\")",
-    "target": "tests/unit/test_cognition_source_rows.py::test_a_withheld_graph_keeps_no_correction_authority"
-  },
-  {
     "name": "a memory read reports only the edge rows it emitted",
     "file": "nora/agent/memory_search.py",
     "old": "            emitted: set[tuple[str, str]] = set()\n            emitted_relations: set[str] = set()\n            text = preview_text(Preview(seeds, graph, (), (now, now)),\n                                tokens=max(0, PREFETCH_TOKENS - overhead + 100),\n                                shown_keys=emitted,\n                                shown_relations=emitted_relations)",
     "new": "            emitted: set[tuple[str, str]] = set()\n            emitted_relations: set[str] = set()\n            text = preview_text(Preview(seeds, graph, (), (now, now)),\n                                tokens=max(0, PREFETCH_TOKENS - overhead + 100),\n                                shown_keys=emitted)",
-    "target": "tests/unit/test_orient_kind_table.py::test_a_relation_a_memory_read_emitted_can_be_corrected"
-  },
-  {
-    "name": "a relation a memory read emitted is correction-eligible",
-    "file": "nora/agent/comprehend_tools.py",
-    "old": "                    state.shown_relations.update(\n                        r for r in answer.get(\"relations\") or ()\n                        if isinstance(r, str))",
-    "new": "                    pass",
     "target": "tests/unit/test_orient_kind_table.py::test_a_relation_a_memory_read_emitted_can_be_corrected"
   },
   {

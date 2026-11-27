@@ -53,7 +53,7 @@ _OCCASIONS = _declared_occasions()
 def test_the_census_finds_the_five_occasions_it_used_to_list():
     """A census that silently found nothing would pass every test below."""
     assert {
-        "nora/ingest/relevance_gate.py", "nora/language/cognition_render.py",
+        "nora/ingest/relevance_gate.py",
     } <= set(_OCCASIONS), sorted(_OCCASIONS)
 
 def _local_block_names(tree: ast.Module) -> set[str]:

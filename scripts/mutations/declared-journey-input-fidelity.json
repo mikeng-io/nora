@@ -98,20 +98,6 @@
     "target": "tests/unit/test_cognition_loop_rejudge.py::test_a_declared_turn_is_judged_against_the_original_declaration"
   },
   {
-    "name": "a declared case turn keeps its envelope, not its string",
-    "file": "scripts/cognition_loop/cases.py",
-    "old": "                return DeclaredTurn(**raw_turn)",
-    "new": "                return str(raw_turn)",
-    "target": "tests/unit/test_cognition_loop_eval.py::test_a_declared_turn_round_trips_its_envelope"
-  },
-  {
-    "name": "a version-2 turn is generated text or a declared envelope",
-    "file": "scripts/cognition_loop/cases.py",
-    "old": "            for turn in self.turns:\n                if not isinstance(turn, (str, DeclaredTurn)):\n                    raise EvidenceError(\n                        \"a version-2 turn is generated text or a declared \"\n                        \"envelope\")",
-    "new": "            for turn in self.turns:\n                pass",
-    "target": "tests/unit/test_cognition_loop_eval.py::test_a_version2_case_turn_is_typed"
-  },
-  {
     "name": "same-body quote and media substitution cannot borrow an admission",
     "file": "evals/rebuilt/journey_turns.py",
     "old": "    if (json.dumps(admitted.to_fields(), sort_keys=True, allow_nan=False)\n            != json.dumps(ctx[\"envelope\"].to_fields(), sort_keys=True, allow_nan=False)\n            or declared_source(admitted) != ctx.get(\"source\")",

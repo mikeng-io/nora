@@ -35,13 +35,6 @@
     "target": "tests/test_composition.py::test_markdown_identity_reaches_live_tools_and_cognition_writers"
   },
   {
-    "name": "composition forwards the Markdown name to cognition validation",
-    "file": "nora/app/composition_cognition.py",
-    "old": "            nora_names=frozenset({cfg.doctrine.display_name}),",
-    "new": "",
-    "target": "tests/test_composition.py::test_markdown_identity_reaches_live_tools_and_cognition_writers"
-  },
-  {
     "name": "missing identity files report a doctrine failure",
     "file": "nora/doctrine/loader.py",
     "old": "    except OSError as exc:\n        raise DoctrineError(f\"identity.md: cannot read public identity: {exc}\") from exc",

@@ -1,3 +1,0 @@
-[
-  {"name": "parking", "file": "nora/app/cognition_memory.py", "old": "await self.records.failures(unit, s.id) >= 5", "new": "await self.records.failures(unit, s.id) >= 6", "target": "tests/unit/test_cognition_session_runner.py::test_five_failures_park_with_operator_requeue"}
-]

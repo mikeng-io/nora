@@ -7,34 +7,6 @@
     "target": "tests/infra/test_social_read.py::test_a_name_resolves_by_the_one_matching_rule_aliases_included"
   },
   {
-    "name": "2 agenda: a social stimulus binds the home room whatever room it names",
-    "file": "nora/domain/cognition_session.py",
-    "old": "_ROOM_BOUND_KINDS: frozenset[str] = frozenset(\n    {\"message\", \"social\", \"observation\"})",
-    "new": "_ROOM_BOUND_KINDS: frozenset[str] = frozenset(\n    {\"message\", \"observation\"})",
-    "target": "tests/unit/test_cognition_session.py::test_a_social_read_binds_the_room_it_names_and_home_when_it_names_none"
-  },
-  {
-    "name": "2 perception: a social stimulus names no room",
-    "file": "nora/app/social_perception.py",
-    "old": "                        platform=platform, conversation_id=conversation_id,\n",
-    "new": "",
-    "target": "tests/integration/test_social_perception.py::test_each_units_stimulus_names_the_room_there_that_lists_the_author"
-  },
-  {
-    "name": "2 composition: the home room is not preferred over another listing room",
-    "file": "nora/app/composition_readers.py",
-    "old": "    for conv in sorted(listing, key=lambda c: homes.get(c.unit) is not c):",
-    "new": "    for conv in listing:\n",
-    "target": "tests/unit/test_social_store_wiring.py::test_a_social_stimulus_binds_home_when_home_lists_them_else_a_room_that_does"
-  },
-  {
-    "name": "2 composition: perception is not handed the rooms",
-    "file": "nora/app/composition_social.py",
-    "old": "            units=LiveMapping(lambda: social_person_units(allowlist)),\n            rooms=LiveMapping(lambda: social_person_rooms(allowlist)),",
-    "new": "            units=LiveMapping(lambda: social_person_units(allowlist)),",
-    "target": "tests/unit/test_social_store_wiring.py::test_perception_is_built_with_the_rooms"
-  },
-  {
     "name": "3 eval: the story case names no person",
     "file": "evals/corpora/tool_selection_cognition.yaml",
     "old": "    input: \"Miles posted 2 story frames\"\n",

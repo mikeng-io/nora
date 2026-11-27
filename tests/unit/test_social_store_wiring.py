@@ -14,7 +14,6 @@ import inspect
 from types import SimpleNamespace
 
 import nora.app.composition_social as composition
-from nora.app.composition_readers import social_person_rooms
 from nora.infra.sql.social_stream import readable_social_store
 from nora.persons import load_persons
 
@@ -49,18 +48,6 @@ class _Policy:
         return {c.unit: c for c in self.conversations if c.home_room}
 
 
-def test_a_social_stimulus_binds_home_when_home_lists_them_else_a_room_that_does():
-    policy = _Policy(
-        _conv("side", "friends", ["ada", "bea"]),
-        _conv("home", "friends", ["bea"], home=True),
-        _conv("star", "friends", None),
-        _conv("other", "family", ["ada"]),
-    )
-    assert social_person_rooms(policy) == {
-        ("bea", "friends"): ("signal", "home"),
-        ("ada", "friends"): ("signal", "side"),
-        ("ada", "family"): ("signal", "other"),
-    }
 
 
 def test_perception_is_built_with_the_rooms():

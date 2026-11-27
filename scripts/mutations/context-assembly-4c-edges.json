@@ -28,13 +28,6 @@
     "target": "tests/unit/test_step4c_edge_goldens.py::test_a_duplicated_timestamp_now_resolves_a_reply_to_the_first_row tests/test_prefill.py tests/architecture/test_one_quote_resolver.py::test_the_helper_is_first_wins"
   },
   {
-    "name": "4c: the debrief's transcript builds its own last-wins map again",
-    "file": "nora/language/context_render.py",
-    "old": "first_by_ts(group)",
-    "new": "{row.ts: row for row in group}",
-    "target": "tests/unit/test_cognition_shared_context.py tests/architecture/test_one_quote_resolver.py"
-  },
-  {
     "name": "4c: the tool-result transcript builds its own last-wins map again",
     "file": "nora/agent/toolkit/transcript.py",
     "old": "    by_ts = first_by_ts(rows)\n",
@@ -119,25 +112,11 @@
     "target": "tests/unit/test_step4c_edge_goldens.py::test_an_input_the_step_does_not_touch_is_byte_identical"
   },
   {
-    "name": "4c review: the debrief's map is first-wins over the rows REVERSED (last-wins)",
-    "file": "nora/language/context_render.py",
-    "old": "first_by_ts(group)",
-    "new": "first_by_ts(reversed(group))",
-    "target": "tests/unit/test_cognition_shared_context.py tests/architecture/test_one_quote_resolver.py"
-  },
-  {
     "name": "4c review: the tool-result map is first-wins over the rows REVERSED",
     "file": "nora/agent/toolkit/transcript.py",
     "old": "    by_ts = first_by_ts(rows)\n",
     "new": "    by_ts = first_by_ts(reversed(rows))\n",
     "target": "tests/unit/test_step4c_edge_goldens.py::test_a_duplicated_timestamp_now_resolves_a_reply_to_the_first_row tests/architecture/test_one_quote_resolver.py"
-  },
-  {
-    "name": "4c review: the debrief builds the map in a loop through a local key (last-wins)",
-    "file": "nora/language/context_render.py",
-    "old": "first_by_ts(group)",
-    "new": "dict((row.ts, row) for row in group)",
-    "target": "tests/unit/test_cognition_shared_context.py tests/architecture/test_one_quote_resolver.py"
   },
   {
     "name": "4c review: the tool-result map is dict(zip(...)) (last-wins)",

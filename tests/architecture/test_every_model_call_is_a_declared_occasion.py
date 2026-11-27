@@ -71,7 +71,6 @@ PKG = ROOT / "nora"
 #: may ignore it.
 #: Each addition also lets that file's renderers justify block-type declarations.
 EXTRA_MODEL_DOORS = (
-    ROOT / "scripts" / "confirm_cognition_anchors.py",
     ROOT / "scripts" / "memory_graph_spike.py",
 )
 
@@ -138,14 +137,14 @@ EXEMPT = {
 #: `dispatched` (a port or an argument hands the prompt in, so there is
 #: nothing to import; each builder must still be declared).
 RUNNER: dict[str, tuple[tuple[str, ...], str]] = {
-    "nora/agent/dreamer.py": (("nora/language/cognition_render.py",), "dispatched"),
+    "nora/agent/dreamer.py": (("nora/app/wake_pass.py",), "dispatched"),
     "nora/app/agent_runner.py": (("nora/agent/prefill.py",), "dispatched"),
     "nora/engagement/stages/invoke.py": (("nora/agent/prefill.py",), "dispatched"),
     "nora/engagement/pipeline.py": (("nora/agent/prefill.py",), "imports"),
     "nora/app/fire.py": (("nora/agent/prefill.py",), "dispatched"),
     "nora/app/summons.py": (("nora/domain/summons.py",), "imports"),
     "nora/app/cognition_agent_runner.py": (
-        ("nora/language/cognition_render.py", "nora/app/review_pass.py"), "dispatched",
+        ("nora/app/wake_pass.py", "nora/app/review_pass.py"), "dispatched",
     ),
     "nora/engagement/stages/debrief.py": (
         ("nora/engagement/debrief_render.py",), "imports",
@@ -163,12 +162,6 @@ RUNNER: dict[str, tuple[tuple[str, ...], str]] = {
     # occasion it imports; it only dispatches the POST and records receipts.
     "nora/subject/context_filter.py": (
         ("nora/subject/context_selector_render.py",), "imports",
-    ),
-    # The host-only confirmation judge: it POSTs to the deployment's
-    # chat-completions endpoint, and the system and user messages it sends
-    # are built by ONE declared occasion it imports.
-    "scripts/confirm_cognition_anchors.py": (
-        ("nora/language/confirmation_render.py",), "imports",
     ),
 }
 
@@ -468,8 +461,6 @@ def test_discovery_sees_the_known_call_sites_and_occasions(modules):
         "nora/agent/factory.py", "nora/app/raw_clients.py",
         "nora/ingest/relevance_gate.py", "nora/app/cognition_agent_runner.py",
         "nora/agent/reaction.py", "nora/engagement/stages/debrief.py",
-        # The scanned door outside `nora/`: found first, classified second.
-        "scripts/confirm_cognition_anchors.py",
     ):
         assert known in callers, f"discovery missed {known}"
     declared = {rel for rel, tree in modules.items() if declares_blocks(tree)}
@@ -496,7 +487,7 @@ def test_the_net_catches_a_hand_built_occasion():
 
 
 def test_the_net_catches_a_plain_post_to_a_completions_endpoint():
-    """The door `scripts/confirm_cognition_anchors.py` uses: a bare
+    """A door a script may use: a bare
     `client.post` to `chat/completions` IS a model call, matched on the
     endpoint literal inside the call so the caller's spelling cannot hide
     it. A `post` carrying no such literal is not one."""

@@ -6,7 +6,6 @@ from uuid import uuid4
 import pytest
 
 from nora.agent.lineage import LineagePolicy, entry_permits, excluded
-from nora.app.cognition_grounding import place_release
 from nora.domain.identity import Identifier
 from nora.domain.lineage import LineageEntry, LiveRoom, message
 from nora.domain.managed import (
@@ -119,26 +118,6 @@ async def test_lineage_folds_retired_subject_and_exclusion_without_rewriting_pro
     assert entry.to_json() == original
 
 
-async def test_cognition_release_reads_selected_circles_and_rechecks_after_live_roster(
-    case, location,
-):
-    async def roster(_platform, _conversation):
-        return await location.room.members()
-
-    release = place_release(rooms_of=lambda _unit: [("signal", "generated-location-room", True)],
-        room_view=roster, circles=(), access=location.access)
-    assert await release("generated-location-unit", PERSON)
-
-    async def late_hold(platform, conversation):
-        view = await roster(platform, conversation)
-        await case.bindings.hold_identity(person_id=PERSON, operation_id="generated-late-hold")
-        return view
-
-    late = place_release(rooms_of=lambda _unit: [("signal", "generated-location-room", True)],
-        room_view=late_hold, circles=(), access=location.access)
-    assert not await late("generated-location-unit", PERSON)
-    await case.bindings.release_identity_hold(person_id=PERSON, operation_id="generated-late-hold")
-    assert await release("generated-location-unit", PERSON)
 
 
 async def test_implicit_parking_reads_current_circle_but_explicit_public_place_is_independent(

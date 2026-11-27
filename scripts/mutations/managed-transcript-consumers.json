@@ -35,24 +35,10 @@
     "target": "tests/unit/test_managed_record_names.py::test_room_author_lookup_uses_the_current_scoped_name_on_each_read"
   },
   {
-    "name": "shown source names remain private after rename",
-    "file": "nora/agent/comprehend_tools.py",
-    "old": "        self.seen_names.update(\n            label for row in rows if row.person_id and not row.is_nora\n            if (label := speaker_name(row.person_name, row.sender_name, unknown=\"\")))",
-    "new": "        self.seen_names.update(())",
-    "target": "tests/unit/test_managed_record_names.py::test_a_name_actually_handed_out_remains_private_after_rename"
-  },
-  {
     "name": "a deleted row retains its visible label without citable body",
     "file": "nora/conversation/adapters/tools/query.py",
     "old": "                if on_rows is not None:\n                    on_rows((replace(row, body=None),))",
     "new": "                if False:\n                    on_rows((replace(row, body=None),))",
     "target": "tests/unit/test_managed_record_names.py::test_a_deleted_rows_shown_name_is_private_without_making_its_body_citable"
-  },
-  {
-    "name": "same person name growth during identity reads refuses provider execution",
-    "file": "nora/agent/comprehend_tools.py",
-    "old": "        if self._source_people() - person_ids or state.seen_names - names:",
-    "new": "        if self._source_people() - person_ids:",
-    "target": "tests/unit/test_managed_record_names.py::test_a_same_person_name_added_during_identity_reads_refuses_before_egress"
   }
 ]

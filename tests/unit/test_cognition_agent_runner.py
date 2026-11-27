@@ -18,9 +18,8 @@ from typing import Any
 import pytest
 
 from nora.agent import factory
-from nora.agent.dreamer import as_strands_tools
+from nora.agent.dreamer import AdaptorBudget, as_strands_tools
 from nora.app.cognition_agent_runner import DreamerAgentRunner
-from nora.app.cognition_session import AdaptorBudget
 from nora.obs.metrics import Metrics
 from tests.fakes import dreamer_runtime_for
 
@@ -162,7 +161,7 @@ def _raises(exc: BaseException) -> Any:
 
 
 async def _spent_by(runner: DreamerAgentRunner) -> tuple[Any, Any]:
-    from nora.app.cognition_session import SESSION_TOKENS, TokenSpend
+    from nora.app.cognition_agent_runner import SESSION_TOKENS, TokenSpend
     spend = TokenSpend()
     token = SESSION_TOKENS.set(spend)
     try:
@@ -208,7 +207,7 @@ async def test_a_cancelled_loop_leaves_its_partial_record_and_its_spend(
 
     monkeypatch.setattr(factory, "invoke", invoke)
 
-    from nora.app.cognition_session import SESSION_TOKENS, TokenSpend
+    from nora.app.cognition_agent_runner import SESSION_TOKENS, TokenSpend
     spend = TokenSpend()
     token = SESSION_TOKENS.set(spend)
     try:

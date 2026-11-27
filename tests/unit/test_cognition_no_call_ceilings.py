@@ -14,8 +14,8 @@ from __future__ import annotations
 
 from nora.agent import factory
 from nora.agent.dream_guard import DreamGuard
+from nora.agent.dreamer import AdaptorBudget
 from nora.app.cognition_agent_runner import DreamerAgentRunner
-from nora.app.cognition_session import AdaptorBudget
 from nora.obs.metrics import Metrics
 from tests.fakes import dreamer_runtime_for
 from tests.fixtures.dreamer_calls import (

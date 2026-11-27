@@ -155,6 +155,29 @@ _PROFILE_SESSION_READ = (
 # the artifact that gets re-derived from scratch by the next session that
 # notices one of them.
 _NO_PRODUCTION_CALLER: dict[tuple[str, str], _Pin] = {
+    **{
+        (module, name): _Pin(
+            "scheduled_removal",
+            "The removed legacy session was its only production caller. Remove it with the store.",
+        )
+        for module, name in (
+            ("record_query.py", "by_refs"),
+            ("tag_traces.py", "by_tag"),
+            ("reminders.py", "count_pending"),
+            ("reminders.py", "create_many"),
+            ("stimuli.py", "existing_id"),
+            ("gatherings.py", "list_for_conversation"),
+            ("notes.py", "merge_into"),
+            ("stimuli.py", "open_wakes"),
+            ("stimuli.py", "record_outcome"),
+            ("stimuli.py", "record_wake"),
+            ("stimuli.py", "retract"),
+            ("stimuli.py", "retract_self"),
+            ("social_stream.py", "settled_reads"),
+            ("notes.py", "supersede"),
+            ("stimuli.py", "view"),
+        )
+    },
     ("memory_graph.py", "topic_activity"): _Pin(
         "scheduled_removal",
         "The Cognition Profile shadow response was its only production caller. "
@@ -348,8 +371,6 @@ _AMBIGUOUS: frozenset[str] = frozenset(
         "current",
         # Registration protocols share resolver names with the implementations.
         "conversation", "person_id", "platform", "rooms", "subject_id_for",
-        # Aggregate retirement and lesson retirement are separate operations.
-        "retire",
         # `SqlBrowserTabStore.bind` shares the name with the playback's
         # `Playback.bind` (nora/subject/recorded_services.py).
         "bind",
@@ -384,13 +405,13 @@ _STORE_MODULES: frozenset[str] = frozenset(
         "aggregate_crossings.py", "aggregate_writes.py", "cognitive_graph_store.py",
         "graph_stimuli.py", "item_registration.py",
         "mobility_writes.py", "observation_heads.py", "social_item_writes.py",
-        "assess.py", "audit.py", "bridge_store.py", "cognition_store.py",
+        "assess.py", "audit.py", "bridge_store.py",
         "lessons.py", "tension.py", "entries.py",
         "compute_jobs.py", "computer_events.py", "computer_exports.py",
         "computer_sessions.py", "computer_tasks.py", "browser_tabs.py",
-        "character.py", "culture.py", "decision_log.py", "documents.py",
+        "culture.py", "decision_log.py", "documents.py",
         "fetched_pages.py",
-        "gatherings.py", "geocode_cache.py", "language.py",
+        "gatherings.py", "geocode_cache.py",
         "media_descriptions.py", "media_objects.py", "memo.py", "memory_embed.py",
         "memory_read.py", "mobility.py",
         "memory_graph.py",

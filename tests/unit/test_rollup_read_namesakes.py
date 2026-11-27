@@ -19,7 +19,6 @@ from datetime import UTC, datetime
 from nora.agent.lineage import LineagePolicy
 from nora.agent.room import Room, tell_apart
 from nora.agent.tools import build_tools
-from nora.domain.cognition_session import COGNITION_ADAPTOR
 from nora.domain.rollup_read import RollupRead, RollupReadQuery
 from nora.infra.transit import TransitClient
 from nora.obs.metrics import Metrics
@@ -104,17 +103,6 @@ async def _call(tool, subject: str) -> dict:
     return await tool._tool_func(kind="stay", subject=subject, interval="2026-09-21")
 
 
-async def test_in_cognition_namesakes_are_offered_by_what_tells_them_apart(tmp_path):
-    rollup = _Rollup()
-    tool = _tool(tmp_path, rollup, adaptor=COGNITION_ADAPTOR)
-    got = await _call(tool, "Ada")
-    assert got["status"] == "ambiguous"
-    assert got["could_be"] == ["a", "Ada Wong"]
-    assert rollup.asked == []
-    # Each entry, named again, reads that one person alone.
-    await _call(tool, "a")
-    await _call(tool, "Ada Wong")
-    assert rollup.asked == [("a",), ("b",)]
 
 
 async def test_on_a_tag_turn_no_person_id_is_offered_or_taken(tmp_path):

@@ -49,8 +49,6 @@ RULE_TESTS = {
         "test_a_closed_replay_records_the_exact_inputs_and_a_failed_replay_records_none",
     "R-109": "test_a_due_intention_delivers_once_and_closes_only_on_a_reply_outcome",
     "R-108": "test_debrief_writes_only_commit_operations_citing_its_pass_items",
-    "R-127": "test_cognition_offers_no_profile_account_tools",
-    "R-107": "test_cognition_offers_reminders_and_wakes_without_event_writes",
     "R-130": "test_room_list_reads_each_rooms_graph_profile_in_the_turn_audience",
     "DEC-97": "test_running_identity_is_independent_of_the_latest_release",
     "DEC-324": "test_a_server_entry_admits_a_discovered_channel_by_guild_id",

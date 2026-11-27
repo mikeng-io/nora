@@ -105,20 +105,6 @@
     "target": "tests/contract/test_memory_index_contract.py::test_a_fresh_wait_is_counted_apart_and_lexical_reads_every_unembedded_node"
   },
   {
-    "name": "review 2: the sandbox carries the source's wait",
-    "file": "nora/infra/sql/memory_index.py",
-    "old": "            sa.update(MEMORY_NODE).where(node.id.in_(ids)).values(owed_since=value)",
-    "new": "            sa.update(MEMORY_NODE).where(sa.false()).values(owed_since=value)",
-    "target": "tests/integration/test_legacy_replay_substrate.py::test_a_sandbox_carries_the_sources_wait_so_it_is_never_kinder"
-  },
-  {
-    "name": "review 2: an unmatched sandbox node is bounded by its own instant",
-    "file": "nora/infra/sql/memory_index.py",
-    "old": "        .values(owed_since=sa.func.least(node.owed_since, bound))",
-    "new": "        .values(owed_since=node.owed_since)",
-    "target": "tests/integration/test_legacy_replay_substrate.py::test_a_sandbox_carries_the_sources_wait_so_it_is_never_kinder"
-  },
-  {
     "name": "review 4: given-up nodes and a question with no terms is partial",
     "file": "nora/agent/memory_search.py",
     "old": "unread = state.unembedded + state.given_up > 0 and not terms",

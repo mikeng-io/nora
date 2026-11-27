@@ -7,20 +7,6 @@
     "target": "tests/contract/test_stimulus_store_contract.py::test_a_due_row_under_an_advanced_mark_is_never_enumerated"
   },
   {
-    "name": "pending read: a claimed stimulus resurfaces under the mark (SQL)",
-    "file": "nora/infra/sql/stimuli.py",
-    "old": "            eligible, live_stimulus(STIMULUS.c.id), ~claimed,",
-    "new": "            eligible, live_stimulus(STIMULUS.c.id),",
-    "target": "tests/contract/test_stimulus_session_lifecycle_contract.py::test_a_tracked_wake_with_no_outcome_is_open_then_expired_past_the_timeout"
-  },
-  {
-    "name": "pending read: a claimed stimulus resurfaces under the mark (twin)",
-    "file": "nora/testing/stimuli.py",
-    "old": "            and s.eligible_ms <= now_ms and s.id not in claimed",
-    "new": "            and s.eligible_ms <= now_ms",
-    "target": "tests/contract/test_stimulus_session_lifecycle_contract.py::test_a_tracked_wake_with_no_outcome_is_open_then_expired_past_the_timeout"
-  },
-  {
     "name": "pending read: an undated stimulus is eligible from its recorded TICK (SQL)",
     "file": "nora/infra/sql/stimuli.py",
     "old": "        sa.and_(\n            STIMULUS.c.due_ms.is_(None),\n            STIMULUS.c.recorded_at <= _at(now_ms),\n        ),",

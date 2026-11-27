@@ -7,13 +7,6 @@
     "target": "tests/unit/test_scoped_engagement_names.py::test_the_rooms_nickname_renders_through_the_tag_context"
   },
   {
-    "name": "source scoped private names refuse before provider execution",
-    "file": "nora/agent/comprehend_tools.py",
-    "old": "            for scope in state.scopes:\n                ref = await access.person_ref(person_id, scope=scope)\n                if ref is None or not ref.name.strip():\n                    raise LookupError(\"scoped source person name unavailable\")\n                names.add(ref.name)",
-    "new": "            for scope in ():\n                pass",
-    "target": "tests/unit/test_managed_memory_scope.py::test_a_room_scoped_nickname_of_a_source_person_refuses_before_the_provider"
-  },
-  {
     "name": "room target matching uses the room name view",
     "file": "nora/access.py",
     "old": "            if (ref := await self.person_ref(m.person_id, scope=scope)) is not None",

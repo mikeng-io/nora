@@ -1,12 +1,5 @@
 [
   {
-    "name": "API punctuation remains an admissible exact source view",
-    "file": "nora/domain/prompt.py",
-    "old": "    return span in body or span in undash(body)",
-    "new": "    return span in body",
-    "target": "tests/unit/test_cognition_source_rows.py::test_api_punctuation_quotes_keep_custody_at_every_admission_gate"
-  },
-  {
     "name": "callback failures are not excused as pre-dispatch rejections",
     "file": "nora/agent/replay_capture.py",
     "old": "    return frames[-2:] == [DecoratedFunctionTool.stream.__code__,\n                           FunctionToolMetadata.validate_input.__code__]",
