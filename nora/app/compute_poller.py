@@ -16,7 +16,7 @@ from uuid import UUID
 
 from nora.access import IdentityAccess
 from nora.app.documents_service import room_names_audience
-from nora.app.fire import FAILED_POLICY, SENT, compute_occasion
+from nora.app.fire import FAILED_ERROR, FAILED_POLICY, SENT, compute_occasion
 from nora.domain.checkpoint import read_row
 from nora.domain.compute import (
     ComputeJob,
@@ -277,10 +277,30 @@ class ComputeJobPoller:
                         job.id, job.kind,
                     )
                 continue
-            result = await backend.poll(job_id=job.backend_job_id)
+            try:
+                result = await backend.poll(job_id=job.backend_job_id)
+            except Exception:  # noqa: BLE001 — one row's failure must not strand its siblings
+                self._row_error(job, "poll")
+                continue
             if result.status is not JobStatus.RUNNING:
                 done.append((job, result))
         return done
+
+    def _row_error(self, job: ComputeJob, stage: str) -> None:
+        """One row failed alone: logged and counted, and its siblings carry on."""
+        log.exception("compute job %s failed while %s; its siblings continue", job.id, stage)
+        self._metrics.inc("nora_errors_total", stage="compute_poller")
+
+    async def _mark(
+        self, job: ComputeJob, state: ComputeJobState, outcome: str, **fields: Any,
+    ) -> None:
+        """End one row. A failed write leaves that row to boot recovery and spares the rest."""
+        try:
+            await self._store.mark(job.id, state, completed_at=self._clock(), **fields)
+        except Exception:  # noqa: BLE001 — one row's failure must not strand its siblings
+            self._row_error(job, "marking")
+            return
+        self._metrics.inc("nora_compute_jobs_delivered_total", outcome=outcome)
 
     async def _deliver(self, jobs: list[ComputeJob]) -> None:
         """Deliver one room's finished jobs, for one requester, as one occasion."""
@@ -308,26 +328,43 @@ class ComputeJobPoller:
                     first.requester_person_id, first.conversation_id,
                 )
                 for job, _ in finished:
-                    if await self._store.claim(job.id):
-                        await self._store.mark(
-                            job.id, ComputeJobState.FAILED, completed_at=self._clock(),
+                    try:
+                        claimed_here = await self._store.claim(job.id)
+                    except Exception:  # noqa: BLE001 — one row's failure must not strand its siblings
+                        self._row_error(job, "claiming")
+                        continue
+                    if claimed_here:
+                        await self._mark(
+                            job, ComputeJobState.FAILED, FAILED_POLICY,
                             error="the room or requester is no longer allowed",
                             failure_reason=FAILED_POLICY,
                         )
-                    self._metrics.inc("nora_compute_jobs_delivered_total", outcome=FAILED_POLICY)
+                    else:
+                        self._metrics.inc(
+                            "nora_compute_jobs_delivered_total", outcome=FAILED_POLICY,
+                        )
                 return
             claimed = await self._claimed(finished)
             if not claimed:
                 return
-            outcome = await self._speak(_one_occasion([event for _, _, event in claimed]))
+            try:
+                outcome = await self._speak(_one_occasion([event for _, _, event in claimed]))
+            except Exception:
+                # A raised turn is a delivery error, never a retry: at-most-once holds, and
+                # each row still ends on its own.
+                log.exception(
+                    "compute jobs %s: the delivery turn raised", [str(j.id) for j, _, _ in claimed],
+                )
+                self._metrics.inc("nora_errors_total", stage="compute_poller")
+                outcome = FAILED_ERROR
             # `SENT`, never the literal `"sent"`: the string decides the ROW's
             # terminal state, so a typo would record a delivery that never
             # happened — the reason `nora.app.fire` owns these four names
             # (`fire.SENT`'s own comment).
             state = ComputeJobState.DONE if outcome == SENT else ComputeJobState.FAILED
             for job, result, _ in claimed:
-                await self._store.mark(
-                    job.id, state, completed_at=self._clock(),
+                await self._mark(
+                    job, state, outcome,
                     result_url=result.url, result_summary=result.summary,
                     error=result.error, failure_reason=result.failure_reason,
                     result_report=result.report,
@@ -335,7 +372,6 @@ class ComputeJobPoller:
                     trace_id=result.trace_id,
                     checkpoint=result.checkpoint, checkpoint_at=result.checkpoint_at,
                 )
-                self._metrics.inc("nora_compute_jobs_delivered_total", outcome=outcome)
         finally:
             self._slots.release_and_dispatch(slot)
 
@@ -345,20 +381,25 @@ class ComputeJobPoller:
         """The finished jobs this pass claimed, each with its occasion."""
         out: list[tuple[ComputeJob, JobResult, Event]] = []
         for job, result in finished:
-            backend = self._backends[job.kind]
-            if result.status is JobStatus.SUCCEEDED and isinstance(backend, ResultFetcher):
-                result = await backend.fetch_result(job_id=job.backend_job_id, result=result)
-                if result.status is JobStatus.RUNNING:
-                    # Not fetched yet: nothing claimed, nothing said; the next tick asks again.
+            try:
+                backend = self._backends[job.kind]
+                if result.status is JobStatus.SUCCEEDED and isinstance(backend, ResultFetcher):
+                    result = await backend.fetch_result(job_id=job.backend_job_id, result=result)
+                    if result.status is JobStatus.RUNNING:
+                        # Not fetched yet: nothing claimed, nothing said; the next tick asks again.
+                        continue
+                if not await self._store.claim(job.id):
+                    # Already claimed by an earlier tick's overlapping poll.
                     continue
-            if not await self._store.claim(job.id):
-                # Already claimed by an earlier tick's overlapping poll.
-                continue
-            readback = await self._read_back(job, result.document_ids)
-            # ponytail: the media index's metric is video's, the one kind that carries bytes
-            # today; a second such kind names its own.
-            kept = await self._keep(job, result)
-            out.append((job, result, self._occasion(job, result, readback, kept)))
+                readback = await self._read_back(job, result.document_ids)
+                # ponytail: the media index's metric is video's, the one kind that carries bytes
+                # today; a second such kind names its own.
+                kept = await self._keep(job, result)
+                out.append((job, result, self._occasion(job, result, readback, kept)))
+            except Exception:  # noqa: BLE001 — one row's failure must not strand its siblings
+                # A row that fails after its claim stays FIRING, as before: boot recovery tells
+                # the room it lost track of it. Its siblings are unaffected.
+                self._row_error(job, "preparing")
         return out
 
     async def run(self) -> None:
