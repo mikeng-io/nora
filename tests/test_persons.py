@@ -281,14 +281,11 @@ def test_the_same_life360_member_id_and_circle_id_twice_is_still_a_copy_paste_fa
         load_persons(p)
 
 
-def test_the_retired_workspaces_table_is_accepted_and_ignored_for_one_release(tmp_path):
-    """The host's one-release compatibility shape: `[workspaces.*]` parses but
-    builds no identity, scope or routing state."""
+def test_the_removed_workspaces_table_is_refused_naming_the_key(tmp_path):
     p = tmp_path / "identity.toml"
     p.write_text(TOML + '[workspaces.home]\nhoncho_workspace = "generated-home"\n')
-    persons = load_persons(p)
-    assert persons.resolve("signal", "+85212345678").person_id == "miles"
-    assert not hasattr(persons, "workspaces")
+    with pytest.raises(PersonsError, match="workspaces"):
+        load_persons(p)
 
 
 def test_person_id_must_satisfy_the_honcho_peer_id_charset(tmp_path):

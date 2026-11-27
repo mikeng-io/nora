@@ -68,27 +68,10 @@ def test_unknown_key_is_a_startup_failure(toml_path):
         load(toml_path)
 
 
-def test_the_retired_honcho_section_is_accepted_and_ignored_for_one_release(toml_path):
-    toml_path.write_text(
-        toml_path.read_text()
-        + '\n[honcho]\nbase_url = "http://g.invalid"\n'
-        + 'workspace_id = "generated-workspace"\ntagger_card_conclusions = 3\n'
-    )
-    cfg = load(toml_path)
-    assert cfg.honcho == {
-        "base_url": "http://g.invalid", "workspace_id": "generated-workspace",
-        "tagger_card_conclusions": 3,
-    }
-    assert not hasattr(cfg, "workspace_id")
-    assert "honcho" not in cfg.model_dump()
-
-    keyless_text = toml_path.read_text().replace(
-        '\n[honcho]\nbase_url = "http://g.invalid"\n'
-        'workspace_id = "generated-workspace"\ntagger_card_conclusions = 3\n',
-        "\n",
-    )
-    toml_path.write_text(keyless_text)
-    assert load(toml_path).model_dump() == cfg.model_dump()
+def test_the_removed_honcho_section_is_refused_naming_the_key(toml_path):
+    toml_path.write_text(toml_path.read_text() + '\n[honcho]\nbase_url = "http://g.invalid"\n')
+    with pytest.raises(ConfigError, match=r"(?m)^honcho$"):
+        load(toml_path)
 
 
 def _trigger_line(toml_path) -> str:

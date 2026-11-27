@@ -21,8 +21,7 @@ export const StatusSchema = z.object({
 export type Status = z.infer<typeof StatusSchema>;
 
 // nora/web/memory.py::build_memory_payload: the caller's own Profile accounts,
-// one per unit that lists them, shown apart. Only a backend running the Profile
-// switch (`[memory.profile] read`) sends any — every chain head with its state,
+// one per unit that lists them, shown apart. Every chain head with its state,
 // the evidence behind each line, and the open disputes (cognition-loop/data.md
 // §4). An empty list is "nothing to show here", never "nothing is held".
 export const ProfileEvidenceSchema = z.object({

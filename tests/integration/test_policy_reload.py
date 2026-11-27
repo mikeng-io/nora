@@ -113,7 +113,7 @@ async def test_identity_reload_resolves_a_new_person_and_keeps_last_good(running
     assert "nora" not in running.persons.by_person
 
 
-async def test_a_reload_carrying_the_retired_workspaces_table_is_accepted_without_changing_people(
+async def test_a_reload_carrying_the_removed_workspaces_table_is_refused_without_changing_people(
     running, cfg,
 ):
     before = set(running.persons.by_person)
@@ -126,10 +126,10 @@ async def test_a_reload_carrying_the_retired_workspaces_table_is_accepted_withou
     await reload_seen(running, "identity.toml")
 
     assert running.metrics.get(
-        "nora_config_reloads_total", file="identity.toml", outcome="applied",
+        "nora_config_reloads_total", file="identity.toml", outcome="refused",
     ) == 1
     assert running.metrics.get(
-        "nora_config_reloads_total", file="identity.toml", outcome="refused",
+        "nora_config_reloads_total", file="identity.toml", outcome="applied",
     ) == 0
     assert set(running.persons.by_person) == before
 

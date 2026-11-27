@@ -34,22 +34,11 @@ def test_the_retired_backend_is_named_nowhere_the_gate_reads() -> None:
         "nora", "docker-compose.yml", "config.example.toml", "identity.example.toml",
     )
     assert found.returncode in (0, 1), f"git grep failed: {found.stderr}"
-    compatibility = {
-        "# ponytail: accept the host's retired [honcho] section for one release,",
-        "honcho: dict[str, object] | None = Field(default=None, exclude=True)",
-    }
-    lines = found.stdout.splitlines()
-    unexpected = []
-    shim = []
-    for line in lines:
-        path, _number, text = line.split(":", 2)
-        text = text.strip()
-        (shim if path == "nora/config.py" and text in compatibility else unexpected).append(line)
+    unexpected = found.stdout.splitlines()
     assert not unexpected, (
         "the retired memory backend is named again; say what the surviving thing "
         "does instead:\n" + "\n".join(unexpected)
     )
-    assert len(shim) in (0, 2), "the one-release shim is a pair or is removed whole"
 
 
 def test_the_gate_matches_the_name_in_either_case() -> None:

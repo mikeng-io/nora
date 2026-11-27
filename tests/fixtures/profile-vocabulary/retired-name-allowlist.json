@@ -26,12 +26,6 @@
    "persona": 4
   }
  },
- "nora/config.py": {
-  "reason": "Explicit startup rejection names the retired section and its replacement.",
-  "matches": {
-   "persona": 1
-  }
- },
  "nora/doctrine/classification.yaml": {
   "reason": "Generic English persona in immutable doctrine classification, not the typed tier.",
   "matches": {
@@ -204,18 +198,6 @@
    "persona_dispute": 2,
    "persona_key": 2,
    "persona_line": 7
-  }
- },
- "tests/unit/test_config_cli.py": {
-  "reason": "Negative control proves the retired configuration section is rejected.",
-  "matches": {
-   "persona": 2
-  }
- },
- "tests/unit/test_memory_config.py": {
-  "reason": "Retired config spellings are tested only to prove startup refusal and the new destination.",
-  "matches": {
-   "persona": 3
   }
  },
  "docs/operations/trace-redaction.md": {
