@@ -1,3 +1,9 @@
+---
+class: adr
+subject: Grounding is four kinds, not one
+owns: []
+---
+
 # 0005 — Grounding is four kinds, not one
 
 - **Status:** accepted (the framing). The tools themselves are **proposed** —

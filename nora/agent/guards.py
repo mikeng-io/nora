@@ -121,7 +121,7 @@ class Deliverer:
     `nora_silent_failures_total` this class raises with which path was speaking
     (`"tag"` or `"heartbeat"`). A default would let the heartbeat's fire path
     report its failures as conversation failures, spending the A8 budget
-    (`docs/runbook.md`) that is filtered to `audience="tag"`. A missing keyword
+    (`docs/operations/runbook.md`) that is filtered to `audience="tag"`. A missing keyword
     is a `TypeError` at construction.
 
     `sent_texts` is a list: every delivered message is appended, and the feedback

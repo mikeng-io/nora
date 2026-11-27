@@ -15,7 +15,7 @@ import { Button } from "./button";
 // "Couldn't check" is never shown as "nothing".
 
 /** One sentence saying what would appear here and how it gets there
- * (DESIGN.md §7). Mini Nora may sit beside it, small. */
+ * (docs/design/appearance/README.md §7). Mini Nora may sit beside it, small. */
 export function EmptyState({
   title,
   children,

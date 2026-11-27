@@ -1,4 +1,5 @@
-"""Live Hong Kong bus arrivals — the first grounding capability (design/system/grounding.md)."""
+"""Live Hong Kong bus arrivals — the first grounding capability "
+"(docs/design/location/README.md)."""
 
 from .client import TransitClient
 

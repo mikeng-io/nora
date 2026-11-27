@@ -219,7 +219,7 @@ def platform_warnings(rows: list[dict]) -> list[str]:
     Read AFTER the container checks passed, and never a failure: a platform
     that could not resolve its identity (a logged-out bridge) is degraded
     alone while Nora serves the rest
-    (design/platform-bridges/platform-liveness.md «Visibility»), and the
+    (docs/design/platform/README.md «Visibility»), and the
     release did not cause it. An unreadable body is a warning too — the
     container's own healthcheck already decided pass or fail."""
     nora = [r for r in rows if r.get("service") == NORA_SERVICE]

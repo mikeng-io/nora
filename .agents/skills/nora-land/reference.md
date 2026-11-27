@@ -7,7 +7,7 @@ for it. Install dependencies only for selected checks.
 
 ## Choosing a worker
 
-[ORCHESTRATION.md](../../../ORCHESTRATION.md) owns current capability tiers,
+[docs/engineering/orchestration.md](../../../docs/engineering/orchestration.md) owns current capability tiers,
 adaptive routing, independence and review selection. Resolve the available
 worker and its advertised options at launch.
 
@@ -54,7 +54,7 @@ orchestrator does it after merge, or when an outcome will not merge:
    moves to Done or Canceled with its reason.
 4. **Record a lesson.** When the work fixed something an earlier merge got
    wrong, or the process (a brief, a route, a gate, a skill) stalled it, the
-   PR adds or extends one lesson in `docs/maintainers/lessons.md`
+   PR adds or extends one lesson in `docs/engineering/lessons.md`
    (`nora-work/references/lifecycle.md` «Resolve and lessons»). A process
    lesson also names the skill edit that fixes the process, made in the same
    PR or filed as a follow-up.

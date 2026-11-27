@@ -224,7 +224,7 @@ class HonchoRoute:
     named scope inside it (`None` = unscoped).
 
     A Honcho workspace is not a Nora workspace — they are separate names for
-    separate things (GLOSSARY.md). The Nora workspace is the operator's
+    separate things (docs/glossary.md). The Nora workspace is the operator's
     grouping of units (`policy.toml`); the Honcho workspace is where that
     grouping's person models live (`identity.toml`'s binding). This value
     carries only the Honcho half: by the time a call is routed, which Nora

@@ -233,7 +233,7 @@ class TranscriptInjection:
         # `<memos>` (DEC-306): the unit's kept memos, unit-wide like `notes`.
         # `None` renders no block.
         self._memos_store = memos
-        # The unit's shared cognitive state reader (design/notebook-memory-types/
+        # The unit's shared cognitive state reader (docs/design/cognition/graph.md
         # 20-standing.md): one callable bound at the composition
         # root over the canonical stores, `None` in every harness that wires
         # none — which renders no `<standing>` block.
@@ -1114,7 +1114,7 @@ class TranscriptInjection:
         tuple[SourceEvent, ...], tuple[SourceEvent, ...], bool, int, int,
     ]:
         """`(events, objects, failed, events_more, objects_more)` of THIS
-        room — the scoped source read of design/platform-observations/exposure.md.
+        room — the scoped source read of docs/design/platform/observations.md
 
         `recent` is bounded by the prompt window; `heads` by
         `_SOURCE_OBJECT_MAX` of the objects OBSERVED NEWEST first (an old

@@ -30,7 +30,7 @@ with ProfilePersonAdaptor's entity key and evidence reader. It reads
 SqlProfileStore.account_heads, then selects current typed Identity. Predecessors
 whose stored state still says current are never counted as current heads.
 
-The eight invented vectors are in `design/unified-memory/profiles.md`.
+The eight invented vectors are in `docs/design/cognition/graph.md`.
 They are private-file synthetic evidence experiments, counted as COUNTERFACTUAL
 when supplied. The committed contracts remain unanchored without the private file.
 No production names, account IDs, messages or audit conclusions belong in Git.

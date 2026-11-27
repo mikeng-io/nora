@@ -1,7 +1,7 @@
 # Brief review and item marking
 
 Two review jobs that fall to the reviewer chosen by rule, beside code review
-(`REVIEW.md`). The reviewer's independence rule is in `ORCHESTRATION.md`
+(`docs/engineering/review.md`). The reviewer's independence rule is in `docs/engineering/orchestration.md`
 «Reviewer independence».
 
 ## Brief review (propose → plan)
@@ -25,6 +25,10 @@ Check, and cite file:line or the source for each finding:
 4. **Operator authority.** The authority, side effects and blast radius are
    stated, and none exceeds what Mike has granted.
 5. **Route.** The route matches the triggers in `nora-work/references/lifecycle.md`.
+6. **Scoped.** For a split's child, each item advances a named parent item,
+   and nothing adds a capability, tool, store or read path to a removal
+   outcome (`nora-dispatch/references/brief.md` «Small»). Either one is a
+   BLOCKER that goes to Mike.
 
 **Return:** for each item, APPROVE or BLOCKER with a one-line reason. Label a
 BLOCKER that the author's pre-flight should have caught as `pre-flight miss`.
@@ -42,13 +46,13 @@ mark the reviewer could not verify is unavailable, not met.
 ## Severity and follow-through
 
 A finding's severity is the reviewer's. The orchestrator chooses the
-disposition (`ORCHESTRATION.md` «Bounded independent review») but never
+disposition (`docs/engineering/orchestration.md` «Bounded independent review») but never
 lowers or raises the severity.
 
 After a repair, a re-check covers the repair delta, the open findings and
 any evidence that was unavailable. One focused re-check follows a repair,
 without asking. A BLOCKER it leaves open gets one more repair (a round with no
-BLOCKER ends review, `ORCHESTRATION.md`); a new blocker
+BLOCKER ends review, `docs/engineering/orchestration.md`); a new blocker
 class, or a finding open after its second repair, is an architecture verdict
 for Mike (`nora-work/references/lifecycle.md` «Escalation»), never another round.
 

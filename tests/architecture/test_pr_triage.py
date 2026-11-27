@@ -72,7 +72,7 @@ def test_the_type_label_is_the_title_type_and_a_bang_adds_breaking():
         ("Dockerfile", {"deploy"}),
         (".github/workflows/ci.yml", {"ci"}),
         ("scripts/check_commit_subject.py", {"ci"}),
-        ("docs/runbook.md", {"docs"}),
+        ("docs/operations/runbook.md", {"docs"}),
         ("README.md", {"docs"}),
         ("tests/test_a.py", {"tests"}),
         ("uv.lock", {"deps"}),

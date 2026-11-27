@@ -2,7 +2,7 @@ import { forwardRef, type ButtonHTMLAttributes, type ComponentProps } from "reac
 import { Link } from "@/i18n/routing";
 import { cn } from "@/lib/cn";
 
-// DESIGN.md §7 Buttons: one primary (denim) per view, quiet for the rest,
+// docs/design/appearance/README.md §7 Buttons: one primary (denim) per view, quiet for the rest,
 // outline for a secondary choice, destructive as danger text with an icon.
 // 44px targets on touch, 40px where a pointer is precise.
 type Variant = "primary" | "quiet" | "outline" | "destructive" | "discord";

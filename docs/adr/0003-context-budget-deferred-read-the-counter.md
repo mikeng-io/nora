@@ -1,3 +1,9 @@
+---
+class: adr
+subject: '`ContextBudget` is deferred; read the counter first'
+owns: []
+---
+
 # 0003 — `ContextBudget` is deferred; read the counter first
 
 - **Status:** accepted

@@ -186,7 +186,7 @@ rules:
       auth_403 means Life360 refused the password login. A verified phone
       number on the account blocks the password grant for good, which is
       what happened on 2026-09-24. It needs the operator, not a restart:
-      switch to token mode (LIFE360_AUTH_TOKEN, docs/runbook.md §4c).
+      switch to token mode (LIFE360_AUTH_TOKEN, docs/operations/runbook.md §4c).
   - name: Life360TokenRejected
     port: "sum by (job) (increase(nora_presence_auth_alarms_total{reason=\"token_rejected\"}[2h])) > 0 for 0m"
     query: 'sum by ("service.name") (increase(nora_presence_auth_alarms_total{reason="token_rejected"}[2h]))'
@@ -202,7 +202,7 @@ rules:
       open DevTools > Application > Cookies > life360.com, and copy the
       LIFE360_AUTH_TOKEN value into secret.toml on the host. Then recreate
       the presence container (a restart keeps the old environment). The full
-      steps are in docs/runbook.md §4c.
+      steps are in docs/operations/runbook.md §4c.
   # ---- nora-r27 (2) ----
   - name: UnavailableOutcomes
     port: "sum by (job, __name__) (increase({__name__=~\".+_total\", __name__!=\"nora_computer_calls_total\", status=\"unavailable\"}[15m])) > 0 for 5m"

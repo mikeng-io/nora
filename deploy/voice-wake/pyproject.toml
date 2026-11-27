@@ -1,7 +1,7 @@
 [project]
 name = "nora-voice-wake"
 version = "0.1.0"
-description = "Nora voice wake gate -- stage 3 of the voice-channel design (design/voice-channel/). The only consumer of the voice-sidecar's TCP seam: per-user PCM in, openWakeWord 喂Nora detection, utterance collection, transcription via the local stt service, transcript forwarded to Nora as text. Separate app from Nora herself (own image, own dependency set) that lives in the same repo and docker-compose project."
+description = "Nora voice wake gate -- stage 3 of the voice-channel design (docs/design/voice/README.md). The only consumer of the voice-sidecar's TCP seam: per-user PCM in, openWakeWord 喂Nora detection, utterance collection, transcription via the local stt service, transcript forwarded to Nora as text. Separate app from Nora herself (own image, own dependency set) that lives in the same repo and docker-compose project."
 requires-python = ">=3.12"
 dependencies = [
     # openWakeWord — the wake-word runtime. Pinned to 0.4.0 exactly: it is the

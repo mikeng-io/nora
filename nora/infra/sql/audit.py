@@ -489,9 +489,9 @@ class SqlRecordStore:
         # one row came back, which a bare INSERT always produces.
         async with self._engine.begin() as conn:
             row_id = int((await conn.execute(stmt)).scalar_one())
-            # `tx_hook(conn, row_id)` runs INSIDE this transaction — the
-            # platform-bridge seam that makes source mapping + message +
-            # projection one atomic commit (design/platform-bridges/03-ownership-and-recovery.md).
+            # `tx_hook(conn, row_id)` runs INSIDE this transaction: source mapping,
+            # message and projection commit atomically
+            # (docs/design/platform/README.md).
             if tx_hook is not None:
                 await tx_hook(conn, row_id)
             # Its node, attachments and edges in the same transaction; a failure

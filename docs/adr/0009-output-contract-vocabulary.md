@@ -1,3 +1,9 @@
+---
+class: adr
+subject: 'Output-contract vocabulary: the three states are a core, not a ceiling'
+owns: []
+---
+
 # 0009 — Output-contract vocabulary: the three states are a core, not a ceiling
 
 - **Status:** accepted

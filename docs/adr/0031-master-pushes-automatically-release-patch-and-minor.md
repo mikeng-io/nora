@@ -1,3 +1,9 @@
+---
+class: adr
+subject: Master pushes automatically release patch/minor; major stays owner-selected
+owns: []
+---
+
 # 0031 · Master pushes automatically release patch/minor; major stays owner-selected
 
 - **Status:** superseded in part by 0040 (operator, 2026-11-22); accepted 2026-10-28

@@ -1328,7 +1328,7 @@ async def dream_loop(
         cursor reads in `_dream_adaptor_once` land inside this root, which
         `DreamerRuntime.run`'s own span could not hold. A unit that fires no
         model call is a trace with no generation, and the collector's tail
-        sampler keeps it out of Langfuse (`docs/observability.md`).
+        sampler keeps it out of Langfuse (`docs/operations/observability.md`).
         """
         with attached(None), span(
             f"dream:{adaptor.name}",

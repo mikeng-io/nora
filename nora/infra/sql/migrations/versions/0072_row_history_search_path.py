@@ -8,7 +8,7 @@ its presence in a data dump is not new), then restores every table with
 `COPY` -- which fires the same AFTER INSERT/UPDATE/DELETE row triggers a live
 write would. With an empty search_path and an unqualified `row_history`, the
 restore fails: `relation "row_history" does not exist`. Found measuring
-design/cognition-loop step 2a.
+docs/design/cognition/loop.md step 2a.
 
 FIX: pin the function's OWN search_path at DDL time (`ALTER FUNCTION ... SET
 search_path`) rather than rewriting every statement in the body with

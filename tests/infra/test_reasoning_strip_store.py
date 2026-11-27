@@ -247,7 +247,7 @@ async def test_a_naive_timestamp_is_refused_before_it_reaches_the_database(
 async def test_the_rate_is_computable_from_the_table_alone(
     store: SqlReasoningStripStore, engine: Any
 ) -> None:
-    """THE QUESTION THE TABLE EXISTS FOR, asked the way `docs/runbook.md` says
+    """THE QUESTION THE TABLE EXISTS FOR, asked the way `docs/operations/runbook.md` says
     to ask it: strips per opportunity, grouped by path and by what was actually
     sent. A counter cannot answer this across a restart; this can, and the
     query is the assertion rather than a comment claiming one would work.
@@ -283,7 +283,7 @@ async def test_the_rate_is_computable_from_the_table_alone(
 async def test_stripped_blocks_separates_how_much_from_how_often(
     store: SqlReasoningStripStore, engine: Any
 ) -> None:
-    """The column `docs/runbook.md` §6d reads beside the rate, and the only one
+    """The column `docs/operations/runbook.md` §6d reads beside the rate, and the only one
     that can answer «how much reasoning was lost».
 
     `strip_calls` counts REQUESTS the transport stripped; `stripped_blocks`

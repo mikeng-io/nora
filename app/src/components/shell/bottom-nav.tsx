@@ -12,7 +12,7 @@ import { NavIcon } from "./nav-icon";
 // Phone navigation: a bottom bar on surface holding the everyday places plus a
 // More cell, which opens a sheet with everywhere else — the rest of the circle
 // and the pages about her. At most MOBILE_NAV_MAX cells, no raised centre
-// button (DESIGN.md §7).
+// button (docs/design/appearance/README.md §7).
 export function BottomNav() {
   const t = useTranslations("nav");
   const pathname = usePathname();

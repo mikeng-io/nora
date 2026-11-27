@@ -1,5 +1,5 @@
 """Per-platform liveness, through the real gates
-(design/platform-bridges/platform-liveness.md).
+(docs/design/platform/README.md).
 
 A degraded platform hears nothing (no supervised listen, no stream call, no
 work claim) and sends nothing (every adapter class, every derived facade)

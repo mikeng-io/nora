@@ -84,7 +84,7 @@ def areas(path: str) -> set[str]:
         found.add("deploy")
     if path.startswith((".github/", "scripts/", ".githooks/")) or path == "Makefile":
         found.add("ci")
-    if path.startswith(("docs/", "design/", "assets/")) or (
+    if path.startswith(("docs/", "docs/design/", "assets/")) or (
         "/" not in path and path.endswith(".md")
     ):
         found.add("docs")

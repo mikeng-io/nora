@@ -1,6 +1,6 @@
 """Managed-backend vocabulary shared by the binding store, the authority
 backend and the services that coordinate them
-(`design/managed-identity-access/`).
+(`docs/design/people/README.md`).
 
 Standard library only — same rule as the rest of `nora/domain`
 (`nora/domain/__init__.py`), enforced by `tests/test_boundaries.py` and
