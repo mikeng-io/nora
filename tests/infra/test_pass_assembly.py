@@ -298,6 +298,18 @@ async def test_room_list_culture_skips_an_uncited_dm_claim_and_marks_a_cited_one
     }
 
 
+async def test_room_list_culture_with_no_cited_claim_reads_as_nothing_found(scenario):
+    await pointers(scenario)
+    await scenario.claim("uncited", part="trait", exposure="external",
+                         content={"text": "Nobody can see where this came from."})
+    await write_edge(scenario, "uncited", "room-here", "about")
+
+    result = await _room_list(scenario)()
+    assert next(r["culture"] for r in result["rooms"] if r["here"]) == {
+        "status": "nothing_found", "note": "No profile claims were found for this room.",
+    }
+
+
 async def test_room_list_reports_nothing_found_on_an_empty_graph(scenario) -> None:
     legacy = SqlCultureStore(scenario.engine)
     revision = await legacy.append(

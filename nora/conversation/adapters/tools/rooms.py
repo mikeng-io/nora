@@ -492,6 +492,8 @@ def _culture_preview(read, *, content_checks: bool) -> dict[str, str]:
             marker = read.origin_marker(row)
             summary = f"{summary} ({marker})" if marker else summary
             return {**result, "part": part, "summary": summary}
+    if profile.status == "ok":  # nothing cited is shown, so nothing is found
+        return {"status": "nothing_found", "note": _PROFILE_NOTES["nothing_found"]}
     return result
 
 
