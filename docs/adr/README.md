@@ -1,3 +1,9 @@
+---
+class: adr
+subject: how decisions are recorded as ADRs and how they relate to the design
+owns: []
+---
+
 # Architecture Decision Records
 
 Nygard-form ADRs: **Context / Decision / Consequences**, one file per decision,

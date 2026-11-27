@@ -1,5 +1,5 @@
 """computer_events — the computer audit log, two rows (started, finished) per
-computer tool call, on every path (design/sandbox-runtime §12, DEC-243).
+computer tool call, on every path (docs/design/computer/sandbox.md §12, DEC-243).
 
 The operator's requirement is a COMPLETE trail with Postgres as the record
 of truth: who (`actor`, `requester_person_id`, the room, the tag), when

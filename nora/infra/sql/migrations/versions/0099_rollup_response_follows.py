@@ -5,7 +5,7 @@ sends only when it quoted that send. In group chat most answers quote nothing,
 so answered sends read `unanswered`, and an `ask` would have read `silent`.
 `nora.domain.rollup.unquoted_follows` now reads a member's message soon after
 her send, or one naming her, as answering it
-(design/cognition-loop/observation.md). This column keeps those
+(docs/design/cognition/loop.md). This column keeps those
 apart from `replies`, which stays «quoted it»: a
 reader can tell a quoted answer from an inferred one.
 

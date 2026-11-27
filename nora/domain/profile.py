@@ -1,4 +1,4 @@
-"""Profile: one account per entity, kept as typed lines (design/unified-memory/profiles.md).
+"""Profile: one account per entity, kept as typed lines (docs/design/cognition/graph.md).
 
 An account is who an entity is to Nora, in three parts: **facts** (who or
 what it is), **traits** (what it is like) and **guesses** (why it is

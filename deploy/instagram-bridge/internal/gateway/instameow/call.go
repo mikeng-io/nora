@@ -1,5 +1,5 @@
 // Package instameow is the gateway: the ONLY code in the bridge that talks to
-// Instagram (design/instagram-adoption/bridge.md).
+// Instagram (docs/design/platform/instagram.md).
 //
 // It owns the instameow client and its session supervisor, Instagram's wire
 // structs, and the mapping from those structs to domain entities. Nothing
@@ -27,7 +27,7 @@
 // mentions.go's `GET /mentions` read. Before it, the one raw REST call this
 // bridge ever made (`web_profile_info`) had been removed when it proved
 // throttled. comments.go's comment read and the bridge's ONE public write,
-// the comment reply, go through it too (design/instagram-adoption/summons.md).
+// the comment reply, go through it too (docs/design/platform/instagram.md).
 package instameow
 
 import (
@@ -53,7 +53,7 @@ import (
 // failure onto the closed error set.
 //
 // The span is ended with the RAW error, so its `error.type` is exactly what
-// design/instagram-adoption/bridge.md recorded; the classification is applied to what the caller receives.
+// docs/design/platform/instagram.md recorded; the classification is applied to what the caller receives.
 func call[T any](
 	ctx context.Context, span string, attrs []attribute.KeyValue,
 	fn func(context.Context) (T, error),
@@ -409,7 +409,7 @@ func (e *fixedTextError) Unwrap() error { return e.cause }
 //
 // `"status":"fail"` inside an HTTP 200 is a failure too — the REST form of
 // the check `graphql` above already applies to a GraphQL `errors` array (16
-// design/instagram-adoption/bridge.md «Observation»: "Status ERROR on any failure, including a 200 carrying...
+// docs/design/platform/instagram.md «Observation»: "Status ERROR on any failure, including a 200 carrying...
 // errors").
 func restDo(ctx context.Context, issuer RESTIssuer, req restRequest) (int, []byte, error) {
 	label := req.label
@@ -714,7 +714,7 @@ func failSpan(span trace.Span, kind string, err error) {
 }
 
 // errorType names a failure by what it MEANS, in the vocabulary a reader of
-// Jaeger acts on differently. It reads the RAW error, as design/instagram-adoption/bridge.md did.
+// Jaeger acts on differently. It reads the RAW error, as docs/design/platform/instagram.md did.
 func errorType(err error) string {
 	switch {
 	case needsHuman(err):
@@ -733,7 +733,7 @@ func errorType(err error) string {
 	case errors.Is(err, domain.ErrUnavailable):
 		// Only reachable if a wrapped function returns an already-classified
 		// "not connected"; no library call does today. Kept so that one would
-		// not read as a bare "error". (design/instagram-adoption/bridge.md carried the same case.)
+		// not read as a bare "error". (docs/design/platform/instagram.md carried the same case.)
 		return "unavailable"
 	case errors.Is(err, context.DeadlineExceeded):
 		return "timeout"

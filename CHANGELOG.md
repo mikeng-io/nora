@@ -1,5 +1,41 @@
 # Changelog
 
+## [7.21.4](https://github.com/mikeng-io/nora/compare/v7.21.3...v7.21.4) (2026-11-27)
+
+
+### Features
+
+* **ci:** every PR lists each builder and reviewer with its environment, agent and model ([2e1a054](https://github.com/mikeng-io/nora/commit/2e1a054188a4a840dcb1194fbe48e39162b9ef72))
+* **docs:** every document has a class, one owner per fact, and a gate that checks it ([f6edd38](https://github.com/mikeng-io/nora/commit/f6edd38d0c8c22d51d9257a8e24222e2d565dc06))
+* **hooks:** every commit names its environment, agent and model ([a4246e8](https://github.com/mikeng-io/nora/commit/a4246e8d8376bd0d0c09cab45697e0d4c83b233b))
+
+
+### Bug Fixes
+
+* **design:** close the Neon review's findings on the integrated design ([9010aa6](https://github.com/mikeng-io/nora/commit/9010aa6ac1d44649066c053a125eeb2c9f4089d1))
+* **design:** point two citations at the sections that own them ([4ba1c1d](https://github.com/mikeng-io/nora/commit/4ba1c1d38c321722917c427b47c417aa2fc7277d))
+* **docs:** close the Neon review's findings on the derived documents ([4a573ee](https://github.com/mikeng-io/nora/commit/4a573eeb0ca5b3826349a641fb5b9be990e6f315))
+* **docs:** close the Neon review's findings on the move ([cf4d89f](https://github.com/mikeng-io/nora/commit/cf4d89fc66f561a035a14cf5894cb0afa3dc66fe))
+* **docs:** hold only bundle files to the 300-line design budget ([d971caa](https://github.com/mikeng-io/nora/commit/d971caa8882623dc909eb5a42985307c6eb3062f))
+* **docs:** leave Dockerfile comments on their old design paths ([b6ed04d](https://github.com/mikeng-io/nora/commit/b6ed04d00a6dbb16be74bbe1cefb63c062115fb6))
+* **docs:** read trailers with git's own parser and bound document links to the repository ([c656855](https://github.com/mikeng-io/nora/commit/c65685565d317129d149c23e152bf82811bf994e))
+* **docs:** the document gate and provenance checks close the review's bypasses ([f7c57a0](https://github.com/mikeng-io/nora/commit/f7c57a0afab73bffa678a26f49feff8549a7f1c3))
+
+
+### Changes
+
+* **agents:** gate a split's scope on its parent's Done-when ([92bbc61](https://github.com/mikeng-io/nora/commit/92bbc617081ecd907638241832aaee6604917d2c))
+* **design:** integrate the four U3 lanes into one design ([128173f](https://github.com/mikeng-io/nora/commit/128173fde290f310ff164126a257920110b96d73))
+* **design:** make design/ one design, and gate the two markers that drifted ([7187c9a](https://github.com/mikeng-io/nora/commit/7187c9ab82d555f3adaf4c9f46cfb13496fa7bea))
+* **design:** the anchor owns cognition alone, with no coexisting legacy bundles ([f92e02c](https://github.com/mikeng-io/nora/commit/f92e02c75afcf41ab663ef2609c07572c4fe7e0f))
+* **design:** the decision index becomes one line per rule that holds ([e988348](https://github.com/mikeng-io/nora/commit/e9883486747b159aec51b65be1e2161a9a0e1bfc))
+* **design:** the legacy bundles leave, and the anchor states what only they said ([cffe2c7](https://github.com/mikeng-io/nora/commit/cffe2c71029f0b7e7a72d39fdc42f80c84f86c23))
+* **design:** write the media, appearance, security, obs and web bundles ([6d26982](https://github.com/mikeng-io/nora/commit/6d269820d7dbbe76cc960100fcb13153e08f3fc1))
+* **design:** write the people, agenda, voice, presence and location bundles ([2449445](https://github.com/mikeng-io/nora/commit/2449445c756c25aca1f6f18366565c473bb3da99))
+* **docs:** an exact move is not new content, so the document check skips it ([5c5a3f0](https://github.com/mikeng-io/nora/commit/5c5a3f0a0c392ba7dd80169c54609901ac9c0a12))
+* **docs:** check only the documents a change touches ([b651821](https://github.com/mikeng-io/nora/commit/b6518213289c2fe9d27d9901a1d7de9a4b5dec64))
+* **docs:** the docs map, the bundle map and the glossary are generated from frontmatter ([3a7c2ed](https://github.com/mikeng-io/nora/commit/3a7c2eddd9f2b7897587cebfd4bad3372d65c667))
+
 ## [7.21.3](https://github.com/mikeng-io/nora/compare/v7.21.2...v7.21.3) (2026-11-23)
 
 

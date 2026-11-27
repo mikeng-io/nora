@@ -1,6 +1,6 @@
 """`[identity]` configuration — backend selection for person binding and
 scoped grants, and the private Ory service endpoints `managed` wires
-against (`design/managed-identity-access/`).
+against (`docs/design/people/README.md`).
 
 `file` (the default) is `identity.toml` + `policy.toml` exactly as today —
 unchanged, hot-reloaded, and requiring no Ory service. `managed` selects
@@ -22,7 +22,7 @@ from nora.domain.identity import id_kinds
 
 class ManagedOryConfig(BaseModel):
     """`[identity.managed]` — the private Ory service endpoints a managed
-    deployment wires against (`design/managed-identity-access/`).
+    deployment wires against (`docs/design/people/README.md`).
 
     Kratos's public listener is recorded for later session-facing flows; the
     managed backend speaks admin API only. Every URL names the service's

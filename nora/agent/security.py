@@ -96,7 +96,7 @@ def trace_safe(text: str, *, content_checks: bool = True) -> tuple[str, str]:
     **It lives HERE rather than in `nora.obs.tracing`** because `nora.obs` sits
     BELOW `nora.agent` in the import contract, so the tracing helper cannot
     reach these predicates. The screen is therefore the CALLER's obligation at
-    every generation span (`docs/observability.md`), and `generation`'s
+    every generation span (`docs/operations/observability.md`), and `generation`'s
     `prompt`/`completion` parameters take already-screened text.
     """
     offence = scan_identifiers(text, content_checks=content_checks)

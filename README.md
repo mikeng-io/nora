@@ -36,8 +36,8 @@ experimental and self-hosted: the runtime and every store run on your own
 hardware, and model inference and connected services can be external.
 
 <p align="center">
-  <a href="ARCHITECTURE.md">Architecture</a> ·
-  <a href="GLOSSARY.md">Glossary</a> ·
+  <a href="docs/design/cognition/README.md">Architecture</a> ·
+  <a href="docs/glossary.md">Glossary</a> ·
   <a href="CONTRIBUTING.md">Contributing</a> ·
   <a href="deploy/README.md">Deployment</a> ·
   <a href="SECURITY.md">Security</a>
@@ -100,7 +100,7 @@ Four ideas run through all of it:
 - **Sessionless.** There is no chat session to resume. Each turn assembles its
   context from persistent state, speaks and ends. Cognition, browser and computer
   work keep bounded sessions of their own, so this does not mean a continuously
-  running model. See the [glossary](GLOSSARY.md#nora-as-a-social-agent).
+  running model. See the [glossary](docs/glossary.md).
 - **Silence is an outcome.** When an occasion arrives she reads the situation
   again, and the right answer may be that nothing needs saying.
 - **The unit is the boundary.** Continuity does not grant shared access: people
@@ -108,9 +108,10 @@ Four ideas run through all of it:
 - **Learning changes context, not weights.** Lessons and accounts of people are
   revised from evidence. Doctrine is never rewritten by her.
 
-The [architecture map](ARCHITECTURE.md) is the full runtime and code map. The
-memory tiers are specified in the [tier model](design/cognition-loop/data.md)
-and the [prior-art note](design/cognition-loop/README.md) records what she
+The [cognition design](docs/design/cognition/README.md) is the architecture anchor and the
+[code map](docs/engineering/code-map.md) says where each area lives. The
+memory tiers are specified in the [tier model](docs/design/cognition/loop.md)
+and the [prior-art note](docs/design/cognition/loop.md) records what she
 adopts and refuses from existing memory systems.
 
 ## A continuing presence
@@ -132,12 +133,12 @@ platform accounts and persistent storage.
 
 ## Start here
 
-- [Glossary](GLOSSARY.md): the words that mean something specific here.
-- [Architecture](ARCHITECTURE.md): runtime boundaries, data and deployment.
-- [Decisions](docs/adr/README.md) and [design index](design/09-decision-index.md):
+- [Glossary](docs/glossary.md): the words that mean something specific here.
+- [Architecture](docs/design/cognition/README.md): how Nora holds and works what she knows; the [code map](docs/engineering/code-map.md) places the code.
+- [Decisions](docs/adr/README.md) and [design index](docs/design/decisions.md):
   rationale, trade-offs and design work, including proposals not yet implemented.
 - [Contributing](CONTRIBUTING.md): development checks and pull requests.
-- [Deployment](deploy/README.md) and the [operator runbook](docs/runbook.md).
+- [Deployment](deploy/README.md) and the [operator runbook](docs/operations/runbook.md).
 - [Agent instructions](AGENTS.md): procedures for coding agents.
 
 ## Quickstart
@@ -215,7 +216,7 @@ the `deployments` branch; where a [Komodo](deploy/komodo/README.md) Stack is
 installed, it polls that branch and deploys the bundle, then writes a receipt. The
 image records the source revision and its generated version manifest. The
 [deployment guide](deploy/README.md) describes the procedure, and the
-[runbook](docs/runbook.md) carries health checks and rollback constraints,
+[runbook](docs/operations/runbook.md) carries health checks and rollback constraints,
 including database migrations. Do not use old phase tags as rollback targets.
 
 Nora reads the release history shipped in her image with `version_list()` and
@@ -236,11 +237,11 @@ identifiers and location data out of issues, logs and screenshots. See
 [Contributing](CONTRIBUTING.md) for development checks and [Security](SECURITY.md)
 for vulnerability reports. Follow the [Code of Conduct](CODE_OF_CONDUCT.md).
 Maintenance is on a best-effort basis. Repository security, release automation
-and merge rules are documented in [GitHub maintenance](docs/maintainers/github.md).
+and merge rules are documented in [GitHub maintenance](docs/operations/github.md).
 
 ## License
 
 Code: [MIT](LICENSE). Her art listed in `LICENSE` is all rights reserved, for
 building and running Nora only. Third-party components keep their licenses.
 
-Credential-source migration and named model endpoints: [configuration](docs/configuration.md).
+Credential-source migration and named model endpoints: [configuration](docs/operations/configuration.md).

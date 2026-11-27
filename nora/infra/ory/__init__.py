@@ -1,5 +1,5 @@
 """Minimal typed HTTP clients for the pinned self-hosted Ory services
-(`design/managed-identity-access/identity.md`, `authorization.md`).
+(`docs/design/people/identity.md`, `authorization.md`).
 
 Public surface: `KetoClient`, `KratosClient`, `OryTransportError` and the
 `HttpStatus`/`HttpResult` transport vocabulary. No generated SDK: the clients

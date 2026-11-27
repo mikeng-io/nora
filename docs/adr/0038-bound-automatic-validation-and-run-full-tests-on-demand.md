@@ -1,3 +1,9 @@
+---
+class: adr
+subject: Bound automatic validation and run full tests on demand
+owns: []
+---
+
 # ADR 0038: Bound automatic validation and run full tests on demand
 
 **Status:** accepted

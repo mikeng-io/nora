@@ -131,7 +131,7 @@ test test-fast test-affected:
 # the LLM key env set) ---
 #
 # `python -m evals` runs a NAMED corpus (or `--class`, or `--all`) rather than
-# a file path — `design/evaluation/coverage.md`  «Classes»'s port put the
+# a file path — `docs/engineering/evaluation-coverage.md`  «Classes»'s port put the
 # 150 corpus cases behind `evals.scenarios.experiment_for()`, and adding a
 # corpus adds a dict entry there, not a target here.
 #
@@ -139,7 +139,7 @@ test test-fast test-affected:
 # (`nora_eval`, made by `scripts/refresh_eval_clone.sh`). Every case names a
 # real room at a real instant, is seeded from the clone into a sandbox
 # database of its own, and composes the deployment's own config, policy and
-# roster (design/evaluation/subject.md). Off the deploy
+# roster (docs/engineering/evaluation-subject.md). Off the deploy
 # host there is no source and no deployment to compose, and the run says so.
 EVAL_GRADING = --grading-contract "$(EVAL_GRADING_CONTRACT)" --grading-contract-sha256 "$(EVAL_GRADING_CONTRACT_SHA256)"
 
@@ -147,7 +147,7 @@ EVAL_GRADING = --grading-contract "$(EVAL_GRADING_CONTRACT)" --grading-contract-
 eval-source:
 	./scripts/refresh_eval_clone.sh
 
-# The ambient-participation flip gate (design/cognition-loop/proactive.md): all
+# The ambient-participation flip gate (docs/design/cognition/loop.md): all
 # 15 cases must reach their expected verdict — zero false-speaks on the
 # knowledge-cut twins, zero speaks on the pure-No five.
 eval-participation:
@@ -162,7 +162,7 @@ eval-participation:
 build:
 	scripts/build-image.sh
 
-# --- branch hygiene (docs/maintainers/conventions.md: "Cleanup") ---
+# --- branch hygiene (docs/engineering/conventions.md: "Cleanup") ---
 # Reports only. Deleting is a decision, and a branch with a live worktree or an
 # uncommitted change belongs to whoever is working in it.
 
@@ -178,14 +178,14 @@ branches:
 	@git branch -r --no-merged origin/master || echo "  none"
 	@echo; echo "Delete with: git branch -d <b> ; git push origin --delete <b>"
 
-# Artifact retirement (ORCHESTRATION.md «Artifact lifecycle»). Dry run by
+# Artifact retirement (docs/engineering/orchestration.md «Artifact lifecycle»). Dry run by
 # default — it classifies every remote branch, local branch and registered
 # worktree as remove/keep/unknown and exits nonzero while anything is unknown.
 # APPLY=1 performs the removals and logs each removed ref with its SHA.
 gc:
 	uv run python scripts/git_gc.py $(if $(APPLY),--apply)
 
-# Archive a finished artifact that did not merge (ORCHESTRATION.md «Artifact
+# Archive a finished artifact that did not merge (docs/engineering/orchestration.md «Artifact
 # lifecycle»): an annotated archive/<branch> tag on the committed tip records
 # the reason, source tip and worktree, pushed and verified; a dirty worktree
 # is refused. Merged work's record is its merged PR; `gc` retires worktree
@@ -194,7 +194,7 @@ archive:
 	@test -n "$(BRANCH)" && test -n "$(REASON)" || { echo 'usage: make archive BRANCH=<b> REASON="..."'; exit 2; }
 	uv run python scripts/git_archive.py "$(BRANCH)" --reason "$(REASON)"
 
-# --- merge-time checks (docs/code-standards.md and AGENTS.md "Never"; each of these has a dated incident
+# --- merge-time checks (docs/engineering/code-standards.md and AGENTS.md "Never"; each of these has a dated incident
 # behind it, and until now each existed only as a command to retype by hand).
 # Reports, not assertions: `uniq -d` exits 0 with no output, so read the output
 # rather than trusting the exit code — that noisy-gate trap is why the real
@@ -209,16 +209,16 @@ heads:
 # parent, and the optional letter keeps a duplicated `R-6b` from going unseen.
 decision-numbers:
 	@echo "== duplicate DEC numbers =="
-	@grep -oE '^\| DEC-[0-9]+[a-z]? \|' design/09-decision-index.md | grep -oE '[0-9]+[a-z]?' | sort -V | uniq -d
+	@grep -oE '^\| DEC-[0-9]+[a-z]? \|' docs/design/decisions.md | grep -oE '[0-9]+[a-z]?' | sort -V | uniq -d
 	@echo "== duplicate R numbers =="
-	@grep -oE '^\| R-[0-9]+[a-z]? \|' design/09-decision-index.md | grep -oE '[0-9]+[a-z]?' | sort -V | uniq -d
+	@grep -oE '^\| R-[0-9]+[a-z]? \|' docs/design/decisions.md | grep -oE '[0-9]+[a-z]?' | sort -V | uniq -d
 
-# The schema gate on its own (DEC-11: `alembic check` is blind to the CHECK
+# The schema gate on its own (DEC-53: `alembic check` is blind to the CHECK
 # constraint and the `ts DESC` index ordering, so this is the real one).
 schema-parity:
 	uv run pytest -q tests/infra/test_schema_parity.py
 
-# --- live evals (docs/eval-sop.md "What gates a change"; they need the model
+# --- live evals (docs/operations/eval-sop.md "What gates a change"; they need the model
 # and run on the deploy host, never part of the gate) ---
 
 # Routing is the `tool_selection` corpus (since 21e5405d); this target runs the

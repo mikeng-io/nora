@@ -1,4 +1,4 @@
-# The Relevance Gate suite (design/cognition-loop/proactive.md).
+# The Relevance Gate suite (docs/design/cognition/loop.md).
 #
 # This grades the GATE, not a turn: each case is `transcript + standing ->
 # expected verdict`, driven through the real `RelevanceGate.decide` against
@@ -41,7 +41,7 @@
 
 # --- real: the fifteen windows the rooms actually produced -----------------
 
-# --- RE-HOMED 2026-09-17 (design/evaluation Step 3) -------------------------
+# --- RE-HOMED 2026-09-17 (docs/engineering/evaluation Step 3) -------------------------
 #
 # The CASES are unchanged — same names, same windows, same labels, same
 # `sample`. What changed is that they now name their entry point (`entry:
@@ -86,7 +86,7 @@
 # gate reads is every row the room held at or before `before_ms`; the newest
 # row IS the judged line. A case with no real moment is `parked:` (P-A) with
 # the reason and the condition that brings it back; it is counted on every
-# run and never driven (`design/evaluation/subject.md`).
+# run and never driven (`docs/engineering/evaluation-subject.md`).
 #
 # HOW MOMENTS WERE CHOSEN — structurally, from the deployment's clone:
 # every untagged member line (no @-mention, no reply to her) whose SHAPE is
@@ -123,7 +123,7 @@
     conversation_id: "Lf2L9zqeNUahRsOz6BA+sTB8aWfbuvqu9vOhpvmJi34="
     before_ms: 1788618800272
 
-# --- CONVERTED 2026-09-21 (design/evaluation Step 3 continued) -------------
+# --- CONVERTED 2026-09-21 (docs/engineering/evaluation Step 3 continued) -------------
 #
 # The nine below name a REAL room at a REAL instant instead of stating
 # `knows:`. Verified against the production transcript before conversion (see

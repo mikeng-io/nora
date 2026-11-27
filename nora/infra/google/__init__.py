@@ -1,4 +1,4 @@
-"""Nora's one Google identity (design/external-files/00-design.md §4).
+"""Nora's one Google identity (docs/design/computer/external-files.md §4).
 
 `scopes` lists every Google service she uses and the scope each declares;
 `auth.GoogleCredentials` holds the ONE OAuth client and refresh token they

@@ -3,7 +3,7 @@
 # Apply ONLY after the SigNoz backend is running on the host — plain
 # docker-compose.yml stays deployable on its own, so the Komodo release
 # pipeline is never gated on an optional stack existing. The steps are in
-# docs/observability.md "Cutover and acceptance"; in short:
+# docs/operations/observability.md "Cutover and acceptance"; in short:
 #
 #   1. Deploy the backend (creates the external network):
 #        SIGNOZ_JOURNAL_GID=$(getent group systemd-journal | cut -d: -f3) \

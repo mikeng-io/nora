@@ -1,6 +1,6 @@
 # nora-voice-wake
 
-Stage 3 of the voice-channel design (`design/voice-channel/`): the Python
+Stage 3 of the voice-channel design (`docs/design/voice/README.md`): the Python
 wake gate, and the **only** consumer of the voice-sidecar's TCP seam
 (`deploy/voice-sidecar/TRANSPORT.md`). Per-user PCM comes in, openWakeWord
 listens for 「喂 Nora」, the utterance that follows is transcribed by the

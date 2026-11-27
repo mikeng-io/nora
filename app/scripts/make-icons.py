@@ -3,7 +3,7 @@
     uv run --no-project --with pillow python app/scripts/make-icons.py
 
 Needs rsvg-convert. Outputs are committed under app/public/icons/ (favicon.ico
-at app/public/); rerun after the emblem changes. Per DESIGN.md §2 and §7:
+at app/public/); rerun after the emblem changes. Per docs/design/appearance/README.md §2 and §7:
   - `any` icons: assets/nora-emblem.svg bare, transparent
   - where a platform forbids transparency (a maskable icon, the iOS home
     screen): a full-bleed paper square, never a circle, with the emblem inside
@@ -23,7 +23,7 @@ REPO = APP.parent
 ICONS = APP / "public" / "icons"
 EMBLEM = REPO / "assets" / "nora-emblem.svg"
 
-# DESIGN.md token: paper 3, the icons' ground.
+# docs/design/appearance/README.md token: paper 3, the icons' ground.
 PAPER = (0xF4, 0xF1, 0xEA)
 
 

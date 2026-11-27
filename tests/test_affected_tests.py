@@ -160,8 +160,8 @@ def test_empty_diff_selects_nothing():
 # --- documentation and data readers: found by scanning tests/, not listed ---
 #
 # Every `.md` is mapped to the tests that open it, not to a hand-kept table:
-# README.md, DESIGN.md, docs/runbook.md, ARCHITECTURE.md, AGENTS.md,
-# CONTRIBUTING.md, the decision index, the deploy READMEs and the
+# README.md, docs/design/appearance/README.md, docs/operations/runbook.md, the code map,
+# AGENTS.md, CONTRIBUTING.md, the decision index, the deploy READMEs and the
 # release-fragment README each have a test that opens them. These cases name
 # the real readers of the real tree, so a change to how a test opens a doc
 # shows up here.
@@ -182,16 +182,16 @@ def test_generic_docs_markdown_selects_the_universal_doc_reader():
 
 @pytest.mark.parametrize(("path", "readers"), [
     ("README.md", ["tests/test_docs.py"]),
-    ("DESIGN.md", ["tests/test_docs.py"]),
-    ("docs/runbook.md", ["tests/test_docs.py"]),
-    ("ARCHITECTURE.md", ["tests/test_architecture_doc.py"]),
+    ("docs/design/appearance/README.md", ["tests/test_docs.py"]),
+    ("docs/operations/runbook.md", ["tests/test_docs.py"]),
+    ("docs/engineering/code-map.md", ["tests/test_architecture_doc.py"]),
     ("AGENTS.md", ["tests/architecture/test_agent_skills.py",
                    "tests/test_architecture_doc.py"]),
     (".agents/skills/nora-land/SKILL.md", ["tests/architecture/test_agent_skills.py"]),
     ("CONTRIBUTING.md", ["tests/architecture/test_contribution_conventions.py"]),
     (".github/pull_request_template.md",
      ["tests/architecture/test_contribution_conventions.py"]),
-    ("design/09-decision-index.md",
+    ("docs/design/decisions.md",
      ["tests/architecture/test_decision_index_ids_are_unique.py",
       "tests/architecture/test_decision_index_tests_exist.py",
       "tests/test_architecture_doc.py"]),
@@ -205,7 +205,7 @@ def test_a_doc_selects_every_test_that_opens_it(path, readers):
 
 def test_mixed_markdown_and_docs_tree_change_unions_every_reader():
     selected = select([
-        "docs/foo.md", "README.md", "design/09-decision-index.md",
+        "docs/foo.md", "README.md", "docs/design/decisions.md",
     ])
     assert selected != ALL
     for reader in ("tests/test_docs.py",
@@ -216,10 +216,10 @@ def test_mixed_markdown_and_docs_tree_change_unions_every_reader():
 
 
 def test_a_docs_tree_data_file_selects_what_reads_it_not_nothing():
-    """design/*.toml is not "docs-only, no reader". The scan finds the tests
+    """docs/design/*.toml is not "docs-only, no reader". The scan finds the tests
     that name the design tree; a file with no reader at all is NONE (next
     test), never silently the same as a failure."""
-    assert _selected("design/10-preview-identity.toml") != []
+    assert _selected("docs/operations/identity-preview.toml") != []
 
 
 def test_nora_skills_change_selects_all():
@@ -325,9 +325,9 @@ def test_a_test_that_globs_a_directory_reads_every_file_in_it(tmp_path):
         "test_walks_design.py":
             "from pathlib import Path\n"
             "def test_it(root):\n"
-            "    assert list((root / 'design').rglob('*.toml'))\n",
+            "    assert list((root / 'docs' / 'design').rglob('*.toml'))\n",
     })
-    assert select(["design/x/y.toml"], repo) == ["tests/test_walks_design.py"]
+    assert select(["docs/design/x/y.toml"], repo) == ["tests/test_walks_design.py"]
     # the glob alone (`*.toml`) also names a file in another docs tree
     assert select(["docs/y.toml"], repo) == ["tests/test_walks_design.py"]
 
@@ -355,7 +355,7 @@ def test_a_docstring_that_mentions_a_doc_does_not_read_it(tmp_path):
 
 def test_a_docs_tree_data_file_nothing_reads_selects_nothing_explicitly(tmp_path):
     repo = _synthetic(tmp_path, **{"test_a.py": "def test_a():\n    assert 1\n"})
-    assert select(["design/orphan.yaml"], repo) == []
+    assert select(["docs/design/orphan.yaml"], repo) == []
 
 
 def test_a_test_module_that_cannot_be_parsed_is_assumed_to_read_every_doc(tmp_path):
@@ -757,9 +757,9 @@ def test_a_new_root_test_is_judged_by_the_test_that_forbids_new_root_tests(tmp_p
     repo = _tree(tmp_path, {
         "tests/test_zz.py": _TRIVIAL,
         "tests/architecture/test_tests_root_takes_no_new_files.py": _TRIVIAL,
-        "design/zz.yaml": "{}",
+        "docs/design/zz.yaml": "{}",
     })
-    selected = select(["tests/test_zz.py", "design/zz.yaml"], repo)
+    selected = select(["tests/test_zz.py", "docs/design/zz.yaml"], repo)
     assert selected != ALL
     assert META in selected
     # the target is the directory, so the matching test is inside what runs
@@ -775,9 +775,9 @@ def test_a_new_test_that_reads_the_config_template_reaches_its_architecture_test
             "from pathlib import Path\n"
             "def test_x():\n    Path('config.example.toml').read_text()\n",
         "tests/architecture/test_config_comes_from_the_template.py": _TRIVIAL,
-        "design/zz.yaml": "{}",
+        "docs/design/zz.yaml": "{}",
     })
-    selected = select(["tests/unit/test_zz.py", "design/zz.yaml"], repo)
+    selected = select(["tests/unit/test_zz.py", "docs/design/zz.yaml"], repo)
     assert META in selected and "tests/unit/test_zz.py" in selected
 
 
@@ -785,8 +785,8 @@ def test_the_two_evasion_diffs_end_to_end_through_the_cli(tiny_repo, capsys):
     (tiny_repo / "tests" / "architecture").mkdir(parents=True)
     (tiny_repo / "tests" / "architecture" / "test_meta.py").write_text(_TRIVIAL)
     (tiny_repo / "tests" / "test_zz.py").write_text(_TRIVIAL)
-    (tiny_repo / "design").mkdir(parents=True, exist_ok=True)
-    (tiny_repo / "design" / "zz.yaml").write_text("{}")
+    (tiny_repo / "docs" / "design").mkdir(parents=True, exist_ok=True)
+    (tiny_repo / "docs" / "design" / "zz.yaml").write_text("{}")
     _run_git(tiny_repo, "add", ".")
     _run_git(tiny_repo, "commit", "-q", "-m", "a test and a design file")
 
@@ -907,12 +907,12 @@ def test_a_helper_or_conftest_that_could_read_a_doc_selects_all(
             f"tests/{helper}": helper_source,
             "tests/test_a.py": _TRIVIAL,
         })
-        assert select(["docs/runbook.md"], repo) == ALL, f"{helper} {why}"
+        assert select(["docs/operations/runbook.md"], repo) == ALL, f"{helper} {why}"
 
 
 def test_a_helper_that_reads_nothing_near_a_doc_does_not_force_all(tmp_path):
     repo = _tree(tmp_path, {"tests/helpers.py": "X = 1\n", "tests/test_a.py": _TRIVIAL})
-    assert select(["docs/runbook.md"], repo) == [UNIVERSAL_DOC_READER]
+    assert select(["docs/operations/runbook.md"], repo) == [UNIVERSAL_DOC_READER]
 
 
 def test_a_deploy_readme_is_all_because_a_helper_walks_deploy_computer():
@@ -936,9 +936,9 @@ def test_git_ls_files_makes_a_module_a_traverser(tmp_path):
         "tests/test_lists.py":
             "import subprocess\n"
             "def test_x():\n"
-            "    subprocess.run(['git', 'ls-files', 'design'])\n",
+            "    subprocess.run(['git', 'ls-files', 'docs/design'])\n",
     })
-    assert "tests/test_lists.py" in select(["design/x/y.yaml"], repo)
+    assert "tests/test_lists.py" in select(["docs/design/x/y.yaml"], repo)
 
 
 @pytest.mark.parametrize("call", [
@@ -951,23 +951,23 @@ def test_every_traversal_call_makes_a_module_a_traverser(tmp_path, call):
             "import glob, os\n"
             "def test_x(root):\n"
             f"    list({call})\n"
-            "    DIR = 'design'\n",
+            "    DIR = 'docs/design'\n",
     })
-    assert "tests/test_walks.py" in select(["design/x/y.yaml"], repo)
+    assert "tests/test_walks.py" in select(["docs/design/x/y.yaml"], repo)
 
 
 def test_a_bare_name_import_of_a_traversal_call_counts(tmp_path):
     repo = _tree(tmp_path, {
         "tests/test_walks.py":
             "from os import walk\n"
-            "def test_x(root):\n    list(walk(root))\n    DIR = 'design'\n",
+            "def test_x(root):\n    list(walk(root))\n    DIR = 'docs/design'\n",
     })
-    assert "tests/test_walks.py" in select(["design/x/y.yaml"], repo)
+    assert "tests/test_walks.py" in select(["docs/design/x/y.yaml"], repo)
 
 
 def test_a_directory_literal_without_traversal_is_not_a_reader(tmp_path):
-    repo = _tree(tmp_path, {"tests/test_names.py": "DIR = 'design'\n" + _TRIVIAL})
-    assert select(["design/x/y.yaml"], repo) == []
+    repo = _tree(tmp_path, {"tests/test_names.py": "DIR = 'docs/design'\n" + _TRIVIAL})
+    assert select(["docs/design/x/y.yaml"], repo) == []
 
 
 def test_a_trailing_part_of_the_path_names_the_file(tmp_path):

@@ -1,4 +1,4 @@
-// Archive, delete or restore one document: a portal write to Nora (ADR 0020, design/artifact/lifecycle.md
+// Archive, delete or restore one document: a portal write to Nora (ADR 0020, docs/design/documents/README.md
 // and catalog.md, document_state; restoring a revision is the other, document-restore.ts).
 //
 // Its own route (src/app/api/v1/documents/[id]/state/route.ts), because the catch-all

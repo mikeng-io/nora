@@ -4,7 +4,7 @@ A cohort is the generated world's declared input — an explicit, versioned
 private file that stays outside the repository. Each case is a version-2
 (behavior) journey plan; the legacy wake-anchored, storage-kind measure is
 refused here because unit 4 retires kind-bound cases as behavioral
-baselines (`design/evaluation/cognition-loop.md` «Two measurement
+baselines (`docs/engineering/evaluation-cognition-loop.md` «Two measurement
 versions»). The two judge aliases are declared once and must agree with
 every case plan and every services plan the selection binds.
 """
