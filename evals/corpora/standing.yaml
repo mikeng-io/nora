@@ -392,6 +392,24 @@ cases:
         Never at this anchor; a turn whose unsent finding the room could act
         on replaces it.
 
+  - name: residue-options-memory-found-and-the-reply-left-out
+    entry: standing
+    expect: fold
+    metadata:
+      tag_id: parked-turn-id-withheld
+      kind: residue
+    expected_output: |
+      The memory answer held more than the reply sent. The new position must
+      carry at least one item from it the reply did not send.
+    parked:
+      reason: P-A
+      why: |
+        The «unsent findings» came from a memory recall of what this group
+        already said, not a new finding the turn produced. Nothing in the
+        answer is new to the room, so there is no residue to carry.
+      returns_when: |
+        Never at this anchor.
+
   - name: residue-the-rest-of-a-results-page
     entry: standing
     expect: fold

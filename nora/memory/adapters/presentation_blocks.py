@@ -8,6 +8,7 @@ from nora.domain.blocks import ContextBlock
 from nora.domain.composed import compose_body
 from nora.domain.lineage import RoomFacts
 from nora.memory.adapters.graph_row_render import (
+    origin_marker,
     render_graph_rows,
     render_open_intention,
     render_related_rows,
@@ -44,6 +45,9 @@ class GraphPresentationBlocks:
         return render_graph_rows(
             rows, now=self._now, reading_room=self._room, dm_rooms=self._dm_rooms,
         )
+
+    def origin_marker(self, row: RetrievedRow) -> str:
+        return origin_marker(row, self._room, self._dm_rooms)
 
     def due_intention(
         self, result: RetrievalResult, intention: str,
@@ -124,6 +128,9 @@ class ProfileRead:
     subject: EntityAnchor
     profile: Profile
     renderer: GraphPresentationBlocks
+
+    def origin_marker(self, row: RetrievedRow) -> str:
+        return self.renderer.origin_marker(row)
 
     def block(self) -> ContextBlock:
         return self.renderer.render_profile(self.subject, self.profile)[0]

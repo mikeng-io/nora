@@ -67,6 +67,8 @@ class ProfileReadResult(Protocol):
 
     def block(self) -> ContextBlock: ...
 
+    def origin_marker(self, row: RetrievedRow) -> str: ...
+
 
 class GraphProfileReader(Protocol):
     """Read the requested subjects' graph profiles within a turn's scope."""
