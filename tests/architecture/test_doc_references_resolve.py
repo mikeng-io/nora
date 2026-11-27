@@ -249,6 +249,11 @@ def _tracked_markdown_files() -> list[str]:
 # for a NEW reference (fix the doc, or the code, instead).
 _KNOWN_DANGLING: dict[tuple[str, str], str] = {
     (
+        "docs/adr/0002-honcho-session-binding-deferred.md",
+        "nora/ingest/stages/memory_feed.py",
+    ): "The historical ADR names the Honcho feed the Cognitive Graph replaced; resolves in git history.",
+
+    (
         'docs/adr/0028-pull-requests-are-labelled-and-assigned-by-a-workflow-and-a-visible-commit-has-a-body.md',
         '.github/workflows/pr-triage.yml',
     ): (

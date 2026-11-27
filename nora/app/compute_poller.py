@@ -26,6 +26,7 @@ from nora.domain.compute import (
     ReadBackDocument,
 )
 from nora.domain.events import Event
+from nora.domain.external_files import render_file_links
 from nora.domain.media import MediaBlob, MediaObject
 from nora.domain.ports import (
     BlobStore,
@@ -77,7 +78,8 @@ def _one_occasion(events: list[Event]) -> Event:
     """Jobs of one room and requester that finished together, as ONE occasion."""
     if len(events) == 1:
         return events[0]
-    parts = "\n\n".join(f"Job {n}:\n{e.body}" for n, e in enumerate(events, 1))
+    parts = "\n\n".join(
+        f"Job {n}:\n{render_file_links(e.body)}" for n, e in enumerate(events, 1))
     return replace(
         events[0],
         body=f"{len(events)} jobs finished together; tell the room about all of them in "

@@ -75,6 +75,14 @@ _COLLAPSERS = _DIRECT_COLLAPSERS | {"render_rows"}
 #: somewhere upstream" without that constructor and that test is how this gate
 #: becomes a formality.
 _NOT_A_LINE = {
+    ("nora/app/compute_poller.py", "_one_occasion", "render_file_links(e.body)"): (
+        "One finished job's occasion body, whole, under its own `Job n:` heading: "
+        "prose that runs to paragraphs, not a row of a line-oriented block."
+    ),
+    ("nora/app/compute_poller.py", "_one_occasion", "parts"): (
+        "The joined job bodies, whole, inside one occasion body: collapsing them "
+        "would destroy the paragraph breaks that separate the jobs."
+    ),
     ("nora/domain/standing_revise.py", "check_ledger_op", "sections[name]"): (
         "The validator serializes a whole Markdown body for storage; this is not a prompt row. "
         "The ledger renderer parses its sections and joins the individual cited lines."
