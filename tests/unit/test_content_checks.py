@@ -172,8 +172,10 @@ async def test_cli_place_backfill_uses_the_same_area_screen(enabled):
     cache = SimpleNamespace(without_area=AsyncMock(return_value=[point]),
                             set_area=AsyncMock(return_value=True))
     geocoder = SimpleNamespace(area_for=AsyncMock(return_value=area))
-    result = await backfill_places(events=None, cache=cache, places=None, geocoder=geocoder,
-        apply=True, per_second=1000, content_checks=enabled)
+    result = await backfill_places(
+        cache=cache, geocoder=geocoder, apply=True, per_second=1000,
+        content_checks=enabled,
+    )
     assert result.geocodes.placed == 1
     geocoder.area_for.assert_awaited_once_with(lat=point[0], lng=point[1])
     cache.set_area.assert_awaited_once_with(lat_rounded=point[0], lng_rounded=point[1],
