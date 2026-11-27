@@ -254,7 +254,7 @@ def test_candidate_preserves_mode(cfg_path: Path):
 def test_retired_config_section_refuses_and_names_replacement(example_config_path):
     from nora.config import ConfigError, load
 
-    text = example_config_path.read_text().replace("[memory.profile]", "[persona]")
+    text = example_config_path.read_text() + "\n[memory_index]\nrefresh_seconds = 60\n"
     example_config_path.write_text(text)
-    with pytest.raises(ConfigError, match=r"\[persona\].*\[memory.profile\]"):
+    with pytest.raises(ConfigError, match=r"\[memory_index\].*\[memory.index\]"):
         load(example_config_path)

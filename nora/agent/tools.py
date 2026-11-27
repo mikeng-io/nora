@@ -395,7 +395,7 @@ def build_tool_specs(
     # mailbox, named in `file_fetch`/`computer_import`'s NOT_SHARED note so the
     # owner knows who to share with. "" → the note says "Nora's Google account".
     google_account: str = "",
-    # `[memory.index] read`: the retrieval service. `None` (the shipped
+    # The retrieval service. `None` (the shipped
     # default, offline, eval) leaves it unwired.
     graph_retrieval: Any = None,
     pass_scope: PassScope | None = None,

@@ -32,6 +32,7 @@ class SqlSubjectClaims:
                 _is_dm_origin().label("dm_origin"),
             ).where(
                 CLAIM.c.unit == unit, sa.any_(CLAIM.c.identities) == viewer,
+                viewer != sa.all_(CLAIM.c.excluded_identities),
                 CLAIM.c.exposure == "external",  # design/cognition/boundaries.md:36-37
                 CLAIM.c.state != "superseded", visible_to_reads(CLAIM),
             ).order_by(CLAIM.c.asserted_at, CLAIM.c.id))).mappings().all()

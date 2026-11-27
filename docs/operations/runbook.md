@@ -1679,16 +1679,13 @@ is the minimal rollback if the problem is a caller of the old port.
 
 ## Typed Profile historical recovery
 
-Keep `[memory.profile] read = false` until the operator accepts the
-[bounded cutover evidence](../design/cognition/graph.md)
-and authorizes the concrete switch. The earlier fixed coverage/reply gates are
-historical, superseded by that acceptance owner. The typed migration is nullable and retains every legacy row; a
+The typed migration is nullable and retains every legacy row; a
 successful old shadow session is not historical coverage. The person adaptor
 now walks bounded oldest-first pages through a frozen Record boundary using
 its existing schedule and budget, independently of recent-message updates.
 
 The Character-card spike is an explicit operator command; it never runs on
-startup or changes `[memory.profile] read`. Dates are inclusive HKT dates, and keys
+startup. Dates are inclusive HKT dates, and keys
 may be repeated. Dry-run constructs no runtime and writes no rows or cursors:
 
 ```bash
@@ -1758,7 +1755,7 @@ Stop after the first account to assess progress before requesting another.
 
 ### Memory graph code projection
 
-`[memory.graph] enabled = false` is the default. Enabling it writes Record and
+The graph writes Record and
 Rollup relations beside the source projection, and produces pending work items;
 Phase 1 makes no model calls and adds no prompt reads or work-item consumer.
 The message producer forms batches of at most

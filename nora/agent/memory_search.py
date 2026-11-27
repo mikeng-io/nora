@@ -1,6 +1,6 @@
 """The one retrieval service over the memory index: scope, seed, expand hop by
 hop, rank, and an evidence packet with the path that reached each item.
-`memory_search` calls it while `[memory.index] read`, and so does the tag
+`memory_search` calls it, and so does the tag
 path's pre-fetch (`nora.engagement.context`, the `<recalled>` block), from the
 message's own seeds, cut at `PREFETCH_TOKENS`.
 

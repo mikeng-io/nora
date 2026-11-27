@@ -102,12 +102,6 @@ async def _wake_outcome(
     return dict(row) if row is not None else None
 
 
-#: Reads the loop depends on, open unless an arm closes them (design: the loop is open).
-OPEN_LOOP: dict[str, Any] = {
-    "memory.profile.read": True,
-}
-
-
 async def _compose(spec_args: Any, url: str, at_ms: int, room: tuple[str, str],
                    policy_text: str, identity_text: str) -> Subject:
     return await obtain(SubjectSpec(

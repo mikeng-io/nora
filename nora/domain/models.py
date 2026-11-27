@@ -861,9 +861,8 @@ class TagContext:
     # `<recalled>`, the pre-fetch (docs/design/cognition/graph.md):
     # the memory index searched from this message's own seeds before the
     # turn, as `nora.agent.memory_search.render_packet`'s items (the same
-    # shape `memory_search` answers with), cut at `PREFETCH_TOKENS`. Tag turn
-    # on the graph memory surface only (`[memory.index] read`); `()` on the
-    # `read = false` surface, on a failed or empty search, and in every harness that
+    # shape `memory_search` answers with), cut at `PREFETCH_TOKENS`. `()` on a
+    # failed or empty search, and in every harness that
     # wires no search: the block then renders nothing. `recalled_partial` is
     # the search's `partial`: the index was still being built.
     recalled: tuple[dict[str, Any], ...] = ()

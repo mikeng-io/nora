@@ -318,8 +318,7 @@ def test_budgets_match_todays_table():
         # Sized against model round trips, not against work — see
         # `NATIVE_TOOL_BUDGETS` for the per-tool reasoning.
         "group_members": 1, "lookup_person": 4, "member_update": 4,
-        # DEC-316: the graph surface's memory verb, offered while
-        # `[memory.index] read`.
+        # DEC-316: the graph surface's memory verb.
         "memory_search": 8,
         "memory_read": 8,
         "intention_commit": 4,

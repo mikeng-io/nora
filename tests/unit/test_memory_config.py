@@ -1,8 +1,7 @@
-"""Memory configuration names, retirement and host-shape compatibility.
+"""Memory configuration names and removed keys.
 
-These are pure loader rules split out of the legacy root config module: retired
-names fail closed with their new home or removal, while the one-release host
-compatibility keys load without becoming live switches.
+Pure loader rules: a retired name fails closed with its new home or removal,
+and a removed key is refused by name.
 """
 
 from __future__ import annotations
@@ -22,18 +21,11 @@ def toml_path(example_config_path, monkeypatch):
 
 
 @pytest.mark.parametrize(('section', 'key', 'new_home'), [
-    ('persona', None, '[memory.profile]'),
-    ('profile', None, '[memory.profile]'),
     ('message_readings', None, '[memory.extraction], which has been removed'),
     ('memory_index', None, '[memory.index]'),
-    ('persona', 'enabled', '[memory.profile] write'),
-    ('persona', 'render', '[memory.profile] read'),
-    ('profile', 'enabled', '[memory.profile] write'),
-    ('profile', 'render', '[memory.profile] read'),
     ('message_readings', 'batch_size', '[memory.extraction], which has been removed'),
     ('message_readings', 'context_size', '[memory.extraction], which has been removed'),
     ('message_readings', 'settle_seconds', '[memory.extraction], which has been removed'),
-    ('memory_index', 'enabled', '[memory.index] read'),
     ('memory_index', 'drain_seconds', '[memory.index] refresh_seconds'),
     *[('memory', key, f'[memory] {key} has been removed') for key in (
         'base_url', 'workspace_id', 'ai_peer', 'tagger_card_conclusions',
@@ -42,13 +34,7 @@ def toml_path(example_config_path, monkeypatch):
     ('memory.extraction', 'batch_size', '[memory.extraction] has been removed'),
     ('memory.extraction', 'context_size', '[memory.extraction] has been removed'),
     ('memory.extraction', 'settle_seconds', '[memory.extraction] has been removed'),
-    ('memory.index', 'enabled', '[memory.index] read'),
     ('memory.index', 'drain_seconds', '[memory.index] refresh_seconds'),
-    ('memory.profile', 'enabled', '[memory.profile] write'),
-    ('memory.profile', 'render', '[memory.profile] read'),
-    ('culture', 'person_wake_batch', '[memory.profile.person] update_every_messages'),
-    ('culture', 'unit_wake_batch', '[memory.profile.unit] update_every_room_profile_changes'),
-    ('culture', 'nora_wake_batch', '[memory.profile.nora] update_every_replies'),
 ])
 def test_retired_memory_config_names_are_refused_naming_the_new_home_or_the_removal(
     toml_path, section, key, new_home,
@@ -78,60 +64,26 @@ def test_memory_extraction_section_is_refused_as_removed(toml_path):
 
 def test_example_loads_with_the_memory_config_names(toml_path):
     cfg = load(toml_path)
-    assert cfg.memory.index.read is False
     assert cfg.memory.index.refresh_seconds == 60
-    assert cfg.memory.profile.write is False
-    assert cfg.memory.profile.read is False
-    assert cfg.memory.profile.person.update_every_messages == 100
-    assert cfg.memory.profile.unit.update_every_room_profile_changes == 5
-    assert cfg.memory.profile.nora.update_every_replies == 100
-    assert cfg.memory.profile.update_every_seconds == cfg.culture.stale_seconds == 604800
 
 
-@pytest.mark.parametrize("sections", ["host", "absent"])
-def test_retired_memory_graph_sections_load_accepted_and_ignored(toml_path, sections):
+@pytest.mark.parametrize(('path', 'value', 'named'), [
+    (('memory', 'index', 'read'), False, 'memory.index.read'),
+    (('memory', 'index', 'embed_images_per_hour'), 120, 'memory.index.embed_images_per_hour'),
+    (('memory', 'graph'), {'enabled': True}, 'memory.graph'),
+    (('memory', 'graph', 'comprehend'), {'enabled': True}, 'memory.graph'),
+    (('honcho',), {'enabled': False}, 'honcho'),
+    (('memory', 'profile'), {'read': True}, 'memory.profile'),
+    (('memory', 'profile', 'write'), True, 'memory.profile'),
+])
+def test_removed_config_keys_are_refused_naming_the_key(toml_path, path, value, named):
     import tomli_w
 
     data = tomllib.loads(toml_path.read_text())
-    if sections == "absent":
-        data["memory"].pop("graph", None)
-    else:
-        data["memory"].setdefault("graph", {})["enabled"] = True
-        data["memory"]["graph"].setdefault("comprehend", {})["enabled"] = True
-    data["honcho"] = {"enabled": False}
+    target = data
+    for part in path[:-1]:
+        target = target.setdefault(part, {})
+    target[path[-1]] = value
     toml_path.write_text(tomli_w.dumps(data))
-
-    cfg = load(toml_path)
-
-    if sections == "absent":
-        assert cfg.memory.graph is None
-    else:
-        assert cfg.memory.graph["enabled"] is True
-        assert cfg.memory.graph["comprehend"]["enabled"] is True
-    assert cfg.memory.index.read is False
-    assert cfg.memory.index.embed_images_per_hour == 120
-
-
-def test_host_shaped_memory_index_values_load_through_the_real_loader(toml_path):
-    import tomli_w
-
-    data = tomllib.loads(toml_path.read_text())
-    data["memory"]["index"].update(
-        read=False, embed=True, embed_batch=256, embed_images_per_hour=400,
-    )
-    data["memory"]["profile"].update(write=True, read=False)
-    data["memory"].setdefault("graph", {})["enabled"] = True
-    data["memory"]["graph"].setdefault("comprehend", {})["enabled"] = True
-    data["honcho"] = {"enabled": False}
-    toml_path.write_text(tomli_w.dumps(data))
-
-    cfg = load(toml_path)
-
-    assert cfg.memory.index.read is False
-    assert cfg.memory.index.embed is True
-    assert cfg.memory.index.embed_batch == 256
-    assert cfg.memory.index.embed_images_per_hour == 400
-    assert cfg.memory.profile.write is True
-    assert cfg.memory.profile.read is False
-    assert cfg.memory.graph["enabled"] is True
-    assert cfg.memory.graph["comprehend"]["enabled"] is True
+    with pytest.raises(ConfigError, match=rf"(?m)^{re.escape(named)}$"):
+        load(toml_path)

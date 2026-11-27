@@ -21,11 +21,11 @@
     "target": "tests/unit/test_managed_export.py::test_export_drops_an_archived_workspaces_table_and_still_loads"
   },
   {
-    "name": "the retired workspaces identity table is accepted without changing people",
+    "name": "the removed workspaces identity table is refused by name",
     "file": "nora/persons_file.py",
-    "old": "    workspaces: dict[str, dict[str, object]] = Field(default_factory=dict)\n",
-    "new": "",
-    "target": "tests/integration/test_policy_reload.py::test_a_reload_carrying_the_retired_workspaces_table_is_accepted_without_changing_people"
+    "old": "    persons: dict[str, _PersonEntry] = Field(default_factory=dict)\n",
+    "new": "    persons: dict[str, _PersonEntry] = Field(default_factory=dict)\n    workspaces: dict[str, dict[str, object]] = Field(default_factory=dict)\n",
+    "target": "tests/integration/test_policy_reload.py::test_a_reload_carrying_the_removed_workspaces_table_is_refused_without_changing_people"
   },
   {
     "name": "an unknown identity table is refused without changing people on reload",

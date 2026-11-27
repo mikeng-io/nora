@@ -130,18 +130,10 @@ async def test_build_dependencies_returns_the_wired_graph(cfg, tmp_path):
     assert deps.dispatcher is not None
 
 
-@pytest.mark.parametrize(("write", "read"), [(False, True), (True, False), (True, True)])
-async def test_profile_portal_wiring_requires_the_read_flag(cfg, write, read):
-    deps = await build_dependencies(override_config(cfg, {
-        "memory.profile.write": write,
-        "memory.profile.read": read,
-    }))
-    if write and read:
-        assert callable(deps.profile_portal)
-        assert callable(deps.profile_scopes_of)
-    else:
-        assert deps.profile_portal is None
-        assert deps.profile_scopes_of is None
+async def test_profile_portal_is_wired_with_its_scope_reader(cfg):
+    deps = await build_dependencies(cfg)
+    assert callable(deps.profile_portal)
+    assert callable(deps.profile_scopes_of)
 
 
 async def test_the_trigger_phrase_engages_by_default(cfg):
@@ -1844,10 +1836,8 @@ async def test_the_senders_hold_identity_toml_as_their_direct_message_allowlist(
 async def test_cognition_builds_graph_memory_tools_with_the_host_shape(
     cfg, tmp_path, example_config_path,
 ):
-    """The host-shaped file — `[memory.index] read=false embed=true`,
-    `[memory.graph]` and comprehend both true, `[honcho]` present — loads
-    through the real loader and the graph read tools still build: the retired
-    keys are accepted-and-ignored, never a gate on the Cognitive Graph."""
+    """The host-shaped file, `[memory.index] embed=true`, loads through the
+    real loader and the graph read tools still build."""
     import tomllib
 
     import tomli_w
@@ -1855,13 +1845,7 @@ async def test_cognition_builds_graph_memory_tools_with_the_host_shape(
     data = tomllib.loads(example_config_path.read_text())
     data["cognition"]["enabled"] = True
     data["dreamer"]["enabled"] = True
-    data["memory"]["index"].update(
-        read=False, embed=True, embed_batch=256, embed_images_per_hour=400,
-    )
-    data["memory"]["profile"].update(write=True, read=False)
-    data["memory"].setdefault("graph", {})["enabled"] = True
-    data["memory"]["graph"].setdefault("comprehend", {})["enabled"] = True
-    data["honcho"] = {"enabled": False}
+    data["memory"]["index"].update(embed=True, embed_batch=256)
     example_config_path.write_text(tomli_w.dumps(data))
     host_cfg = load(example_config_path)
     (tmp_path / "policy.toml").write_text(_HOME_POLICY)

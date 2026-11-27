@@ -1056,16 +1056,10 @@ class MemoryIndexConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     refresh_seconds: float = Field(default=60.0, gt=0)
-    # ponytail: accepted for one release, ignored; graph reads are part of the
-    # Cognitive Graph and are no longer switched by the retired legacy key.
-    read: bool = Field(default=False, exclude=True)
     embed: bool = False
     embedder_url: str = "http://embedder:8080"
     embedder_model: str = "Qwen3-VL-Embedding-2B.Q4_K_M.gguf@7812c91cd1e0"
     embed_batch: int = Field(default=64, ge=1, le=1000)
-    # ponytail: accepted for one release, ignored; production supplies no blob
-    # reader or image budget and graph_search rows are text-only.
-    embed_images_per_hour: int = Field(default=120, ge=0, exclude=True)
 
 
 class AnalyticsConfig(BaseModel):
@@ -2467,38 +2461,6 @@ class CultureConfig(BaseModel):
     batch_limit: int = Field(default=300, ge=1)
 
 
-class PersonProfileConfig(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-    update_every_messages: int = Field(default=100, ge=1)
-
-
-class UnitProfileConfig(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-    update_every_room_profile_changes: int = Field(default=5, ge=1)
-
-
-class NoraProfileConfig(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-    update_every_replies: int = Field(default=100, ge=1)
-
-
-class ProfileConfig(BaseModel):
-    """Legacy Profile settings retained for recovery reads and config compatibility."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    write: bool = False
-
-    #: Enable legacy Profile reads when writes are configured.
-    read: bool = False
-
-    # Separate from the room culture fold's stale_seconds; same seven-day default.
-    update_every_seconds: int = Field(default=604_800, ge=3600)
-    person: PersonProfileConfig = PersonProfileConfig()
-    unit: UnitProfileConfig = UnitProfileConfig()
-    nora: NoraProfileConfig = NoraProfileConfig()
-
-
 class RetentionConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     horizon_days: dict[str, Annotated[int, Field(strict=True, ge=1)]] = Field(default_factory=dict)
@@ -2515,15 +2477,10 @@ class RetentionConfig(BaseModel):
 
 
 class MemoryConfig(BaseModel):
-    """Nora's memory graph, index and Profile settings."""
+    """The memory index and retention settings."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
-    # ponytail: accept the host's retired [memory.graph] and
-    # [memory.graph.comprehend] sections for one release, ignored; the legacy
-    # memory construction they switched has left.
-    graph: dict[str, object] | None = Field(default=None, exclude=True)
     index: MemoryIndexConfig = MemoryIndexConfig()
-    profile: ProfileConfig = ProfileConfig()
     retention: RetentionConfig = RetentionConfig()
 
 
@@ -3620,24 +3577,17 @@ class Config(BaseModel):
     def reject_retired_memory_names(cls, data: object) -> object:
         if not isinstance(data, dict):
             return data
-        renamed_keys = {
-            "index": {"enabled": "read", "drain_seconds": "refresh_seconds"},
-            "profile": {"enabled": "write", "render": "read"},
-        }
-        for old, new in (
-            ("persona", "memory.profile"),
-            ("profile", "memory.profile"),
-            ("memory_index", "memory.index"),
-        ):
-            if old in data:
-                values = data[old]
-                if isinstance(values, dict):
-                    for key, replacement in renamed_keys[new.split(".")[-1]].items():
-                        if key in values:
-                            raise ValueError(
-                                f"[{old}] {key} has been renamed to [{new}] {replacement}"
-                            )
-                raise ValueError(f"[{old}] has been renamed to [{new}]; rename the section")
+        renamed_keys = {"index": {"drain_seconds": "refresh_seconds"}}
+        if "memory_index" in data:
+            values = data["memory_index"]
+            if isinstance(values, dict) and "drain_seconds" in values:
+                raise ValueError(
+                    "[memory_index] drain_seconds has been renamed to "
+                    "[memory.index] refresh_seconds"
+                )
+            raise ValueError(
+                "[memory_index] has been renamed to [memory.index]; rename the section"
+            )
         if "message_readings" in data:
             raise ValueError(
                 "[message_readings] was renamed to [memory.extraction], which has "
@@ -3659,15 +3609,6 @@ class Config(BaseModel):
                                 f"[memory.{section}] {old} has been renamed to "
                                 f"[memory.{section}] {new}"
                             )
-        culture = data.get("culture", {})
-        if isinstance(culture, dict):
-            for old, new in (
-                ("person_wake_batch", "[memory.profile.person] update_every_messages"),
-                ("unit_wake_batch", "[memory.profile.unit] update_every_room_profile_changes"),
-                ("nora_wake_batch", "[memory.profile.nora] update_every_replies"),
-            ):
-                if old in culture:
-                    raise ValueError(f"[culture] {old} has been renamed to {new}")
         return data
 
     # Optional and defaulted — see `AgentConfig`; the default is today's identity.
@@ -3679,9 +3620,6 @@ class Config(BaseModel):
     bridges: BridgesConfig = Field(default_factory=BridgesConfig)
     llm: LLMConfig
     memory: MemoryConfig = MemoryConfig()
-    # ponytail: accept the host's retired [honcho] section for one release,
-    # ignored; the follow-up config cleanup removes this compatibility field.
-    honcho: dict[str, object] | None = Field(default=None, exclude=True)
     store: StoreConfig
     # Optional, and defaulted — see `MediaConfig`.
     media: MediaConfig = MediaConfig()
