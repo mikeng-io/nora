@@ -1,5 +1,14 @@
 # Changelog
 
+## [7.21.8](https://github.com/mikeng-io/nora/compare/v7.21.7...v7.21.8) (2026-11-27)
+
+
+### Bug Fixes
+
+* **signal:** check every present roster id field, allowing null ([4b8cd3a](https://github.com/mikeng-io/nora/commit/4b8cd3a233c1e01d3d8f418d445229698bc08ef9))
+* **signal:** read the group roster from the bridge's real route ([5d86bfc](https://github.com/mikeng-io/nora/commit/5d86bfccc23dd66e55fcb2b4165a47a3b5b49c43))
+* **signal:** refuse a roster whose member ids are not strings ([ede5edc](https://github.com/mikeng-io/nora/commit/ede5edc81885263ae5a95c84deb08a522b924bcd))
+
 ## [7.21.7](https://github.com/mikeng-io/nora/compare/v7.21.6...v7.21.7) (2026-11-27)
 
 
