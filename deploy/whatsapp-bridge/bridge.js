@@ -354,8 +354,8 @@ async function startSocket() {
     const { connection, lastDisconnect, qr } = update;
 
     if (qr && PAIR_MODE) {
-      // WhatsApp rotates the QR about every 20 s; each one is drawn in full
-      // beside the pairing code, and either links the device.
+      // WhatsApp rotates the QR about every 20 s. It carries a session secret, so the
+      // runbook runs pairing with the container log driver off.
       log('scan on the phone: Linked Devices -> Link a device (a fresh QR replaces this one every ~20 s)');
       console.log(renderQr(qr));
     }

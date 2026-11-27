@@ -523,21 +523,29 @@ transport twin of signal-cli: same private network, same no-published-ports
 posture, session on `./state/whatsapp` (chmod 700, never commit). It is only
 relevant when `[platforms.whatsapp] enabled = true`.
 
-**Pairing (first run, and after any session invalidation):**
+**Pairing (first run, and after any session invalidation):** the QR carries a
+session secret, so the pairing container runs with its log driver off (a
+Compose one-off would send the QR to the container log, and from there to any
+log collector).
 
 ```bash
-docker compose run --rm --no-deps whatsapp-bridge node bridge.js --pair
+IMG=$(docker inspect --format '{{.Config.Image}}' whatsapp-bridge)
+mkdir -p state/whatsapp-new
+docker run --rm -it --log-driver none -v "$PWD/state/whatsapp-new:/app/session" \
+  "$IMG" node bridge.js --pair
 ```
 
 It draws a QR, a fresh one about every 20 s. On the bot number's phone:
 Settings → Linked Devices → Link a device, then scan it. The phone-number
-pairing code is not offered. Pairing serves no HTTP,
-so it runs beside the live bridge; restart that service afterwards
-([Komodo recovery](../deploy/komodo/README.md#failure-and-recovery)) so it
-loads the new session. Normal `docker compose up -d` then boots with the saved
-session. If you mess it up, re-run the same command — no cleanup needed.
-Losing `./state/whatsapp` loses the pairing, not history (the audit DB is
-the record).
+pairing code is not offered. Pairing serves no HTTP, so it runs beside the live
+bridge, into an empty directory so it cannot mix with an invalidated session.
+
+First run: move `state/whatsapp-new` to `state/whatsapp`. A re-pair: copy
+`state/whatsapp` aside as a backup, replace every file in it except
+`lid-mapping-*` with the new directory's files, then restart the service
+([Komodo recovery](../../deploy/komodo/README.md#failure-and-recovery)) so it
+loads the new session. Losing `./state/whatsapp` loses the pairing, not history
+(the audit DB is the record).
 
 **Admitting a WhatsApp room:** get the group JID (`...@g.us`) from the audit
 DB or the bridge's logs, add a `[[conversations]]` entry with
