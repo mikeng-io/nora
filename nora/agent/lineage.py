@@ -6,7 +6,7 @@ available in enabled mode. Credentials and LeakGuard are independent of this
 switch; admission, unit scope, location opt-in and availability still apply.
 
 
-**Applied at assembly, never at egress** (GLOSSARY): when a pushed block
+**Applied at assembly, never at egress** (docs/design/cognition/boundaries.md): when a pushed block
 renders (`nora.agent.prefill`) and when a read tool returns
 (`record_query`), for the room the turn is bound to. By the time text exists
 the disclosure is decided.

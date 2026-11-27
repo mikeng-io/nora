@@ -1,6 +1,6 @@
 """note_revision.citations: the ids and Rollup keys a note revision cites.
 
-docs/design/unified-memory/graph.md «Ownership»: `cites` edges exist only for stores that store
+docs/design/cognition/graph.md «Ownership»: `cites` edges exist only for stores that store
 citations. Memos, lessons and Character revisions do; a note's citations sat
 only in its body's brackets, so the memory index drew no `cites` edge from a
 note and a search walking out of a message never reached the note resting on

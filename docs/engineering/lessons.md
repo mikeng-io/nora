@@ -1,3 +1,9 @@
+---
+class: engineering
+subject: the lessons from merged work that become code standards when seen three times
+owns: []
+---
+
 # Lessons from merged work
 
 What merged work got wrong, and the rule that would have caught it. Read it

@@ -15,7 +15,7 @@ nothing injected.
 ONE KIND OF BLOB IS DELETED: a story frame's bytes, at its bound
 (`nora.app.social_expiry`), and only when no other row names them. Every
 other blob is kept. Beyond media custody, the computer audit trail
-references blobs from Postgres (docs/design/sandbox-runtime §12):
+references blobs from Postgres (docs/design/computer/sandbox.md §12):
 `computer_events.output_ref` (a run's full stdout/stderr, a read's full
 content) and `computer_events.request` (a write's full content), each as
 `{"key": ..., "sha256": ...}`. A deletion that treated a blob no media row

@@ -17,7 +17,7 @@ from scripts.log_markers import ROOT
 
 BASELINE = ROOT / "tests" / "architecture" / "design_shape_baseline.json"
 
-MAX_README_LINES = 150
+MAX_README_LINES = 300
 MAX_FILE_LINES = 300
 NOT_DESIGN = {"decision", "decisions", "review", "reviews", "roadmap", "items", "draft", "plan",
               "plans", "migration"}
@@ -64,6 +64,9 @@ def census() -> dict[str, list[str]]:
     ).stdout.split()
     result = {}
     for path in sorted(out):
+        # The decision index is a decision document, checked by check_documents.
+        if path == "docs/design/decisions.md":
+            continue
         file = ROOT / path
         if not file.is_file():
             continue

@@ -1,3 +1,18 @@
+---
+class: design
+subject: "the authority of authored text, scope and egress"
+owns:
+  - doctrine: "the authored law, seed and practice kept outside the graph and changed only by the operator, which learned content never loosens"
+  - tension: "a lesson refused because it would loosen law, recorded with the law it conflicts with at operator exposure and never read by Nora"
+  - egress: "anything leaving Nora, every delivery passing the common guards: credential and doctrine leak protection always, and content checks when the repository's mode enables them"
+  - canary: "a string planted in the doctrine whose appearance in a reply blocks it, a tripwire and not a watermark"
+  - resolve within scope: "a lookup resolves only among what its scope may see, so a row outside it reads exactly as one that does not exist, and is never resolved then filtered"
+  - "enforced at assembly, not at egress": "disclosure is decided when context is built, because by the time text exists it is already authorised and an egress guard cannot catch a roster leak"
+area: cognition
+links:
+  - {to: docs/design/cognition/README.md, rel: uses}
+---
+
 # Boundaries
 
 Boundaries are what no content of the graph can change: the authority of
@@ -36,6 +51,9 @@ people's responses to her acts, never only her own earlier words.
 - **Exposure**: external rows may reach a room through the guards; internal
   rows are read by Nora and never egress; operator rows are never read by Nora.
 - A person in two units has independent state in each.
+- **Opening a pass's items** re-applies each item's origin rules against where
+  it would now be shown: a withheld item is counted, never shown, and an item
+  outside the reader's scope reads exactly as one that does not exist.
 - **A DM is a room of the primary unit.** It reads that unit's understanding
   through the ordinary disclosure rules and reads no affiliate unit. Its raw
   items are never shown outside the DM. A claim citing DM items carries the DM

@@ -76,7 +76,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth((request) => ({
   trustHost: true,
   callbacks: {
     // Discord's OAuth `providerAccountId` IS the snowflake identity.toml
-    // lists (docs/design/10-identity-and-policy-schema.md), carried onto the JWT
+    // lists (docs/design/people/identity.md), carried onto the JWT
     // on first sign-in only: `account` is undefined on every later call.
     // A code sign-in carries the person_id Nora verified instead: there is no
     // account at another provider to resolve, only the person.

@@ -12,7 +12,7 @@ clearly), and a divergent template migrates a private per-run copy rather
 than the shared one, swept at startup if a killed run (or SIGTERM) left one
 behind — fixed 2026-09-25 after an ahead branch upgraded `nora_eval_blank`
 and broke every other session's seeding
-(`docs/design/evaluation/subject.md`  «Isolation replaces dependencies»).
+(`docs/engineering/evaluation-subject.md`  «Isolation replaces dependencies»).
 
 ## Reading the log
 

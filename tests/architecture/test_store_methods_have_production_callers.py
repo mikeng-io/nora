@@ -169,7 +169,7 @@ _NO_PRODUCTION_CALLER: dict[tuple[str, str], _Pin] = {
     # so `_ambiguous` skips it before the pin table is ever consulted.
     ("computer_events.py", "orphaned_starts"): _Pin(
         "read_back_affordance",
-        "The computer audit's crash marker (docs/design/sandbox-runtime §12): "
+        "The computer audit's crash marker (docs/design/computer/sandbox.md §12): "
         "`started` rows with no `finished` row, a call interrupted by a crash "
         "or a restart. The operator's query, pinned by the contract suite; no "
         "daemon consumer is designed (a reaper or an alert is S2b-2's).",
@@ -192,18 +192,18 @@ _NO_PRODUCTION_CALLER: dict[tuple[str, str], _Pin] = {
     ),
     ("gatherings.py", "revisions_for"): _Pin(
         "read_back_affordance",
-        "An event's full revision chain (docs/design/cognition-loop/data.md; migration "
+        "An event's full revision chain (docs/design/cognition/loop.md; migration "
         "0074_event_revision). No prompt block or tool reads the chain today "
         "— `event_propose`/`event_revise`/`event_set_status` only ever read "
         "the head through `head_revision_id` for `base_revision_id`'s "
         "compare-and-swap. Its consumer is a `History` section on an event "
-        "(docs/design/cognition-loop/data.md's `Changes`, 'every revision: field, from, to, "
+        "(docs/design/cognition/loop.md's `Changes`, 'every revision: field, from, to, "
         "mode, why, when'), not built at step 2b.",
     ),
     ("social_stream.py", "item_state"): _Pin(
         "deferred_consumer",
         "An item's current state, the join every read of social items makes "
-        "(docs/design/cognition-loop/observation.md). The poller writes "
+        "(docs/design/cognition/loop.md). The poller writes "
         "states; nothing reads social items yet.",
     ),
     ("standing.py", "write_if_unchanged"): _Pin(
@@ -217,7 +217,7 @@ _NO_PRODUCTION_CALLER: dict[tuple[str, str], _Pin] = {
     ("observations.py", "resolve_targets"): _Pin(
         "deferred_consumer",
         "The port's standalone re-link of a retained observation to its "
-        "target (docs/design/platform-observations/observations.md). Production relinking "
+        "target (docs/design/platform/observations.md). Production relinking "
         "instead commits inside the arriving message row's own transaction — "
         "`relink_arriving_targets` (nora/app/bridge_queue.py) — so no caller "
         "outside an ingest commit exists yet.",
@@ -225,7 +225,7 @@ _NO_PRODUCTION_CALLER: dict[tuple[str, str], _Pin] = {
     ("observations.py", "unresolved_targets"): _Pin(
         "deferred_consumer",
         "The retained-but-unresolved target listing, named for the exposure "
-        "lanes in docs/design/platform-observations/observations.md («read "
+        "lanes in docs/design/platform/observations.md («read "
         "ObservationStore.current/heads/history and unresolved_targets»). No "
         "lane reads it this stage: the context and grounding reads take "
         "recent/heads/by_ids/head_for_handle only.",

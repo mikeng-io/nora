@@ -4,7 +4,7 @@ kind: objective
 version: 5
 applies_to: [doctrine_check]
 description: >-
-  The doctrine check's whole instruction (docs/design/self-growth/lessons.md,
+  The doctrine check's whole instruction (docs/design/cognition/learning.md,
   L3): a separate model call that reads one lesson the agent would learn and the law
   rules she keeps everywhere, and answers whether the lesson loosens or
   contradicts one. Read through `objective_body`, never with the Dreamer's

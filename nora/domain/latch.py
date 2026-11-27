@@ -1,5 +1,5 @@
 """`DegradeLatch` — the liveness half of the `PlatformAdapter` contract
-(docs/design/platform-bridges/platform-liveness.md «One contract for every platform»).
+(docs/design/platform/README.md «One contract for every platform»).
 
 Every adapter, real or fake, joins it. While latched, the adapter's own
 `send`, `react` and `health` are answered HERE, before the adapter's code runs:

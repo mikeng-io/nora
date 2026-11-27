@@ -42,7 +42,7 @@ body:
     attributes:
       label: Design anchor
       description: "`docs/design/<bundle>/<subject>.md` «<heading>» — the section establishing the expected behavior."
-      placeholder: docs/design/self-growth/character.md
+      placeholder: docs/design/cognition/learning.md
     validations:
       required: true
 

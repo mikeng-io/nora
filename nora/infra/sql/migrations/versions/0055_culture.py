@@ -1,5 +1,5 @@
 """culture / culture_revision -- an account of how a room works and why, kept
-over time (docs/design/self-growth/character.md, DEC-182..185).
+over time (docs/design/cognition/learning.md, DEC-182..185).
 
 WHY A STORE EXISTS AT ALL. A model asked to describe a room's culture reasons
 from scratch and has no memory of its last answer, so any single account is a
@@ -27,7 +27,7 @@ constraint. `note_revision` is the precedent and the reason it works is that
 provenance sits AROUND the prose rather than decomposing it.
 
 `culture.key` IS A `primary_id`, NOT `(platform, conversation_id)`. The rule is
-`GLOSSARY.md`'s (PR #230) and it follows from which scheduler hands the key:
+`docs/glossary.md`'s (PR #230) and it follows from which scheduler hands the key:
 the ingest and tag paths get the message that arrived, so `messages`,
 `standing` and `decision_log` key the thread; a Dreamer adaptor is handed
 `scopes()`, so it keys the conversation. This is worth a paragraph because

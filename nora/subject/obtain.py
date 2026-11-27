@@ -350,7 +350,7 @@ class Subject:
     #: The social unit `policy.toml` assigns `room` (DEC-105), and the key the
     #: room's culture chain hangs off (`primary_id`, DEC-181). RESOLVED from
     #: the policy entry the room composes with, never stated by a caller:
-    #: both are what production reads for this room, and `GLOSSARY.md` says
+    #: both are what production reads for this room, and `docs/glossary.md` says
     #: neither is a function of `(platform, conversation_id)`. Carried here
     #: because `know()` writes notes and culture under them and would
     #: otherwise re-derive both from a second reading of the same file.

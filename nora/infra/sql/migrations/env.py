@@ -13,7 +13,7 @@ Two deliberate deviations from the generated template:
   all. The ordering it can no longer see is asserted by
   `tests/infra/test_schema_parity.py` via `pg_index.indoption` — parameterised
   over all six, so each new one is covered with no new test
-  (docs/design/self-awareness/presence.md).
+  (docs/design/presence/README.md).
   **Both registrations or neither**: an index excluded here without its row in
   `EXPECTED_DESC_INDEXES` is an index nothing checks at all.
 - **No `render_as_batch`.** That was SQLite's table-rebuild workaround for
@@ -58,7 +58,7 @@ _DESC_EXPRESSION_INDEXES = frozenset({
     # exclusion exists to avoid rather than to create.
     "idx_standing_revision_room_updated",
     # memory_node's HNSW index over `subvector(embedding, 1, 256)` (0106,
-    # docs/design/unified-memory/graph.md): an expression index,
+    # docs/design/cognition/graph.md): an expression index,
     # which autogenerate cannot compare at all. Registered WITH its row in
     # `tests/infra/test_schema_parity.py`'s `EXPECTED_EXPRESSION_INDEXES`,
     # which asserts its definition from `pg_get_indexdef`.

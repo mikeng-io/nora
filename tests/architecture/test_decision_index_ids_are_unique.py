@@ -1,11 +1,11 @@
-"""A DEC/R/D/A number in `docs/design/09-decision-index.md` is unique across the whole table.
+"""A DEC/R/D/A number in `docs/design/decisions.md` is unique across the whole table.
 
 AGENTS.md's "Never" list: a number is never taken from a chat agreement, it is
 re-read from the file at MERGE time, because two sessions can independently pick
 the same number and land it without a git conflict (two different lines, no
 textual overlap). AGENTS.md carries the hand-run check:
 
-    grep -oE '^\\| R-[0-9]+ \\|' docs/design/09-decision-index.md | grep -oE '[0-9]+' |
+    grep -oE '^\\| R-[0-9]+ \\|' docs/design/decisions.md | grep -oE '[0-9]+' |
     sort -n | uniq -d
 
 The trailing `\\|` in that command is load-bearing: it requires the pipe to
@@ -32,12 +32,12 @@ from collections import Counter
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-DECISION_INDEX = ROOT / "docs" / "design" / "09-decision-index.md"
+DECISION_INDEX = ROOT / "docs" / "design" / "decisions.md"
 
 # Whole-cell match: the pipe must close the cell immediately after the ID, so
 # `R-6b` (a real, distinct row) can never be misread as `R-6`. This is the
 # executable form of AGENTS.md's own `grep -oE '^\| R-[0-9]+ \|'` — generalized
-# to the four namespaces (D*, A*, R-*, DEC-*) docs/design/09-decision-index.md actually carries.
+# to the four namespaces (D*, A*, R-*, DEC-*) docs/design/decisions.md actually carries.
 _ROW_ID = re.compile(r"^\|\s*([A-Za-z]+-?\d+[a-z]?)\s*\|")
 
 
@@ -68,7 +68,7 @@ def test_no_duplicate_ids_in_the_decision_index() -> None:
 
     dupes = duplicate_ids(ids)
     assert not dupes, (
-        "duplicate DEC/R/D/A id(s) in docs/design/09-decision-index.md (AGENTS.md's "
+        "duplicate DEC/R/D/A id(s) in docs/design/decisions.md (AGENTS.md's "
         "'Never take a DEC or R number from a chat agreement' — the R-29 "
         f"incident, 15 days on master): {dupes}"
     )

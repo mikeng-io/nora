@@ -1,3 +1,12 @@
+---
+class: design
+subject: "closed form over open content: capabilities through the generic loops"
+owns: []
+area: cognition
+links:
+  - {to: docs/design/cognition/README.md, rel: uses}
+---
+
 # Emergence
 
 A capability is **emergent** when the generic loops produce it over the graph,

@@ -1,12 +1,12 @@
-# The Assess adaptor's event-derivation corpus (docs/design/cognition-loop/
-# docs/design/cognition-loop/session.md, docs/design/cognition-loop/data.md, DEC-240). FULLY SYNTHETIC: no real
+# The Assess adaptor's event-derivation corpus (docs/design/cognition/loop.md
+# docs/design/cognition/loop.md, docs/design/cognition/loop.md, DEC-240). FULLY SYNTHETIC: no real
 # member name, no real room message (this branch's own constraint) — unlike
 # evals/scenarios.py's tag-path corpora, which name a real room at a real
 # instant. `speaker` is a placeholder id (P1..P5), never a real person; place
 # names are invented. `rollup` as a speaker stands for a Rollup co-location
 # stimulus (25-rollup.md §3), never a person.
 #
-# The first four cases (`series: dinner`) are docs/design/cognition-loop/data.md dinner
+# The first four cases (`series: dinner`) are docs/design/cognition/loop.md dinner
 # case, TRUNCATED at step 3 to what exists by then: no stories, no memo, so
 # the case stops at `confirm` and never reaches `happened`.
 #

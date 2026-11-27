@@ -63,7 +63,12 @@ def render(files: dict[str, str]) -> dict[str, str]:
     terms = []
     for path, meta in metas.items():
         for entry in meta.get("owns") or []:
-            for term, definition in entry.items() if isinstance(entry, dict) else [(entry, "")]:
+            if isinstance(entry, dict):
+                pairs = entry.items()
+            else:  # the documented quoted form, "term: one-sentence definition"
+                term, _, definition = str(entry).partition(": ")
+                pairs = [(term, definition)]
+            for term, definition in pairs:
                 terms.append((str(term), definition, path))
     glossary = [
         "# Glossary\n",

@@ -1,3 +1,9 @@
+---
+class: adr
+subject: The release PR is planned from git reachability, and the merge rules are GitHub rulesets
+owns: []
+---
+
 # 0027 · The release PR is planned from git reachability, and the merge rules are GitHub rulesets
 
 - **Status:** cadence superseded by [0031](0031-master-pushes-automatically-release-patch-and-minor.md) on 2026-10-28; the reachability planner and merge-rule decision remain in force.

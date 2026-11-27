@@ -14,7 +14,7 @@ Three files each hold one part, and this is the one place they meet:
   table puts every unit in.
 
 A Nora workspace and a Honcho workspace are different things with different
-names (GLOSSARY.md): the first is the operator's grouping of units, the
+names (docs/glossary.md): the first is the operator's grouping of units, the
 second is the Honcho tenant whose peers are that grouping's people. This
 module is what keeps them from being confused — `nora.infra.honcho` only ever
 sees Honcho ids, and the policy never names one.
@@ -66,7 +66,7 @@ def workspaces_of_person(policy: Policy, person_id: str) -> tuple[str, ...]:
 def profile_scopes_of_person(policy: Policy, person_id: str) -> tuple[tuple[str, str], ...]:
     """The (unit, workspace) pairs whose rooms list `person_id` by name:
     where their Profile accounts live (`character_key(unit, person_id)`,
-    docs/design/unified-memory/profiles.md), and which portal workspace entry each
+    docs/design/cognition/graph.md), and which portal workspace entry each
     account belongs under.
 
     `workspaces_of_person`'s membership rule one level down — a `persons =

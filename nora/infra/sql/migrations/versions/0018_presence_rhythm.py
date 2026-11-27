@@ -1,5 +1,5 @@
 """presence_occupancy + presence_place_rhythm — Tier 3 rhythm/anomaly
-(docs/design/cognition-loop/observation.md, issue #6, DEC-119).
+(docs/design/cognition/loop.md, issue #6, DEC-119).
 
 Revision ID: 0018_presence_rhythm
 Revises: 0016_geocode_cache

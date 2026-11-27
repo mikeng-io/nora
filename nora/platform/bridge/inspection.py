@@ -1,4 +1,4 @@
-"""Bounded queue-depth and retention reads (docs/design/platform-bridges/04-operations.md
+"""Bounded queue-depth and retention reads (docs/design/platform/README.md
 §aggregates).
 
 The numbers and the rule that keeps them honest:
@@ -370,7 +370,7 @@ class QueueInspector:
         `None` then anyway, so the per-field checks and the status check
         agree: an invalid backlog gauge is omitted, never reset to zero and
         never a capped lower bound passed off as exact —
-        docs/design/platform-bridges/04-operations.md."""
+        docs/design/platform/README.md"""
         if self._metrics is None:
             return
         m, platform = self._metrics, inspection.platform

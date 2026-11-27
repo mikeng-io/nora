@@ -1,5 +1,5 @@
 """note_merge_decision -- what the note-merge pass considered folding, one row
-per (survivor, duplicate) pair (docs/design/cognition-loop/data.md, DEC-202).
+per (survivor, duplicate) pair (docs/design/cognition/loop.md, DEC-202).
 
 In `shadow` mode this table is the pass's whole output: the groups it would
 fold, with both titles and the model's reason, for the operator to label

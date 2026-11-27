@@ -1,3 +1,14 @@
+---
+class: design
+subject: "profile parts, support and precedence, likes and constraints, disputes and decay"
+owns:
+  - profile: "the claims about one entity in one unit, read in three parts: facts, traits and guesses, the last shown as unconfirmed"
+  - culture: "a room's or unit's profile: the observed collective practice of how they talk and decide, never an average of its members"
+area: cognition
+links:
+  - {to: docs/design/cognition/README.md, rel: uses}
+---
+
 # Claims
 
 A claim is what Nora believes about an entity or a relation: inferred, never

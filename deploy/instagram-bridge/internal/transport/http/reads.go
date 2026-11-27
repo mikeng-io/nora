@@ -6,10 +6,10 @@ package httptransport
 //
 // Every shape here is built from DOMAIN types (internal/domain), never from
 // Instagram's wire structs, which stay inside internal/gateway/instameow
-// (docs/design/instagram-adoption/bridge.md). This is where the contract the
+// (docs/design/platform/instagram.md). This is where the contract the
 // Python side reads is decided, once.
 //
-// No success body carries an `ok` field (docs/design/instagram-adoption/bridge.md «Messaging contract»: "success is the
+// No success body carries an `ok` field (docs/design/platform/instagram.md «Messaging contract»: "success is the
 // resource"). The STATUS says whether a request succeeded; a failure is the
 // envelope in errors.go. The bodies here lost `ok` in bridge.md and nothing else.
 
@@ -132,7 +132,7 @@ type profileBody struct {
 	// caller can skip a story fetch entirely rather than fetch-then-find-empty,
 	// which matters because a story read is a deliberate act: the social
 	// stream's poller reads one only when this probe moved
-	// (docs/design/cognition-loop/observation.md).
+	// (docs/design/cognition/loop.md).
 	HasStory bool `json:"has_story"`
 	// LatestReelMedia is the raw value behind HasStory, forwarded because it
 	// is a timestamp and a caller comparing it against
@@ -312,7 +312,7 @@ type storyBody struct {
 	// ExpiringAt is the reel's, which bounds the whole set.
 	ExpiringAt int `json:"expiring_at,omitempty"`
 	// Seen is Instagram's own cursor: the timestamp of the last frame this
-	// account viewed. It is NOT Nora's unread cursor — docs/design/instagram-adoption/social.md «Custody and memory»: "Unread must be
+	// account viewed. It is NOT Nora's unread cursor — docs/design/platform/instagram.md «Custody and memory»: "Unread must be
 	// Nora's own cursor" is explicit that hers has to be hers — but it is the
 	// evidence that a view was recorded, which an operator auditing "what did
 	// she look at" needs.

@@ -1,7 +1,7 @@
 package httptransport
 
 // GET /posts/{shortcode} — one post, every item in it
-// (docs/design/instagram-adoption/bridge.md).
+// (docs/design/platform/instagram.md).
 //
 // On 16's new conventions, like GET /accounts?query=: success is the post
 // itself, with no `ok` and no ids; failure is the one envelope at the full

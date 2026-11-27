@@ -131,7 +131,7 @@ test test-fast test-affected:
 # the LLM key env set) ---
 #
 # `python -m evals` runs a NAMED corpus (or `--class`, or `--all`) rather than
-# a file path — `docs/design/evaluation/coverage.md`  «Classes»'s port put the
+# a file path — `docs/engineering/evaluation-coverage.md`  «Classes»'s port put the
 # 150 corpus cases behind `evals.scenarios.experiment_for()`, and adding a
 # corpus adds a dict entry there, not a target here.
 #
@@ -139,7 +139,7 @@ test test-fast test-affected:
 # (`nora_eval`, made by `scripts/refresh_eval_clone.sh`). Every case names a
 # real room at a real instant, is seeded from the clone into a sandbox
 # database of its own, and composes the deployment's own config, policy and
-# roster (docs/design/evaluation/subject.md). Off the deploy
+# roster (docs/engineering/evaluation-subject.md). Off the deploy
 # host there is no source and no deployment to compose, and the run says so.
 EVAL_GRADING = --grading-contract "$(EVAL_GRADING_CONTRACT)" --grading-contract-sha256 "$(EVAL_GRADING_CONTRACT_SHA256)"
 
@@ -147,7 +147,7 @@ EVAL_GRADING = --grading-contract "$(EVAL_GRADING_CONTRACT)" --grading-contract-
 eval-source:
 	./scripts/refresh_eval_clone.sh
 
-# The ambient-participation flip gate (docs/design/cognition-loop/proactive.md): all
+# The ambient-participation flip gate (docs/design/cognition/loop.md): all
 # 15 cases must reach their expected verdict — zero false-speaks on the
 # knowledge-cut twins, zero speaks on the pure-No five.
 eval-participation:
@@ -209,16 +209,16 @@ heads:
 # parent, and the optional letter keeps a duplicated `R-6b` from going unseen.
 decision-numbers:
 	@echo "== duplicate DEC numbers =="
-	@grep -oE '^\| DEC-[0-9]+[a-z]? \|' docs/design/09-decision-index.md | grep -oE '[0-9]+[a-z]?' | sort -V | uniq -d
+	@grep -oE '^\| DEC-[0-9]+[a-z]? \|' docs/design/decisions.md | grep -oE '[0-9]+[a-z]?' | sort -V | uniq -d
 	@echo "== duplicate R numbers =="
-	@grep -oE '^\| R-[0-9]+[a-z]? \|' docs/design/09-decision-index.md | grep -oE '[0-9]+[a-z]?' | sort -V | uniq -d
+	@grep -oE '^\| R-[0-9]+[a-z]? \|' docs/design/decisions.md | grep -oE '[0-9]+[a-z]?' | sort -V | uniq -d
 
-# The schema gate on its own (DEC-11: `alembic check` is blind to the CHECK
+# The schema gate on its own (DEC-53: `alembic check` is blind to the CHECK
 # constraint and the `ts DESC` index ordering, so this is the real one).
 schema-parity:
 	uv run pytest -q tests/infra/test_schema_parity.py
 
-# --- live evals (docs/engineering/eval-sop.md "What gates a change"; they need the model
+# --- live evals (docs/operations/eval-sop.md "What gates a change"; they need the model
 # and run on the deploy host, never part of the gate) ---
 
 # Routing is the `tool_selection` corpus (since 21e5405d); this target runs the

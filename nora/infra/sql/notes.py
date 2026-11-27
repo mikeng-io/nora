@@ -391,7 +391,7 @@ class SqlNoteStore:
         now_ms: int,
         anchor_date: int | None = None,
         anchor_entity_ids: tuple[str, ...] = (),
-        # The curated source-object pointers (docs/design/platform-observations
+        # The curated source-object pointers (docs/design/platform/observations.md
         # 03's retained lane). Validated by the writer against the shown
         # objects; stored as head state like the anchors.
         object_refs: tuple[SourceRef, ...] = (),

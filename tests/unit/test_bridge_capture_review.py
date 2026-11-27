@@ -327,7 +327,7 @@ class TestTransitionIdentity:
 
     async def test_a_frameless_state_change_is_retained_not_published(
             self, tmp_path):
-        """The reconnect-replay rule — docs/design/platform-bridges/02-wire-and-platforms.md —
+        """The reconnect-replay rule — docs/design/platform/README.md —
         a state change with NO upstream revision cannot be told apart from a
         delayed replay of an old transition — it is retained ambiguous, never
         published under a minted identity."""

@@ -52,7 +52,7 @@ lock is shared, past an hour it blocks every other PR: `--allow-long` only if th
 On the deploy host (`nora-host`), in an eval worktree, never in the deploy checkout
 `~/workspace/nora` (a run writes `config.evaluation.toml` into the checkout root).
 Composition refuses to start anywhere else with the deployment's features on
-(`docs/design/evaluation/subject.md`, "Where the suite runs"). The
+(`docs/engineering/evaluation-subject.md`, "Where the suite runs"). The
 subject's model comes from the deployment's `config.toml`; there is no `--model`
 flag. The dev-machine tunnel recipe with `--model` belonged to the deleted
 `evals.run` harness.
@@ -62,7 +62,7 @@ flag. The dev-machine tunnel recipe with `--model` belonged to the deleted
 
 ## Procedure
 
-Before step 1, complete `docs/engineering/eval-sop.md` **Before a paid run**, including the reviewed contract/hash.
+Before step 1, complete `docs/operations/eval-sop.md` **Before a paid run**, including the reviewed contract/hash.
 Set `NORA_EVAL_GRADING_CONTRACT`/`NORA_EVAL_GRADING_CONTRACT_SHA256` from that brief, independently of the candidate.
 Preserve originals; posthoc regrades are calibration. Replays, diagnostics and rescoring share this rule.
 
@@ -152,7 +152,7 @@ Preserve originals; posthoc regrades are calibration. Replays, diagnostics and r
    `RC=0` means no FAIL, ERROR or UNSTABLE; `RC=1` means at least one, or a crash
    (the log says which); `RC=2` means refusal or invalid evidence, possibly after spending.
    Check private `events.jsonl` ends with `run_finished` and the same rc;
-   missing terminal evidence is incomplete (`docs/engineering/eval-sop.md`). Inputs stay on-host.
+   missing terminal evidence is incomplete (`docs/operations/eval-sop.md`). Inputs stay on-host.
 
 8. **Read the log honestly.** Per case PASS/FAIL only when every draw agreed;
    UNSTABLE prints `[p pass / f fail / e error]`; ERROR is never PASS; report n with
@@ -192,7 +192,7 @@ carries the budget and the ending:
 ## Adding a case
 
 Extend the corpus that covers the behaviour under `evals/corpora/`; anchor rules
-and parking are `docs/design/evaluation/subject.md`  «Input and causal scope», and
+and parking are `docs/engineering/evaluation-subject.md`  «Input and causal scope», and
 `tests/architecture/test_every_case_is_anchored_or_parked.py` rejects an
 unanchored case before a run.
 

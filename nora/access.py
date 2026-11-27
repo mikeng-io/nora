@@ -3,7 +3,7 @@
 Every consumer asks ONE object — `ManagedServices.access`, built by
 `nora.people.wire` for whichever backend the deployment selected —
 instead of reading `identity.toml`/`policy.toml` directly
-(`docs/design/managed-identity-access/`).
+(`docs/design/people/README.md`).
 
 Identity and grant reads delegate to the selected `BindingStore`,
 `AuthorityService` and `TopologySource`, so dynamic registrations,

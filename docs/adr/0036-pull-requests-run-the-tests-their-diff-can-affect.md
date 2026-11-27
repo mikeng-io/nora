@@ -1,3 +1,9 @@
+---
+class: adr
+subject: Pull requests run the tests their diff can affect; the whole suite runs on master
+owns: []
+---
+
 # 0036 · Pull requests run the tests their diff can affect; the whole suite runs on master
 
 - **Status:** superseded by ADR 0038 (operator, 2026-11-08)

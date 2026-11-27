@@ -1,3 +1,11 @@
+---
+class: operations
+subject: how Nora is configured, the files, keys and settings the deployment owns
+owns: []
+links:
+  - {to: docs/design/obs/README.md, rel: uses}
+---
+
 # Configuration and credential delivery
 
 `config.toml` carries deployment settings, `identity.toml` people, `policy.toml`
@@ -5,6 +13,11 @@ trust, and private `secret.toml` credential values. In the file backend, identit
 and policy reload every three seconds after validation. Config and secrets require controlled restart or
 recreation. They are not hot reloaded. See the
 [contract amendment](../adr/0033-private-secrets-and-model-endpoints.md) (DEC-325).
+
+Doctrine and dreamer content bind-mounted from a checkout reloads on file mtime; every other
+application file, including runtime skills, comes from the image. A deployment that mounts that
+content tracks it alongside the image revision. OAuth refresh state and platform registrations
+are persistent data and survive image replacement.
 
 ## Public agent identity
 
@@ -46,7 +59,7 @@ lock after backup and validation. Empty assignments remain overrides.
 managed services rather than file authority. Room destinations and topology
 retain their declared configuration. Backend selection is a restart boundary,
 not an identity-file hot reload. See the
-[identity contract](../design/managed-identity-access/identity.md).
+[identity contract](../design/people/README.md).
 
 Configure private Kratos admin and Keto read/write URLs under
 `[identity.managed]`. They must be reachable from Nora's runtime, not just the
@@ -136,7 +149,7 @@ intervals. Automatic Instagram and summons reads retain their separate 90-second
 limit. These bounds do not guarantee a provider response within the timeout.
 The per-read concurrency is not a process-wide provider cap; aggregate fan-out
 and measurement limits are documented in
-[the media design](../design/media-read-lane/reading.md).
+[the media design](../design/media/reading.md).
 
 `reaction_send` lets the agent choose an emoji for a message in its visible
 transcript. A confirmed reaction can complete a turn without text. It is recorded

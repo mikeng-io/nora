@@ -44,55 +44,23 @@ RULE_TESTS = {
     "DEC-97": "test_running_identity_is_independent_of_the_latest_release",
     "DEC-324": "test_a_server_entry_admits_a_discovered_channel_by_guild_id",
     "DEC-323": "test_policy_reload_admits_the_next_message_from_a_new_room",
-    "DEC-329": "test_cognition_is_the_live_topic_writer",
-    "DEC-330": "test_a_generation_carries_the_key_and_no_chatgpt_headers",
     # R-1: untagged ambient traffic reaches the agent ONLY under the participation
     # occasion's gating: an operator-opted-in room, one quiescence-closed window, one
     # evaluation through `FirePath.speak`. The named test pins that ordinary ambient
     # traffic constructs ZERO agents; its sibling pins the exception's gating.
     "R-1": "test_ambient_reaches_the_agent_only_through_participation_gating",
-    # R-1b: the send-path clause of R-1. `nora.app.fire.FirePath` makes "only the
-    # tagging path may cause a send" false — a fire turn is a send not caused by a tag.
-    # R-1's test harnesses only ambient input, so it stays green no matter how many non-tag
-    # send paths exist and is no brake on this clause. R-1b is that brake: `Deliverer` is
-    # the only caller of `adapter.send`, it is constructed only by `deliver.build`, and
-    # `deliver.build` has exactly two callers — the tag pipeline and the fire path. The
-    # participation occasion changes NOTHING here: it goes through `FirePath.speak`, so the
-    # two callers remain two.
-    "R-1b": "test_only_the_tag_path_and_the_fire_path_can_send",
     "R-2": "test_a_reaction_and_a_text_reply_share_the_message_cap",
-    "R-2b": "test_deliverer_latch_is_single_shot",
     "R-3": "test_send_to_other_group_cannot_escape_the_tagged_conversation",
     "R-4": "test_empty_reply_not_sent",
     "R-5": "test_silent_failure_matrix",
     "R-6": "test_leak_guard_blocks_canary",
-    "R-6b": "test_leak_guard_blocks_doctrine_verbatim",
-    "R-6c": "test_leak_guard_allows_normal_reply",
     "R-7": "test_tool_call_budget_enforced_for_load_transcript",
     "R-8": "test_limits_passed_through",
     "R-9": "test_debounce_window",
     "R-10": "test_concurrent_tags_same_conversation",
-    "R-10b": "test_lock_released_on_timeout",
-    "R-10c": "test_lock_released_on_llm_error",
     "R-11": "test_trigger_matrix",
     "R-12": "test_self_tag_ignored",
     "R-13": "test_prefill_escapes_angle_brackets",
-    "R-13b": "test_forged_closing_tag_is_escaped",
-    # R-13c: R-13's rule on the LINE axis rather than the tag axis, a separate
-    # key because the two R-13 tests never asserted it. `escape` closes the block
-    # boundary; a newline in a row's body forges a whole ROW inside the block,
-    # with its own `#n` handle and somebody else's name on it. The brake is the
-    # renderer's, not the instruction's.
-    #
-    # TWO shapes close it. On a LINE, the brake is `nora.domain.prompt.one_line`
-    # — applied by `render_rows` to every accessor, on every one of the eight
-    # line grammars in the tree, and
-    # `tests/architecture/test_one_row_renders_one_line.py` is what stops the
-    # ninth shipping without it. In the tag prefill's `<transcript>` there
-    # are no lines: `render_messages` gives each message its own `<m>` element,
-    # so the forgery needs a `</m>` and `escape` is what refuses it. The named
-    # test below reads that block, so it asserts the second shape.
-    "R-13c": "test_a_message_cannot_forge_another_message",
     "R-15": "test_no_redundant_read_fails_when_prefill_was_sufficient",
     "R-16": "test_secret_never_logged_in_the_message",
     "R-18": "test_a_reply_carrying_someones_phone_number_is_refused",
@@ -132,11 +100,6 @@ RULE_TESTS = {
     # people are NOT a subset of the circle — a REFUSAL, not a silent omission.
     # The INVERSE of the room tools' R-21; nothing else in Nora enforces it.
     "R-31": "test_whereis_refuses_to_disclose_outside_the_circle",
-    # R-32: the collector is a change-recorder, not a sampler (DEC-55). A row is
-    # written only when a member's `ts` advances, so two reads of an UNMOVED
-    # member produce ONE row — the property that makes presence a time-series of
-    # distinct fixes rather than a duplication of every poll.
-    "R-32": "test_an_unmoved_member_is_recorded_once",
     # R-33: media_fetch reads a stored image back through MiMo-V2.5, scoped to
     # THIS conversation's custody over a bounded window, cached by content hash
     # and screened on every serve, under its own vision timeout (derived from
@@ -188,23 +151,6 @@ RULE_TESTS = {
     # `ToolRegistry.build`, because a fire turn is otherwise a well-formed turn
     # in the same conversation and no tool can tell the two apart.
     "R-39": "test_remind_refuses_on_a_fire_turn",
-    # R-40: an MCP server's tools reach `Agent(tools=...)` for a tag only when
-    # `policy.toml`'s per-conversation `tools` allowlist names that server —
-    # resolved and enforced at ASSEMBLY (`EngagementPipeline._run_admitted`
-    # calling `ToolRegistry.build(..., allowed_mcp=...)`), never at egress
-    # (DEC-71).
-    "R-40": "test_unauthorized_conversation_never_receives_demo_tools",
-    # R-41: matching an unlabeled entry in something looked up (a handle, an
-    # id) to the person Nora is talking to requires an actual link — never
-    # inferred from rank or list order (DEC-75). Behavioural, same shape as
-    # R-14: asserted by conduct.md, measured by the adversarial corpus — NOT
-    # a currently-passing gate (DEC-75's own text records the measured
-    # failure rate; the test below only pins that the corpus exists).
-    "R-41": "test_r41_is_covered_by_the_identity_grounding_corpus",
-    # R-42 is retired (DEC-314); the number is not reused.
-    # R-43: a compute job is delivered AT MOST ONCE, ever — the same discipline
-    # R-37/R-37b hold for reminders, applied to the third Occasion (DEC-99).
-    "R-43": "test_a_job_never_delivered_twice",
     # R-44 and R-45 are retired; the numbers are not reused.
     # R-46: a reply leaves on the platform its tag arrived on; an unroutable
     # platform refuses rather than falling back.
@@ -213,16 +159,9 @@ RULE_TESTS = {
     # told. Scoping the target to room membership answered «nobody here goes by
     # that» about a friend Nora knows and can locate.
     "R-47": "test_a_circle_member_who_is_not_in_the_room_can_still_be_asked_about",
-    # R-48: only a cacheable tool's successful call ever gets logged for later
-    # recall.
-    "R-48": "test_a_non_cacheable_tool_is_never_logged",
     # R-49 (DEC-105): a relay crosses into another room only within one
     # unit, only for somebody allowed in both, and only under their name.
     "R-49": "test_a_room_in_another_unit_is_refused",
-    # R-50 (DEC-106): her memory OF THE TAGGER rides in the prefill, and the
-    # tool that would fetch it again points at the block instead. The duplicate
-    # is the whole risk the block carries, so the guard is the named rule.
-    "R-50": "test_about_the_tagger_points_at_the_block_instead_of_fetching_it",
     # R-90: `messages.body` carries a media label and a handle and nothing else;
     # the comprehension is joined at RENDER time, in the context assembler, and
     # `scan_identifiers` runs on every render. The durable body is read verbatim
@@ -242,20 +181,6 @@ RULE_TESTS = {
     # INFERENCE OVER results, where nothing enforced it: a scoped article's
     # omission read as a denial overturns a correct sourced answer.
     "R-53": "test_r53_is_covered_by_the_source_scope_corpus",
-    # R-56 (DEC-133, the Dreamer runtime): the Dreamer may LOOK and may not ACT.
-    # A background process that can speak to the group unprompted — or set a
-    # reminder, or write to the events store — with nobody waiting on it is a
-    # categorically different and more dangerous thing than one that can only
-    # read, so this is a property of the runtime rather than a setting an
-    # operator could get wrong.
-    #
-    # Points at the DERIVED set's own pin rather than a second copy of the
-    # assertion. `read_only_tools()` is computed from a field on each tool, and
-    # the test named here measures the computed set against the act verbs — so a
-    # tool added tomorrow is classified by whoever adds it and cannot silently
-    # join the Dreamer's ceiling. The hand-written list of act verbs lives in
-    # the TEST while the code derives.
-    "R-56": "test_no_act_verb_is_ever_read_only",
     # R-57: the block on a `where_is`-disclosed address entering `route` is
     # enforced in code; `nora/skills/navigation/SKILL.md` prose alone is
     # unenforced on any turn the skill doesn't load. `route`'s R-28 screen
@@ -273,20 +198,6 @@ RULE_TESTS = {
     # ANY attachment there by naming it right, even one `label_for` still
     # displays as `[file]`.
     "R-58": "test_a_matching_filename_on_a_non_audio_attachment_is_not_a_voice_note",
-    # R-52 (DEC-117): `create_event` fail-closes on ambiguity — more than one
-    # open event — refusing rather than guessing which of two-or-more
-    # already-open events is meant.
-    "R-52": "test_r52_two_open_events_refuses_a_third_rather_than_guessing",
-    # R-55: a note revision is VETOED unless `note_read` succeeded for that note
-    # in the same turn. The injected index carries title + description only —
-    # enough to know a note exists, nowhere near enough to revise one — and
-    # `note_revise` replaces the note's rendered body, so a revision written
-    # blind destroys the arrangement the tier exists to hold. The named test
-    # asserts through `ReplyGuard.evaluate`'s refusal rather than by reading the
-    # latch set: the set is invisible to the model, the veto is where a miss
-    # costs something, and a test that reads the set goes green against a latch
-    # that never vetoes anything.
-    "R-55": "test_r55_a_revision_is_vetoed_when_this_turn_never_read_the_note",
     # R-59: starting a NEW music session for a guild requires the requester to
     # be in a voice channel; an existing session is never gated this way (only
     # STARTING one names a destination channel).
@@ -314,7 +225,6 @@ RULE_TESTS = {
     # (default false). related() returning empty falls straight through to
     # idle -- never retried or substituted with a guess.
     "R-62": "test_autoplay_enqueues_and_plays_a_related_track_when_the_queue_empties",
-    "R-63": "test_autoplay_skips_tracks_already_played_this_session",
     # R-64: with [music]
     # autoplay_prewarm_seconds above 0, MusicPlayer resolves the NEXT
     # autoplay pick (Mix lookup AND its playable stream) before the
@@ -325,14 +235,6 @@ RULE_TESTS = {
     # R-65: a dead voice connection tears the session down like a stop
     # instead of stranding now-playing state.
     "R-65": "test_a_dead_voice_connection_tears_down_the_session",
-    # R-66 is retired; the number is not reused.
-    # R-67: a completed prewarm that answered EMPTY gets ONE live `related()`
-    # retry at the actual track end, never more -- only if the live answer is
-    # also empty does the chain fall through to idle (R-62's "never retried"
-    # discipline applied to the LIVE answer; the bound of one makes a loop
-    # unreachable). Without the retry, a transient empty prewarm Mix that had
-    # recovered by track end would leave autoplay silent for good.
-    "R-67": "test_an_empty_prewarm_is_retried_once_at_track_end",
     # R-68: every transition that can touch a guild's MusicPlayer runs under
     # that guild's lock -- skip/stop/channel-empty/idle-timeout join
     # play()/on_track_finished()/on_voice_death() so a natural track-end, a
@@ -345,10 +247,6 @@ RULE_TESTS = {
     # boot-time resume that finds nothing playing re-seeds the autoplay
     # chain from it instead of sitting silent in a live voice channel.
     "R-88": "test_advance_seeds_autoplay_from_last_played_when_nothing_playing",
-    # R-89 (DEC-159): a series may not repeat faster than
-    # `[reminders] min_interval_seconds`, and the tool REFUSES rather than
-    # clamping — a silently shortened series is a broken promise.
-    "R-89": "test_an_every_minute_ask_is_refused_with_something_she_can_say",
     # R-69 names the FIRST of four tests (the naming convention this dict
     # follows), and it is the one whose failure is unrecoverable: an exception
     # raised inside a `finally` skips the rest of that `finally`, and the
@@ -358,10 +256,6 @@ RULE_TESTS = {
     # and the stage's own `BaseException` catch — are named in the decision
     # index row.
     "R-69": "test_a_debrief_that_blows_up_still_releases_the_lock",
-    # R-70 names the test that PREVENTS the defect rather than the one that
-    # detects a hang: it refuses a hold budget the timeouts do not fit. The hang
-    # tests and the window pair are named in the index row.
-    "R-70": "test_the_standing_slot_hold_refuses_a_budget_the_timeouts_do_not_fit",
     # R-71 and R-72 are retired; the numbers are not reused.
     # R-73 points at `who_said`'s enforcement of the principle; the decision
     # index's R-73 row cites that test, owner-local eval export excepted.
@@ -397,32 +291,8 @@ RULE_TESTS = {
     # string the table renders — a wording change to ANY music surface has to
     # land there, so the diff shows it.
     "R-84": "test_now_playing_line_carries_title_and_url",
-    # R-86 (DEC-151, DEC-201): every social read tool is read-only at three
-    # layers, and the named test DERIVES all three from the code — the bridge's
-    # allowlist against OpenCLI's write verbs, the tool's (platform, what)
-    # vocabulary against that allowlist, and the NativeTool declaration — so a
-    # hand-edit to any one layer that drifts from the others goes red.
     "R-86": "test_r86_social_reads_are_read_only_at_three_layers",
-    # R-87: Standing folds read SINCE a row-id watermark
-    # (`since_including_nora`, capped at [standing] fold_batch), not the reply
-    # path's recency window — a conversation that passes 40 messages between
-    # tags must not lose the middle. The named test drives the real stage
-    # through a store holding 60 rows and asserts the fold's prompt reaches the
-    # row a 40-row window would clip.
-    "R-87": "test_r87_the_standing_fold_reads_since_a_row_id_watermark",
-    # R-91: one memory ration for the whole Dreamer pass, spent across
-    # `about`/`ask_memory`/`search_memory_workspace`/`lookup_person` together and
-    # answered — R-27 `unavailable` — rather than vetoed. The named test runs the
-    # REAL Strands loop, because the property is what the MODEL gets back: an
-    # error result is a correction, and a model corrects by retrying, which is
-    # the loop the ceiling exists to end.
     "R-91": "test_a_third_memory_read_is_answered_unavailable_and_the_pass_completes",
-    # R-92 is retired; the number is not reused.
-    # R-93 (DEC-187): ONE Discord voice connection, owned by the
-    # audio-controller — nothing in nora's production tree opens a voice
-    # connection or holds a VoiceClient. The named test is the architecture
-    # gate that fails the build if one creeps back.
-    "R-93": "test_nora_never_opens_a_discord_voice_connection",
     # R-94 (DEC-187): end-music and leave-voice are separate
     # lifecycles — `/music stop` and idle expiry end the session, but the
     # voice connection STAYS; only `/discord exit`, an emptied channel and
@@ -476,6 +346,13 @@ def test_every_enforced_rule_has_a_named_test():
     collected = _collected()
     missing = {rule: name for rule, name in RULE_TESTS.items() if name not in collected}
     assert not missing, f"rules without their named test: {missing}"
+
+
+def test_rule_tests_name_only_rows_of_the_decision_index():
+    index = (ROOT / "docs" / "design" / "decisions.md").read_text(encoding="utf-8")
+    ids = set(re.findall(r"(?m)^\| ((?:DEC|R|D|A)-?\d+[a-z]?) \|", index))
+    assert len(ids) >= 200
+    assert sorted(set(RULE_TESTS) - ids) == []
 
 
 def test_r14_is_covered_by_the_adversarial_corpus():
@@ -873,7 +750,7 @@ def test_r86_social_reads_are_read_only_at_three_layers():
     read, search = vocabulary["instagram_read"], vocabulary["instagram_search"]
     assert read | search == EXCEPTION_ROUTES, (
         "instagram_read and instagram_search read through the instagram-bridge "
-        "only (docs/design/instagram-adoption/bridge.md)"
+        "only (docs/design/platform/instagram.md)"
     )
     assert not (EXCEPTION_ROUTES & set(bridge_server.READ_ONLY_ALLOWLIST)), (
         "a pair is on the bridge's list AND in OpenCLI's allowlist, so a verb "

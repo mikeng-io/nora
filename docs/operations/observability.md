@@ -1,3 +1,11 @@
+---
+class: operations
+subject: how observability is deployed, instrumented, queried and recovered
+owns: []
+links:
+  - {to: docs/design/obs/README.md, rel: uses}
+---
+
 # Observability
 
 **The accepted observability design, the deployed instrumentation baseline, and
@@ -26,7 +34,7 @@ two copies drift and the one that drifts is the one you did not read
 
 Eval CLI runs also keep private durable evidence on the eval host using the same
 OTel provider. Private reproducibility and operator visibility are separate requirements. See
-[Durable run evidence](../engineering/eval-sop.md#durable-run-evidence) for the lock, contents,
+[Durable run evidence](eval-sop.md#durable-run-evidence) for the lock, contents,
 permissions and incomplete-run semantics.
 
 ## Accepted direction: self-hosted SigNoz
@@ -117,8 +125,8 @@ Do not share Langfuse's existing ClickHouse data directory or schemas with SigNo
 No additional Loki, Grafana or Quickwit stack is part of this decision. No prompt
 management/evaluation platform or replacement for the eval runner is introduced.
 
-Related bundles keep their own responsibilities: [platform bridge operations](../design/platform-bridges/04-operations.md#short-linked-otel-operations-and-routing-amendment)
-carry queue lifetimes/links and the transitional route; [evaluation SDK compatibility](../design/evaluation/measurement.md)
+Related bundles keep their own responsibilities: [platform bridge operations](../design/platform/README.md)
+carry queue lifetimes/links and the transitional route; [evaluation SDK compatibility](../engineering/evaluation-measurement.md)
 requires populated Sessions after any span-format change. Neither duplicates the
 backend/cutover contract here.
 
@@ -162,7 +170,7 @@ Check system messages, tool arguments/results, cache fields,
 errors and multi-call agents against the pinned collector/backend before enabling
 it. Existing content authorization and secret redaction remain; changing the
 backend does not decide the open field-level redaction questions in
-[the content investigation](../design/13-trace-content-and-redaction.md).
+[the content investigation](trace-redaction.md).
 No cloud export or additional content capture is implied.
 
 For retained event-only traces, open the model/tool span in Overview and read
@@ -444,7 +452,7 @@ That is R-76; `docs/engineering/conventions-rationale.md` has the argument and t
 Metric names are append-only. The six retired `nora_message_reading_*` counters
 stay declared at zero so saved queries remain valid; the later `nora_extraction_*`
 family left with the per-message extraction worker it measured
-(docs/design/unified-memory/graph.md). Reading statements now persist through Cognition
+(docs/design/cognition/graph.md). Reading statements now persist through Cognition
 step one; its own trace and budget instruments measure that path.
 
 **Three states on every instrument, never two** — `ok` / `nothing_found` /
@@ -653,7 +661,7 @@ concrete shape behind "10+ separate traces per message" in Langfuse.
 
 Strands' own `Tracer` has a **native redaction lever**
 (`OTEL_SEMCONV_STABILITY_OPT_IN=gen_ai_unredacted_attributes=<list>`), which is
-what `docs/design/13-trace-content-and-redaction.md` (still `status: open-decision`)
+what `docs/operations/trace-redaction.md` (still `status: open-decision`)
 investigates. It is **off by default**, meaning every Agent-backed model call
 — including the tag turn's own — sends its real content to the collector
 unredacted today. That is a config surface, not a per-call-site obligation:
@@ -666,7 +674,7 @@ other exit it always did (dream-screened replies, place lookups) — but no
 current call site uses it to pre-screen content bound for a trace: the two
 raw call sites below never send real content in the first place (see "What a
 raw call owes", above), so there is nothing left for it to screen there
-either. For anything Agent-backed, `docs/design/13-trace-content-and-redaction.md`'s lever is the only mechanism,
+either. For anything Agent-backed, `docs/operations/trace-redaction.md`'s lever is the only mechanism,
 and it is not yet turned on.
 
 ---
@@ -1065,13 +1073,13 @@ Recorded here so they are findings rather than surprises.
   moving onto strands.telemetry (2026-09-19).** Before this, the hand-rolled
   wrapper around those calls ran `nora.agent.security.trace_safe` on the
   prompt/completion before putting either on a span — a whole-text identifier/
-  coordinate screen, independent of `docs/design/13-trace-content-and-redaction.md`'s native-lever question. Now
+  coordinate screen, independent of `docs/operations/trace-redaction.md`'s native-lever question. Now
   that the call runs through a real Strands `Agent`, its content reaches the
   collector however Strands' own event recording writes it, with no seam left
   to substitute pre-screened text — so this content is exactly as unredacted
   as the tag turn's own Agent-backed content already was (consistent with the
   existing precedent, not a new exposure class, but a real guarantee this
-  specific call site used to have and no longer does). `docs/design/13-trace-content-and-redaction.md`'s native
+  specific call site used to have and no longer does). `docs/operations/trace-redaction.md`'s native
   lever is the only mechanism left that could restore it, for every
   Agent-backed call at once, and it is off by default.
 - **The relevance gate's prompt (every room's transcript, including rooms
@@ -1084,13 +1092,13 @@ Recorded here so they are findings rather than surprises.
   never went through before. Before this change, the gate's span carried
   only its own safe verdict JSON; the comment in `nora/ingest/
   relevance_gate.py` that said the prompt was never put on the wire was true
-  until this date. `docs/design/evaluation/measurement.md`  «Sampling and stability» had
+  until this date. `docs/engineering/evaluation-measurement.md`  «Sampling and stability» had
   already named this exact fork — "either unscreened model text goes on the
   collector wire, or a second gate-specific mapper is written… 40 of 150
   [eval] cases wait on it" — one day before the session that resolved it.
   The operator was asked directly and chose to accept it, specifically to
   unblock that eval-suite gap; this was not verified by re-running the eval
   mapper against a live case and should be confirmed by whoever picks that
-  up next. `docs/design/13-trace-content-and-redaction.md`'s native redaction lever governs this content too
+  up next. `docs/operations/trace-redaction.md`'s native redaction lever governs this content too
   (`Tracer._redact` runs on both the Agent path and this raw-span path), so
   turning it on would cover both at once.

@@ -1,3 +1,12 @@
+---
+class: design
+subject: "the instruction, the tools per pass, and admission"
+owns: []
+area: cognition
+links:
+  - {to: docs/design/cognition/README.md, rel: uses}
+---
+
 # The model's surface
 
 The model's surface is what a pass shows the model and lets it call. It is

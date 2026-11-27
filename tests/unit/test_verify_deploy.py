@@ -92,7 +92,7 @@ def test_selective_readback_binds_restart_allowance_to_container_identity(
 def test_a_degraded_platform_is_a_warning_not_a_failure(monkeypatch, capsys, health, warned):
     """`verify_services` — the function `scripts/komodo_deploy.py` calls —
     passes a healthy release whose Nora reports a degraded platform, printing
-    a WARNING naming it (docs/design/platform-bridges/platform-liveness.md
+    a WARNING naming it (docs/design/platform/README.md
     «Visibility»). The container checks still decide pass or fail."""
     import json
 

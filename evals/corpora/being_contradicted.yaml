@@ -92,7 +92,7 @@
 # messages and Nora's own prior replies, and role is conveyed by wording, as in
 # `source_scope.yaml`.
 
-# --- RE-HOMED 2026-09-17 (docs/design/evaluation Step 4) -------------------------
+# --- RE-HOMED 2026-09-17 (docs/engineering/evaluation Step 4) -------------------------
 #
 # These cases were driven by `evals/run.py`'s `_invoke_agent`, whose own
 # docstring says what it is:
@@ -212,7 +212,7 @@
 # `real_evidence_may_overturn` is UNANCHORED, not parked: its evidence is a
 # tool result, which production carries inside the turn and which no real
 # room has ever held as a message (the tool-result seam,
-# docs/design/evaluation/subject.md). It loads, it is driven,
+# docs/engineering/evaluation-subject.md). It loads, it is driven,
 # and it ERRORS until that seam exists. Its content is kept under
 # `metadata.tool_result` and `metadata.prior_speech` so nothing is lost.
 #
@@ -269,7 +269,7 @@ cases:
     metadata:
       criteria:
       - being_contradicted
-      seam: tool-result (docs/design/evaluation/subject.md)
+      seam: tool-result (docs/engineering/evaluation-subject.md)
       prior_speech:
       - what time does the hall shut on sundays
       - body: 6pm — I read it off the venue's own hours page just now

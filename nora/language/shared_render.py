@@ -1,6 +1,6 @@
 """Renders the one `standing` block, ONCE, for every audience.
 
-`docs/design/notebook-memory-types/20-standing.md`: the tag path's prefill, the
+`docs/design/cognition/graph.md`: the tag path's prefill, the
 Cognition session's agenda and the proactive fire path all draw from this —
 two renderers over one `SharedView` would be two answers to «what stands».
 `nora.agent.shared_state` reads the stores; this module only formats.

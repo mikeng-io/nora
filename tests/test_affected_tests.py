@@ -160,7 +160,7 @@ def test_empty_diff_selects_nothing():
 # --- documentation and data readers: found by scanning tests/, not listed ---
 #
 # Every `.md` is mapped to the tests that open it, not to a hand-kept table:
-# README.md, docs/design/appearance/README.md, docs/operations/runbook.md, ARCHITECTURE.md,
+# README.md, docs/design/appearance/README.md, docs/operations/runbook.md, the code map,
 # AGENTS.md, CONTRIBUTING.md, the decision index, the deploy READMEs and the
 # release-fragment README each have a test that opens them. These cases name
 # the real readers of the real tree, so a change to how a test opens a doc
@@ -184,14 +184,14 @@ def test_generic_docs_markdown_selects_the_universal_doc_reader():
     ("README.md", ["tests/test_docs.py"]),
     ("docs/design/appearance/README.md", ["tests/test_docs.py"]),
     ("docs/operations/runbook.md", ["tests/test_docs.py"]),
-    ("ARCHITECTURE.md", ["tests/test_architecture_doc.py"]),
+    ("docs/engineering/code-map.md", ["tests/test_architecture_doc.py"]),
     ("AGENTS.md", ["tests/architecture/test_agent_skills.py",
                    "tests/test_architecture_doc.py"]),
     (".agents/skills/nora-land/SKILL.md", ["tests/architecture/test_agent_skills.py"]),
     ("CONTRIBUTING.md", ["tests/architecture/test_contribution_conventions.py"]),
     (".github/pull_request_template.md",
      ["tests/architecture/test_contribution_conventions.py"]),
-    ("docs/design/09-decision-index.md",
+    ("docs/design/decisions.md",
      ["tests/architecture/test_decision_index_ids_are_unique.py",
       "tests/architecture/test_decision_index_tests_exist.py",
       "tests/test_architecture_doc.py"]),
@@ -205,7 +205,7 @@ def test_a_doc_selects_every_test_that_opens_it(path, readers):
 
 def test_mixed_markdown_and_docs_tree_change_unions_every_reader():
     selected = select([
-        "docs/foo.md", "README.md", "docs/design/09-decision-index.md",
+        "docs/foo.md", "README.md", "docs/design/decisions.md",
     ])
     assert selected != ALL
     for reader in ("tests/test_docs.py",
@@ -219,7 +219,7 @@ def test_a_docs_tree_data_file_selects_what_reads_it_not_nothing():
     """docs/design/*.toml is not "docs-only, no reader". The scan finds the tests
     that name the design tree; a file with no reader at all is NONE (next
     test), never silently the same as a failure."""
-    assert _selected("docs/design/10-preview-identity.toml") != []
+    assert _selected("docs/operations/identity-preview.toml") != []
 
 
 def test_nora_skills_change_selects_all():

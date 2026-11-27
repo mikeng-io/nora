@@ -1,12 +1,12 @@
 package httptransport
 
 // The ONE failure shape and the ONE status table, for every route
-// (docs/design/instagram-adoption/bridge.md).
+// (docs/design/platform/instagram.md).
 //
 // Before bridge.md there were two: `statusForError` (reads.go) with the old
 // `{"ok": false, "error": "..."}` body, which answered 500 for
 // ErrUpstreamRejected, and `statusForDomainError` here with the envelope,
-// which the routes built since docs/design/instagram-adoption/bridge.md used. bridge.md moved every route onto this one
+// which the routes built since docs/design/platform/instagram.md used. bridge.md moved every route onto this one
 // and deleted the other, so a status and a code can never disagree between
 // two routes about the same failure.
 //
@@ -27,14 +27,14 @@ package httptransport
 //	     too: Instagram answered a configured document with an error naming
 //	     the DOCUMENT (its doc_id rotated with a web build), so the read has
 //	     no working mechanism until an operator captures the id again
-//	     (docs/design/cognition-loop/observation.md). It is NOT a session
+//	     (docs/design/cognition/loop.md). It is NOT a session
 //	     problem and NOT a 502: a caller halts that one read and must not
 //	     back the login off, which a 502 asks for.
 //	502  Instagram answered, and the answer was an error
 //	503  no session client yet, or the socket is down: retryable, the bridge
 //	     heals itself
 //
-// The comment write adds its guards' refusals (docs/design/instagram-adoption/summons.md; app/comments.go),
+// The comment write adds its guards' refusals (docs/design/platform/instagram.md; app/comments.go),
 // each with its OWN code, checked before the table above because two of them
 // refine a kind in it:
 //
@@ -102,13 +102,13 @@ func writeErrorEnvelope(w http.ResponseWriter, status int, code, message string)
 //
 // The code is `invalid_id`, the closed set's only caller-error kind, which
 // `GET /accounts?query=` already answered for a blank query before bridge.md. The
-// set has no separate kind for "a malformed body"; see docs/design/instagram-adoption/bridge.md «Observation»'s
+// set has no separate kind for "a malformed body"; see docs/design/platform/instagram.md «Observation»'s
 // note.
 func invalidRequest(w http.ResponseWriter, message string) {
 	writeErrorEnvelope(w, http.StatusBadRequest, "invalid_id", message)
 }
 
-// statusForDomainError is docs/design/instagram-adoption/bridge.md's status table, over the closed domain
+// statusForDomainError is docs/design/platform/instagram.md's status table, over the closed domain
 // error set and nothing else. Every kind maps onto exactly one status, and an
 // error with no kind is 500, never 200 and never 503: 503 is a claim that
 // retrying will work, and making that claim on an unknown failure is how a

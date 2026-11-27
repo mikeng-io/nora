@@ -5,7 +5,7 @@ with optional context withheld; the `flash` arm asks a small model which of
 the OPTIONAL blocks a turn needs. The prompt that model reads — its system
 text, the clock/window line and the candidate blocks — is built HERE, so the
 selector is a declared context-assembly occasion like every other prompt
-(DEC-273, ADR 0021, docs/design/context-assembly/registry.md). The runner only dispatches the POST
+(DEC-273, ADR 0021, docs/design/agent/assembly.md). The runner only dispatches the POST
 and
 records receipts.
 

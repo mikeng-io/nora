@@ -1,3 +1,16 @@
+---
+class: design
+subject: "executors, tool calls and their wait window, waking, replay, time and settlement"
+owns:
+  - Dreamer: "the reflection loop's runtime for wake passes: admission, single-flight per unit, global concurrency, cancellation, budgets and the model call; never a data layer"
+  - fire turn: "an engagement pass nobody addressed to Nora, ambient or proactive, run by the fire path with the same stages and guards as a called pass"
+  - conversation slot: "the one in-flight engagement pass per room, shared by every path, so a reminder and a tag never run at once in one room"
+  - tick: "a logical position on a stable UTC grid, never a count of passes"
+area: cognition
+links:
+  - {to: docs/design/cognition/README.md, rel: uses}
+---
+
 # Execution
 
 Execution is how passes and actions run: which executor owns each, how long a
@@ -125,7 +138,7 @@ observed; a failed replay records none and never takes a live slot.
 
 ## Tracing
 
-- One root span per pass; stages and actions are its children.
-- Spawned work attaches its intended trace context explicitly.
+- How a pass is traced, its root, its stages and spawned work, is owned by
+  [obs](../obs/README.md).
 - Every instrument keeps three outcomes apart: found, nothing found,
   unavailable.

@@ -1,5 +1,5 @@
 """The platform-bridge handoff against REAL Postgres + Redis
-(docs/design/platform-bridges).
+(docs/design/platform/README.md).
 
 Every test drives the production seam: `StreamProducer.enqueue` (the dedupe
 Lua) → `StreamReader._register` (atomic event+obligation) →

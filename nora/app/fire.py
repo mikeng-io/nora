@@ -641,8 +641,8 @@ class FirePath:
         # character heads — is made at all.
         profile: ProfileHeads | None = None,
         tag_trace_store: Any = None,
-        # The unit's shared cognitive state reader (docs/design/notebook-memory-
-        # types/20-standing.md): bound at the composition root
+        # The unit's shared cognitive state reader (docs/design/cognition/context.md):
+        # bound at the composition root
         # over the canonical stores, `None` in every harness that wires none.
         # A PROACTIVE occasion withholds on an `unavailable` view — a claimed
         # due row is not proof the act is still needed, and an unread premise

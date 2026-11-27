@@ -1,3 +1,13 @@
+---
+class: design
+subject: "the act envelope and delegated work"
+owns:
+  - surface: "where Nora's words land: a room is a private surface she belongs to, a public post a public surface read by strangers, and a voice channel a surface of a room, not a room"
+area: cognition
+links:
+  - {to: docs/design/cognition/README.md, rel: uses}
+---
+
 # Acts
 
 An act is anything Nora does that changes something outside the graph: a

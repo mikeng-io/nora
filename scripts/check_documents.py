@@ -42,13 +42,7 @@ ROOT_DOCUMENTS = {
 GENERATED = {"docs/README.md", "docs/design/README.md", "docs/glossary.md"}
 #: A link to a file a later calibration unit creates. Each entry names the unit that
 #: removes it; U5 empties the list, after which an unresolved link always fails.
-STAGED_TARGETS = {
-    "docs/README.md": "U5",
-    "docs/design/README.md": "U5",
-    "docs/glossary.md": "U5",
-    "docs/design/decisions.md": "U4",
-    "docs/operations/deploy.md": "U5",
-}
+STAGED_TARGETS: dict[str, str] = {}
 MAX_LINES = 300
 #: Engineering policy is runtime-neutral: runtimes are in .agents/runtimes/,
 #: lanes in .agents/lanes.md.
@@ -75,10 +69,10 @@ def frontmatter(text: str) -> dict | None:
 
 
 def owned(meta: dict) -> list[str]:
-    """`owns` entries are a term, or a single-key mapping of term to definition."""
+    """`owns` entries are a term, "term: definition", or a term-to-definition mapping."""
     terms = []
     for entry in meta.get("owns") or []:
-        terms.extend(entry if isinstance(entry, dict) else [entry])
+        terms.extend(entry if isinstance(entry, dict) else [str(entry).partition(": ")[0]])
     return [str(term) for term in terms]
 
 

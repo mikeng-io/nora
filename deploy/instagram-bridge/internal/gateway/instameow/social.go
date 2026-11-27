@@ -199,7 +199,7 @@ func issuerFor(cli Client) (GraphQLIssuer, error) {
 // The read used to be the library's `FetchReel`, REST
 // `/api/v1/feed/reels_media/`. Instagram answers that with HTTP 500 on every
 // call (4/4, 2026-10-16, library v0.2609.0, the latest;
-// docs/design/cognition-loop/observation.md). The web app reads a story
+// docs/design/cognition/loop.md). The web app reads a story
 // through a GraphQL document instead, `PolarisStoriesV3ReelPageStandaloneQuery`
 // , and so does this read now, through graphqlDoc with the doc_id from
 // INSTAGRAM_STORY_DOC_ID. The response is the same reel the REST read
@@ -208,7 +208,7 @@ func issuerFor(cli Client) (GraphQLIssuer, error) {
 // # A story read is a deliberate act, and that changes the rules
 //
 // The social stream's poller reads members' stories
-// (docs/design/cognition-loop/observation.md): a probe on /profile's
+// (docs/design/cognition/loop.md): a probe on /profile's
 // `latest_reel_media` decides, and the read runs only when that value moved.
 // Two consequences are built into the route rather than left to the caller:
 //
@@ -482,7 +482,7 @@ func storyFrame(item *storyItemWire) domain.StoryItem {
 		// `id` is `<pk>_<owner igid>`: a frame with no `pk` carries the story
 		// OWNER's igid in its id. Forwarded as before (the contract fixture
 		// pins it); the Python client must never hand it to the model
-		// (docs/design/instagram-adoption/social.md, R-18).
+		// (docs/design/platform/instagram.md, R-18).
 		out.ID = item.ID.String()
 	}
 	// The largest still. `image_versions2.candidates` is populated for a VIDEO

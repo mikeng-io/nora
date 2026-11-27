@@ -1,3 +1,10 @@
+---
+class: engineering
+subject: "the repository conventions for branches, commits, PRs and merges"
+owns:
+  - "injection: a word the code never uses for context assembly; a block is assembled, never injected"
+---
+
 # Maintainer conventions
 
 Public setup and contribution rules are in [Contributing](../../CONTRIBUTING.md).
@@ -212,7 +219,7 @@ These artifacts have different jobs; confusing them loses the intent:
 | **Linear work brief** | a proposed outcome and its completion boundary | Linear |
 | **GitHub issue** | a repository defect/problem report | `mikeng-io/nora` |
 | **ADR** | a *decision with a cost* — an alternative rejected, a trade accepted | `docs/adr/NNNN-*.md` |
-| **decision row** | a *landed* decision and the test that enforces it | `docs/design/09-decision-index.md` |
+| **decision row** | a *landed* decision and the test that enforces it | `docs/design/decisions.md` |
 
 An open work item or defect report is not a decision. A trivial decision gets
 an index row and nothing more. An ADR is warranted when the decision will look wrong to someone
@@ -224,7 +231,7 @@ worse**. `docs/adr/README.md` carries the full convention.
 ## Numbering discipline
 
 Never take a DEC-, R-, ADR- or issue number from a chat agreement or from
-memory — re-read `docs/design/09-decision-index.md` (or `gh issue list`) at merge
+memory — re-read `docs/design/decisions.md` (or `gh issue list`) at merge
 time, not at claim time. Two sessions that carefully coordinate numbers can
 still both be wrong. If a number you referenced as a placeholder turns out to
 be taken, fix the reference, not the number.
@@ -334,7 +341,7 @@ reviewers get the brief as a packet (`nora-dispatch/references/brief.md`).
 | status | Backlog: deferred; Todo: bounded/ready; In Progress: executing, reviewing or blocked with cause; Done: evidenced completion; Canceled/Duplicate: reason/canonical link |
 | priority | set on every open issue (Urgent, High, Medium or Low), distinct from roadmap horizon |
 | type | one label from the **Type** group on every issue: Bug, Feature or Improvement |
-| area | one label from the **Area** group, one per code area in `ARCHITECTURE.md` «Code map» (`cognition` covers `docs/design/cognition/` and its loops); a new Area label only with a new code area |
+| area | one label from the **Area** group, one per code area in `docs/engineering/code-map.md` (`cognition` covers `docs/design/cognition/` and its loops); a new Area label only with a new code area |
 | relations | a project, with a milestone per phase, for a split outcome; blocks for dependencies |
 | references | roadmap item and GitHub report when applicable; repository/base, session thread, PR and evidence as execution produces them |
 

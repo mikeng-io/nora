@@ -47,7 +47,7 @@ limitations under the License.
 
 **Taken: the prompt's reasoning and its four worked examples.** That is the
 load-bearing part and it is corpus-independent —
-`docs/design/cognition-loop/data.md` «Citations, links and search»: `NYC`/`New York
+`docs/design/cognition/loop.md` «Citations, links and search»: `NYC`/`New York
 City` (an abbreviation), `Java` the language against `Java` the island (one
 name, two real-world things), `Marco's car`/`Marco's vehicle` (a synonym with
 the same possessor), and `Sam`/`Sam` (the same person referred to again). Three

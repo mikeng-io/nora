@@ -1,6 +1,6 @@
 """persona_dispute: a dispute of a Persona line is a Record item.
 
-docs/design/unified-memory/profiles.md, . Anyone may dispute any
+docs/design/cognition/graph.md, . Anyone may dispute any
 line; the dispute names the line when one matches, who disputed, the claim
 as they put it and the message they said it in. Append-only: what was
 disputed, when and by whom is history the weighing session reads, never

@@ -346,7 +346,7 @@ def build_tool_specs(
     # `computer_capture`/`computer_cancel` `unavailable`.
     computer_admission: Any = None,
     browser_manager: Any = None,
-    # The canonical-DM scope resolver (`docs/design/private-dm/admission.md`):
+    # The canonical-DM scope resolver (`docs/design/people/direct-messages.md`):
     # `(platform, conversation_id)` → the DM scope id (the `(person, anchor
     # unit)` binding), hashed here to the workspace key. `None` — DM admission
     # is not wired — leaves DM-turn computer calls `unavailable`; never a
@@ -435,7 +435,7 @@ def build_tool_specs(
     # shipped default, offline, eval) is the Honcho path.
     memory_retrieval: MemorySearch | None = None,
     all_memory_surfaces: bool = False,
-    # The Profile write (docs/design/unified-memory/profiles.md): the graph surface's
+    # The Profile write (docs/design/cognition/graph.md): the graph surface's
     # `remember` writes a `told` line through it. `None` answers `unavailable`.
     profile: ProfileWriter | None = None,
     # Profile heads shared with the rendered context; None withholds the read.

@@ -1,3 +1,12 @@
+---
+class: design
+subject: "one read semantics for prefetch and read tools"
+owns: []
+area: cognition
+links:
+  - {to: docs/design/cognition/README.md, rel: uses}
+---
+
 # Retrieval
 
 Retrieval is the one read semantics behind prefetch and every read tool: scope
