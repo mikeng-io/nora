@@ -377,9 +377,9 @@ class BridgeMediaSource:
 
 
 def _member_record(m: object) -> bool:
-    """A signal-cli member record whose id fields, where present, are strings."""
+    """A signal-cli member record whose id fields are strings or null (hidden)."""
     return isinstance(m, dict) and bool(ids_of(m)) and all(
-        isinstance(m[k], str) for k in ("number", "uuid", "username") if m.get(k))
+        m[k] is None or isinstance(m[k], str) for k in ("number", "uuid", "username") if k in m)
 
 
 class BridgeRoster:
