@@ -159,3 +159,24 @@ def test_a_failed_health_read_through_the_komodo_wrapper_is_only_a_warning(
     vd.verify_services('nora', {'nora': 'synthetic-image'}, settle=0, timeout=0)
     out = capsys.readouterr().out
     assert "VERIFIED" in out and "WARNING: could not read Nora's /health" in out
+
+
+@pytest.mark.parametrize(("computer", "warned"), [
+    ({"state": "degraded", "detail": "registry directory /x is missing"}, 1),
+    ({"state": "live", "scopes": 3, "detail": ""}, 0),
+    (None, 0),
+])
+def test_a_degraded_scoped_computer_is_a_warning_not_a_failure(monkeypatch, computer, warned):
+    """The release did not cause a missing host mount, so it warns and the container checks
+    still decide pass or fail; a live registry and an off computer say nothing."""
+    import json
+
+    vd = _load()
+    health = {"platforms": {"signal": {"state": "live", "degraded": False}}}
+    if computer is not None:
+        health["computer"] = computer
+    monkeypatch.setattr(vd, "_docker", lambda *a: json.dumps(health))
+
+    lines = vd.platform_warnings([dict(_row(), service="nora", container_id="c1")])
+
+    assert sum("scoped computer is degraded" in line for line in lines) == warned

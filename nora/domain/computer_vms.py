@@ -91,6 +91,16 @@ class FileScopeEndpoints:
             name=str(raw.get("name") or ""), instance=str(raw.get("instance") or ""),
         )
 
+    def status(self) -> dict[str, object]:
+        """The registry's own state for `/health`. A directory that is not there means the
+        host mount is absent, which is not the same as a scope with no VM."""
+        if not self._dir.is_dir():
+            return {
+                "state": "degraded", "scopes": 0,
+                "detail": f"registry directory {self._dir} is missing: the host mount is absent",
+            }
+        return {"state": "live", "scopes": sum(1 for _ in self._dir.glob("*.json")), "detail": ""}
+
     async def registered(self) -> tuple[str, ...]:
         try:
             names = sorted(p.name for p in self._dir.glob("*.json"))

@@ -236,7 +236,12 @@ def platform_warnings(rows: list[dict]) -> list[str]:
     platforms = body.get("platforms") if isinstance(body, dict) else None
     if not isinstance(platforms, dict):
         return ["WARNING: Nora's /health carried no platforms block"]
-    return [
+    computer = body.get("computer")
+    warnings = [] if not (isinstance(computer, dict) and computer.get("state") == "degraded") else [
+        f"WARNING: the scoped computer is degraded ({computer.get('detail') or 'no reason given'})"
+        " — Nora is healthy; every scope reads as unavailable until it is fixed"
+    ]
+    return warnings + [
         f"WARNING: platform {name} is degraded ({entry.get('detail') or 'no reason given'})"
         " — Nora is healthy and serving the other platforms; it rejoins by itself"
         for name, entry in sorted(platforms.items())

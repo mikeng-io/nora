@@ -71,3 +71,9 @@ Health reads authenticated HTTP bodies and expected state. It distinguishes
 process down, daemon down, policy denial, expired host login and upstream
 failure. A socket accepting a connection is not evidence that the daemon or
 upstream works, and a missing optional integration is not unhealthy.
+
+The scoped computer's endpoint registry reaches the application as a read-only
+host mount. An absent mount is its own state: `/health` reports the computer
+degraded with the reason and the deploy read-back warns, while Nora keeps
+serving and every scope reads as unavailable. It is never confused with a scope
+that has no VM, which is the same answer for a different cause.
