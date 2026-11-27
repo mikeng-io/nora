@@ -34,7 +34,7 @@ from nora.policy import Policy
 
 
 def build_wake(
-    cfg: Config, runtime: DreamerRuntime | None, instructions: DreamerInstructions,
+    cfg: Config, runtime: DreamerRuntime, instructions: DreamerInstructions,
     engine: AsyncEngine, access: IdentityAccess, lineage: LineagePolicy, policy: Policy,
     debrief: Any, slots: ConversationSlots, audit: SqlRecordStore,
     presence: PresenceReader, documents: DocumentsContextReader | None,
@@ -42,9 +42,7 @@ def build_wake(
     metrics: Metrics, clock: Callable[[], datetime], rosters: Mapping[str, Any], registry: Any,
     content_checks: bool, media_join: MediaJoin | None,
     *, review: tuple[CognitionAgentRunner, str] | None = None,
-) -> WakePoller | None:
-    if runtime is None:
-        return None
+) -> WakePoller:
     try:
         instructions.for_objective("wake")
     except InstructionError as exc:

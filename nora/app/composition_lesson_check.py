@@ -25,8 +25,6 @@ def build_graph_lesson_check(
     cfg: Config, doctrine: DoctrineStore, instructions: DreamerInstructions,
     model_client_for: Callable[[str], AsyncOpenAI], metrics: Metrics,
 ) -> DoctrineCheck | None:
-    if not cfg.dreamer.enabled:
-        return None
     model = independent_judge_model(cfg)
     if not instructions.objective_body(CHECK_OBJECTIVE).strip():
         raise StartupError(f"the {CHECK_OBJECTIVE} objective is empty")

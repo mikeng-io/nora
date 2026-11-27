@@ -966,7 +966,6 @@ def test_a_config_written_before_the_dreamer_section_existed_still_loads(toml_pa
     assert cfg.dreamer.dir == (toml_path.parent / "nora" / "dreamer").resolve()
     # The runtime half, absent from the file entirely: OFF, no model pinned,
     # no budget declared — and still bounded.
-    assert cfg.dreamer.enabled is False
     # The CLASS default, not the shipped file's value: this test deletes the
     # section, so what it measures is what a config predating it gets. Empty
     # still means "fall back to [llm].model", which is why that fallback stays
@@ -1020,17 +1019,6 @@ def test_an_unknown_dreamer_key_is_a_startup_failure(toml_path):
         '[dreamer]\n', '[dreamer]\nenbaled = true\n'))
     with pytest.raises(ConfigError, match="enbaled"):
         load(toml_path)
-
-
-def test_the_dreamer_runtime_ships_off(toml_path):
-    """`enabled` gates the Dreamer runtime and ships False (DEC-128).
-
-    Asserted BOTH ways on purpose: the CODE default (what a config.toml written
-    before this field existed gets) and the SHIPPED value in the template (what
-    someone copying it gets). Either one being true alone would leave the other
-    free to turn a background loop on by accident."""
-    assert DreamerConfig().enabled is False
-    assert load(toml_path).dreamer.enabled is False
 
 
 def test_the_shipped_dreamer_model_is_the_one_nora_runs(toml_path):
@@ -1686,6 +1674,13 @@ def test_the_cognition_section_is_optional(toml_path):
     assert load(toml_path).cognition.quiet_seconds == 1800.0
 
 
+def test_the_dreamer_enabled_key_is_refused_by_name(toml_path):
+    text = toml_path.read_text().replace("[dreamer]\n", "[dreamer]\nenabled = true\n", 1)
+    toml_path.write_text(text)
+    with pytest.raises(ConfigError, match="enabled"):
+        load(toml_path)
+
+
 def test_the_retired_cognition_keys_refuse_to_load(toml_path):
     """`enabled`, `mode` and `session_mode` are gone: a config still naming one
     refuses to start, and the error names the key."""
@@ -1708,17 +1703,6 @@ def test_a_floor_that_is_not_hh_mm_or_an_unknown_zone_refuses_to_start(toml_path
 
 
 # ── [cognition]: what the wake needs ───────────────────────────────────────
-
-
-def _set_dreamer_enabled(text: str) -> str:
-    """`[dreamer] enabled = true`, whichever way the template spells it."""
-    head, sep, tail = text.partition("\n[dreamer]\n")
-    assert sep, "the template has no [dreamer] section"
-    import re as _re
-
-    tail, n = _re.subn(r"(?m)^enabled = .*$", "enabled = true", tail, count=1)
-    assert n == 1, "the [dreamer] section states no `enabled` key"
-    return head + sep + tail
 
 
 
@@ -1893,7 +1877,7 @@ def _subagent_on(text: str) -> str:
     assert sep, "the template has no [subagent] section"
     tail, n = _re.subn(r"(?m)^enabled = false$", "enabled = true", tail, count=1)
     assert n == 1, "the [subagent] section states no `enabled = false`"
-    text = _set_dreamer_enabled(head + sep + tail)
+    text = head + sep + tail
     head, sep, tail = text.partition("\n[compute]\n")
     assert sep, "the template has no [compute] section"
     tail, n = _re.subn(r"(?m)^enabled = false$", "enabled = true", tail, count=1)
@@ -1943,8 +1927,8 @@ def test_subagent_on_refuses_to_load_without_its_budget_block(toml_path):
         load(toml_path)
 
 
-@pytest.mark.parametrize("section", ["[compute]", "[dreamer]"])
-def test_subagent_on_refuses_to_load_without_the_poller_or_the_dreamer(toml_path, section):
+@pytest.mark.parametrize("section", ["[compute]"])
+def test_subagent_on_refuses_to_load_without_the_poller(toml_path, section):
     import re as _re
 
     text = _subagent_on(toml_path.read_text())

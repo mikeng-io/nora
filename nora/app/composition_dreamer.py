@@ -32,8 +32,6 @@ def enabled(
     registry: Any, rosters: Any, route_model: Any, tier: Any, tool_registry: Any,
     access: Any = None,
 ) -> EnabledWiring:
-    if not cfg.dreamer.enabled:
-        return EnabledWiring(dreamer_runtime=None, review=None)
     rt = _dreamer_runtime(
         allowlist=allowlist, audit=audit, cfg=cfg,
         metrics=metrics, model_client_for=model_client_for,

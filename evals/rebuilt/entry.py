@@ -587,7 +587,7 @@ ENTRY_POINTS = {
     # cheapest of the three to drive.
     "tag": EntryPoint(drive=tag, delivers_input=True, drives_a_turn=True),
     # Cognition uses the Dreamer runtime. The corpus sets its session flags.
-    "dreamer": EntryPoint(drive=dreamer, config={"dreamer.enabled": True}),
+    "dreamer": EntryPoint(drive=dreamer, config={}),
     # The act turn needs the FIRE PATH, which `[participation]` also builds,
     # and the note tier its row points at. NOT `[heartbeat]`: composition
     # spawns `heartbeat.run()` as an endless task, so a subject with it on
@@ -600,8 +600,7 @@ ENTRY_POINTS = {
             "relevance_gate.enabled": True,
             "notes.enabled": True,
             "standing.enabled": True,
-            "dreamer.enabled": True,
-        },
+            },
     ),
     # The fold is the TAG PATH's post-turn stage, and composition builds its
     # wiring only under `[standing] enabled`. No turn is driven — the turn

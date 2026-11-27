@@ -343,8 +343,7 @@ class Dependencies:
     # and every voice verb fails closed.
     voice_hub: VoiceControllerHub | None
     voice_event_consumer: VoiceEventConsumer | None
-    # The graph wake poller: `None` while `[dreamer] enabled = false`, which leaves the wake no
-    # model runtime to run on.
+    # The graph wake poller.
     wake_poller: WakePoller | None = None
     # The sub-agent worker: `None` under `[subagent] enabled = false`, the
     # shipped default. The shutdown cancels the jobs in flight.

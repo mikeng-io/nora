@@ -2845,7 +2845,6 @@ class DreamerConfig(BaseModel):
         default=DEFAULT_DREAM_STORE_TIMEOUT_SECONDS, gt=0)
     reload: Literal["mtime", "startup"] = "mtime"
     strict: bool = True
-    enabled: bool = False
     # Empty = `[llm].model`. Never read directly — `Config.dreamer_model()`
     # is the only resolver.
     model: str = ""
@@ -3973,16 +3972,13 @@ class Config(BaseModel):
         return self
 
     @model_validator(mode="after")
-    def _subagent_needs_the_dreamer_and_the_poller(self) -> Config:
-        """The worker runs on the Dreamer's model source and delivers through the compute
-        poller, so `[subagent] enabled = true` needs `[dreamer] enabled` and `[compute]
-        enabled`. Refused at load (the smaller change: the poller is `[compute]`'s and stays
-        its own switch), not found as a job that never starts or a result that is never
+    def _subagent_needs_the_poller(self) -> Config:
+        """The worker delivers through the compute poller, so `[subagent] enabled = true`
+        needs `[compute] enabled`. Refused at load, not found as a result that is never
         delivered."""
-        if self.subagent.enabled and not (self.dreamer.enabled and self.compute.enabled):
+        if self.subagent.enabled and not self.compute.enabled:
             raise ValueError(
-                "[subagent] enabled = true needs [dreamer] enabled = true (the worker runs "
-                "on the Dreamer's model source) and [compute] enabled = true (the poller "
+                "[subagent] enabled = true needs [compute] enabled = true (the poller "
                 "that delivers its result)"
             )
         return self

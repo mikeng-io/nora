@@ -255,7 +255,6 @@ _MAY_DIFFER = {
     # The Dreamer runtime, live here and INERT in the template for the same reason as its
     # neighbours above: it spends model calls on a background clock. A copied file must
     # not do that without somebody deciding to.
-    "dreamer.enabled",
     # RustFS media custody (DEC-136) and the Discord music bot, both live here for the
     # same reason as their neighbours above -- opted in by the operator, INERT in the
     # template until someone decides to.

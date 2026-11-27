@@ -384,7 +384,7 @@ def test_the_declared_world_keeps_production_cadence_and_lanes(tmp_path):
     cfg = plan._declared_config("sqlite://", tmp_path)
     assert cfg.obs.metrics.port == 0
     assert cfg.heartbeat.enabled
-    assert cfg.dreamer.enabled and cfg.culture.enabled and cfg.standing.enabled
+    assert cfg.culture.enabled and cfg.standing.enabled
     assert cfg.llm.model == "nora" and cfg.dreamer.model == "nora-dreamer"
     assert cfg.relevance_gate.model == "nora-gate"
     assert cfg.heartbeat.tick_seconds == 60
