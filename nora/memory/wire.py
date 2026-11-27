@@ -37,6 +37,12 @@ from nora.memory.adapters.graph_search import rebuild_graph_search as rebuild_gr
 from nora.memory.adapters.graph_state import entity_anchor_aliases as entity_anchor_aliases
 from nora.memory.adapters.graph_state import unit_edges as unit_edges
 from nora.memory.adapters.graph_store import SqlCognitiveGraph
+from nora.memory.adapters.legacy_agenda import (
+    SqlLegacyAgenda,
+)
+from nora.memory.adapters.legacy_agenda import (
+    seed_scheduled_intention as seed_scheduled_intention,
+)
 from nora.memory.adapters.memory_intake import SqlMemoryIntake
 from nora.memory.adapters.message_graph_ids import SqlMessageGraphIds
 from nora.memory.adapters.pass_anchors import SqlPassAnchors
@@ -65,6 +71,7 @@ from nora.memory.app.admission_identity import AdmissionIdentity
 from nora.memory.app.delivery_arbitration import DeliveryArbitration
 from nora.memory.app.graph_clock import GraphClock
 from nora.memory.app.lesson_review import LessonReview
+from nora.memory.app.migrate_legacy_agenda import MigrateLegacyAgenda
 from nora.memory.app.retrieval import RetrievalService
 from nora.memory.app.verify import IntentionVerifier
 from nora.memory.app.watches import WatchPoller
@@ -183,6 +190,10 @@ def intention_verifier(
         SqlIntentionVerification(engine, SqlCognitiveGraph(engine)), SqlRollupStore(engine), clock,
         max_poll_gap_ms=int(max_poll_gap_seconds * 1000), room_slots=room_slots,
     )
+
+
+def legacy_agenda_migration(engine: AsyncEngine, policy: Policy) -> MigrateLegacyAgenda:
+    return MigrateLegacyAgenda(SqlLegacyAgenda(engine, policy))
 
 
 def graph_clock(engine: AsyncEngine, clock: Callable[[], datetime]) -> GraphClock:

@@ -504,3 +504,26 @@ async def test_a_multi_room_open_still_delivers_to_the_second_room_after_the_fir
     await wire.condition_matcher(scenario.engine).run_once()
     assert (await _rows(scenario.engine, INTENTION))[second]["ending"] == "achieved"
     assert [target.conversation_id for target, _ in sender.sent] == [ROOM, OTHER_ROOM]
+
+
+async def test_a_migrated_legacy_reminder_delivers_once_through_the_graph(scenario):
+    from tests.infra.test_legacy_agenda_migration import legacy_reminder
+
+    async with scenario.engine.begin() as conn:
+        await legacy_reminder(conn)
+    migration = wire.legacy_agenda_migration(scenario.engine, scenario.policy)
+    assert (await migration.run(review_deadline=NOW + timedelta(days=7)))["reminders"] == 1
+    runner = ScriptedRunner((_SEND,))
+    worker, sender, _ = setup(scenario, runner, [])
+    clock = wire.graph_clock(scenario.engine, lambda: NOW)
+
+    await clock.run_once()
+    await worker.poll()
+    await clock.run_once()
+    await worker.poll()
+
+    assert sender.texts == ["Generated reminder"]
+    [request] = runner.calls
+    assert "Generated appointment" in request["tag_message"]
+    [claim] = await claim_rows(scenario)
+    assert claim["state"] == "closed"
