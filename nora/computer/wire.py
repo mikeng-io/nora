@@ -340,7 +340,7 @@ def _computer_event_callbacks(
         await computer_events.append(
             ComputerEvent(
                 id=uuid.uuid4(),
-                operation_id=task.id,
+                operation_id=uuid.uuid4(),
                 phase="finished",
                 created_at=clock(),
                 started_at=task.started_at or task.created_at,
