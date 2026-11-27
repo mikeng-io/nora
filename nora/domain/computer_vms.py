@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol, runtime_checkable
@@ -90,6 +91,29 @@ class FileScopeEndpoints:
             scope=scope, base_url=endpoint.rstrip("/"),
             name=str(raw.get("name") or ""), instance=str(raw.get("instance") or ""),
         )
+
+    def status(self) -> dict[str, object]:
+        """The registry's own state for `/health`. A directory that is not there means the
+        host mount is absent, which is not the same as a scope with no VM; one that cannot be
+        read is its own cause. Never raises: startup logs this and carries on."""
+        try:
+            with os.scandir(self._dir) as entries:
+                scopes = sum(1 for e in entries if e.name.endswith(".json"))
+            # Listing names needs only read permission; opening a record needs search too.
+            if not os.access(self._dir, os.X_OK):
+                raise PermissionError(13, "Permission denied")
+        except (FileNotFoundError, NotADirectoryError):
+            return {
+                "state": "degraded", "scopes": 0,
+                "detail": f"registry directory {self._dir} is missing: the host mount is absent",
+            }
+        except (OSError, ValueError) as exc:
+            reason = getattr(exc, "strerror", None) or exc
+            return {
+                "state": "degraded", "scopes": 0,
+                "detail": f"registry directory {str(self._dir)!r} is unreadable: {reason}",
+            }
+        return {"state": "live", "scopes": scopes, "detail": ""}
 
     async def registered(self) -> tuple[str, ...]:
         try:

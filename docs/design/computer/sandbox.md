@@ -36,6 +36,10 @@ links:
 - **Health reads real responses,** distinguishing process down, daemon down, policy denial and
   upstream failure. A connection accepted is not a service working, and a missing optional integration
   is not unhealthy.
+- **The endpoint registry is a read-only host mount.** An absent mount is its own state: `/health`
+  reports the computer degraded with the reason and the deploy read-back warns, while Nora keeps
+  serving and every scope reads as unavailable. It is never confused with a scope that has no VM,
+  which is the same answer for a different cause.
 
 ## Sessions and audit
 
