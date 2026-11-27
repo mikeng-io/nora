@@ -50,7 +50,6 @@ from nora.testing import (
     ScriptedTurn,
 )
 from nora.testing.fakes import FakeRecordStore
-from nora.testing.reminders import FakeReminderStore
 
 T0 = datetime(2026, 8, 8, 19, 0, tzinfo=UTC)
 
@@ -852,21 +851,6 @@ async def test_a_fire_turn_for_an_unwired_platform_fails_rather_than_speaking(
 # ---------------------------------------------------------------------------
 
 
-async def test_run_dispatches_by_kind_not_by_row_order(
-    persons: Persons, doctrine_store, metrics: Metrics,
-) -> None:
-    """Two kinds due for the same requester+conversation become two turns
-    (the heartbeat's `_by_turn` key includes kind), whatever the sort order."""
-    from nora.app.heartbeat import _by_turn
-
-    rows = [
-        _reminder(id=uuid.uuid4(), text="買奶", kind="reminder"),
-        _reminder(id=uuid.uuid4(), text="dinner", kind="proactive"),
-    ]
-    grouped = _by_turn(rows)
-    assert len(grouped) == 2
-    kinds = {key[3] for key in grouped}
-    assert kinds == {"reminder", "proactive"}
 
 
 async def test_unregistered_kind_fails_closed(
@@ -2577,11 +2561,11 @@ async def test_a_proactive_act_runs_when_only_optional_display_coverage_fails(
     async def shared(**_):
         view = await read_shared(
             unit="u1", rooms=(("signal", "conv-1"),), ai_peer="nora",
-            now_ms=int(T0.timestamp() * 1000), reminders=FakeReminderStore(),
+            now_ms=int(T0.timestamp() * 1000),
         )
         return replace(
             view, status="partial",
-            sources=(*view.sources, ("turns", "ok"), ("sends", "ok"),
+            sources=(*view.sources, ("acts", "nothing_found"), ("turns", "ok"), ("sends", "ok"),
                      ("findings", "unavailable"), ("ledger", "unavailable")),
         )
     path = FirePath(

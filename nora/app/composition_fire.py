@@ -9,9 +9,7 @@ from nora.app.compute_poller import ComputeJobPoller
 from nora.app.compute_poller import recover as compute_poller_recover
 from nora.app.fire import FirePath, proactive_occasion
 from nora.app.fire_engagement import AmbientEngagement
-from nora.app.heartbeat import HeartbeatLoop, publish_idle_gauge, recover
 from nora.app.participation import ParticipationTrigger
-from nora.app.proactive_screen import ProactiveScreen
 from nora.app.raw_clients import _RelevanceGateModelClient
 from nora.domain.video import VIDEO_KIND
 from nora.engagement.slots import ConversationSlots
@@ -22,7 +20,7 @@ from nora.policy import Policy
 
 from .fire import FAILED_POLICY, lost_job_occasion
 
-"""Fire-path, heartbeat, gate and trigger wiring steps."""
+"""Fire path, gate and trigger wiring."""
 
 
 log = logging.getLogger("nora.app.composition")
@@ -75,17 +73,12 @@ class RecoverWiring:
 
 async def build_recover(
     clock: Any, compute_backends: Any, compute_jobs: Any, metrics: Any,
-    reminders: Any,
 ) -> RecoverWiring:
 
     # The Dispatcher is built LATE, below the fire path — the participation
     # trigger it may carry needs `fire_path.speak`, which does not exist yet
     # here. Nothing between here and there consumes it.
 
-    # Boot recovery, UNCONDITIONALLY — deliberately NOT behind `cfg.heartbeat.enabled`. A
-    # crash leaves rows FIRING, and a heartbeat that has been switched off is exactly the
-    # state in which a stranded row would otherwise sit there forever: at-most-once would…
-    await recover(store=reminders, metrics=metrics, now=clock())
     # Compute-job boot recovery, ALSO unconditional, and for the SAME reason — deliberately
     # NOT behind `cfg.compute.enabled`: a deployment that crashes mid-delivery and then
     # flips `[compute] enabled=false` would otherwise leave any `FIRING` `ComputeJob` row…
@@ -97,10 +90,6 @@ async def build_recover(
         # is wired its pending rows are polled again rather than swept as lost.
         durable_kinds=(frozenset({VIDEO_KIND}) if VIDEO_KIND in compute_backends else frozenset()),
     )
-    # The liveness gauge is seeded HERE, not in `HeartbeatLoop.__init__` alone —
-    # otherwise every deployment on the shipped default (`enabled = false`)
-    # exports 0.0 forever, which reads identically to "ticked a moment ago".
-    publish_idle_gauge(metrics)
     return RecoverWiring(lost_jobs=lost_jobs)
 
 
@@ -285,7 +274,7 @@ def _wire_fire_path(
 ) -> Any:
     """The real fire turn, built only when some occasion can fire one."""
     if not (
-        cfg.heartbeat.enabled or cfg.compute.enabled or cfg.participation.enabled
+        cfg.compute.enabled or cfg.participation.enabled
     ):
         return None
     shared_kwargs = {
@@ -361,49 +350,11 @@ def _path_lost_jobs(
         # rather than silent: somebody is still waiting on each of these.
         log.error(
             "%d compute job(s) lost across the restart and NOBODY CAN BE TOLD — "
-            "this deployment wires no fire path (heartbeat, participation and "
-            "compute all off)",
+            "this deployment wires no fire path (participation and "
+            "compute both off)",
             len(lost_jobs),
         )
     return PathWiring(fire_path=fire_path)
-
-
-@dataclass(frozen=True)
-class HeartbeatWiring:
-    proactive_screen: Any
-
-
-def heartbeat(
-    access: Any, allowlist: Any, background: Any, cfg: Any, clock: Any,
-    fire_path: Any, metrics: Any, note_store: Any, reminders: Any,
-    slots: Any,
-) -> HeartbeatWiring:
-
-    # THE FIRE-TIME SCREEN for a `kind="proactive"` row, built unconditionally. It is a pure
-    # value with no side effects. The screen belongs to the ROW, not to the loop, so asking
-    # "would this row be refused" should not require turning the loop on.
-    proactive_screen = ProactiveScreen(policy=allowlist, notes=note_store)
-
-    if cfg.heartbeat.enabled and fire_path is not None:
-        heartbeat = HeartbeatLoop(
-            store=reminders,
-            # The SAME `slots` the engagement pipeline holds. Two instances
-            # would be two locks and no serialisation at all.
-            slots=slots,
-            # `access` — the backend's live grant check (`nora.access`), re-checked
-            # at fire time: `UNAVAILABLE` fails the row closed like a revocation.
-            access=access,
-            clock=clock,
-            metrics=metrics,
-            tick_seconds=cfg.heartbeat.tick_seconds,
-            fire=fire_path.run,
-            # The `kind="proactive"` screen: the room's flag and the note's state, read through the
-            # SAME allowlist and the SAME note store every other reader holds. Wired whenever the
-            # heartbeat is, not only when the adaptor is: a proactive row written yesterday must be…
-            proactive=proactive_screen,
-        )
-        background.spawn(heartbeat.run())
-    return HeartbeatWiring(proactive_screen=proactive_screen)
 
 
 @dataclass(frozen=True)
@@ -443,9 +394,6 @@ def compute_poller(
             access=access,
             persons=persons,
         )
-        # Spawned, never awaited — the same reason `heartbeat.run()` above
-        # is: a boot must not wait on a background
-        # loop, and `BackgroundTasks` holds the strong reference.
         background.spawn(compute_poller.run())
     return ComputePollerWiring()
 

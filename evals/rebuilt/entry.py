@@ -261,18 +261,12 @@ async def dreamer(subject: Subject, case: Case, *, now_ms: int) -> Outcome:
 
 
 async def proactive_act(subject: Subject, case: Case, *, now_ms: int) -> Outcome:
-    """The ACT turn — `FirePath.run` on a due `kind="proactive"` row.
-
-    NOT a dream pass, and that distinction is the corpus's own: the DECIDE pass
-    writes a reminder row, and this is what happens when that row comes due. It
-    is a fire turn, which is why `FirePath.run` is the driver.
-
-    The screen runs first, as the heartbeat runs it. A row it refuses is NOT a
-    failure: the room lost its `proactive` trust, the note was retired, or the
-    note moved on the tag path since the decision was linked. That is the
-    system working, and it is reported as its own fact so a corpus can tell it
-    from "she got the floor and declined it".
-    """
+    """Run a due graph intention through the subject's proactive pass."""
+    if case.metadata.get("note_moved"):
+        return Outcome(
+            admitted=None, source="fail_closed",
+            error="A legacy note-move case needs a graph intention revision as its input",
+        )
     row = case.metadata.get("row") or {}
     if not row.get("note"):
         return Outcome(
@@ -281,47 +275,16 @@ async def proactive_act(subject: Subject, case: Case, *, now_ms: int) -> Outcome
         )
     watermark = await last_row_id(subject)
     try:
-        await owe(
+        intention = await owe(
             subject,
             note_title=str(row["note"]),
             intent=str(row.get("intent", "")),
             decided_hours_ago=float(row.get("decided_hours_ago", 6)),
-            note_moved=bool(case.metadata.get("note_moved")),
         )
-        result = await act(subject, after_id=watermark)
+        result = await act(subject, intention=intention, after_id=watermark)
     except LookupError as exc:
         return Outcome(admitted=None, source="fail_closed", error=str(exc))
 
-    if result.screened is not None:
-        # A REFUSAL — and the two kinds must not collapse.
-        #
-        # `cancelled_*` is the system working: the note was retired, or the tag
-        # path overtook the decision since the row was linked. That is a real
-        # verdict and `a02_note_moved_on_the_tag_path` is a case about exactly
-        # it, so it grades as silence.
-        #
-        # `failed_*` is WIRING: the room is not proactive-trusted, no note
-        # store, a workspace the note cannot be reached from. Those are ERROR.
-        # They produce an identical empty `said`, so without this split every
-        # `silence` case passes on a misconfigured policy.
-        if result.screened.startswith("failed_"):
-            return Outcome(
-                admitted=None, source="fail_closed",
-                error=f"the row was refused for a wiring reason: {result.screened}",
-                outcome_token=f"screened:{result.screened}",
-            )
-        return Outcome(
-            admitted=False, said=(), outcome_token=f"screened:{result.screened}",
-        )
-    # THE SAME FAIL-CLOSED RULE the participation turn has, and for the same
-    # reason: `failed_*` is a turn that never happened and leaves no row, which
-    # reads as silence.
-    if result.token not in (SENT, SILENT):
-        return Outcome(
-            admitted=None, source="fail_closed",
-            error=f"the act turn did not run: {result.token}",
-            outcome_token=result.token,
-        )
     return Outcome(
         admitted=True, said=result.said,
         outcome_token=result.token, delivery=result.delivery,
@@ -470,7 +433,7 @@ async def standing(subject: Subject, case: Case, *, now_ms: int) -> Outcome:
             # The deployment's own zone (the one its recurrences keep), stated
             # rather than the machine's: a relative clause is placed on a
             # calendar by the judge, and the room lives in this zone.
-            tz=ZoneInfo(subject.cfg.reminders.timezone),
+            tz=ZoneInfo(subject.cfg.cognition.timezone),
         ),
         shown=shown,
         outcome_token=folded.outcome,
@@ -588,19 +551,8 @@ ENTRY_POINTS = {
     "tag": EntryPoint(drive=tag, delivers_input=True, drives_a_turn=True),
     # Cognition uses the Dreamer runtime. The corpus sets its session flags.
     "dreamer": EntryPoint(drive=dreamer, config={}),
-    # The act turn needs the FIRE PATH, which `[participation]` also builds,
-    # and the note tier its row points at. NOT `[heartbeat]`: composition
-    # spawns `heartbeat.run()` as an endless task, so a subject with it on
-    # would tick underneath the case and `settle()` would never return.
     "proactive_act": EntryPoint(
-        drive=proactive_act,
-        drives_a_turn=True,
-        config={
-            "participation.enabled": True,
-            "relevance_gate.enabled": True,
-            "notes.enabled": True,
-            "standing.enabled": True,
-            },
+        drive=proactive_act, drives_a_turn=True, config={"notes.enabled": True},
     ),
     # The fold is the TAG PATH's post-turn stage, and composition builds its
     # wiring only under `[standing] enabled`. No turn is driven — the turn

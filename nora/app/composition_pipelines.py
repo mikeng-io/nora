@@ -35,13 +35,12 @@ def build_shared(
     engine: Any, ledger_store: Any, media_join: Any,
     memo_store: Any, metrics: Any,
     note_store: Any, observation_store: Any, persons: Any, presence_reader: Any,
-    quote_window: Any, registry: Any, reminders: Any,
+    quote_window: Any, registry: Any,
     rosters: Any, standing_store: Any, subagents_context: Any, tag_trace_store: Any,
     unit_rooms: Any,
 ) -> SharedWiring:
     shared = shared_reader(
         ledger=ledger_store,
-        reminders=reminders,
         record_query=SqlRecordQuery(engine),
         standing=standing_store if cfg.standing.enabled else None,
         traces=tag_trace_store,
@@ -49,7 +48,7 @@ def build_shared(
         rooms_of_unit=lambda unit: unit_rooms.get(unit, ()),
     )
     action_state = shared_reader(
-        reminders=reminders, record_query=SqlRecordQuery(engine), traces=tag_trace_store,
+        record_query=SqlRecordQuery(engine), traces=tag_trace_store,
         ai_peer=cfg.agent.name, rooms_of_unit=lambda unit: unit_rooms.get(unit, ()),
     )
     assembler = build_assembler(

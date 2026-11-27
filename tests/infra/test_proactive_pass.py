@@ -527,3 +527,16 @@ async def test_a_migrated_legacy_reminder_delivers_once_through_the_graph(scenar
     assert "Generated appointment" in request["tag_message"]
     [claim] = await claim_rows(scenario)
     assert claim["state"] == "closed"
+
+
+async def test_the_graph_clock_does_not_publish_a_future_delivery(scenario):
+    await intention(
+        scenario, "future-reminder", origin_room=f"signal:{ROOM}", delivery_mode="choose_moment",
+        trigger={"kind": "time", "at": DUE.isoformat(), "zone": "UTC"},
+    )
+    claims = SqlProactiveClaims(scenario.engine)
+    await wire.graph_clock(scenario.engine, lambda: DUE - timedelta(seconds=1)).run_once()
+    assert await claims.due_intentions(DUE) == ()
+    await wire.graph_clock(scenario.engine, lambda: DUE).run_once()
+    [due] = await claims.due_intentions(DUE)
+    assert (due.intention, due.eligible_at) == ("future-reminder", DUE)

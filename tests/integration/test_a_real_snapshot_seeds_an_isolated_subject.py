@@ -28,7 +28,7 @@ import pytest
 import sqlalchemy as sa
 
 from nora.domain.models import NormalizedMessage
-from nora.domain.reminders import DuplicateProactiveNoteError, Reminder, ReminderState
+from nora.domain.reminders import Reminder, ReminderState
 from nora.domain.standing import Standing
 from nora.infra.sql import create_sql_engine
 from nora.infra.sql.audit import SqlRecordStore
@@ -49,7 +49,6 @@ from nora.subject import (
     sandbox_database,
     sandbox_from_snapshot,
 )
-from nora.subject.proactive import owe
 from tests.sandbox_fixtures import ROOM, Source, offline_subject, seed_source
 
 BEFORE_MS = 1_752_000_000_000
@@ -345,9 +344,26 @@ async def test_the_sandbox_holds_the_notebook_as_it_stood_then(sandbox, source) 
 
 
 async def _pending(subject: Subject) -> list[Any]:
-    """What the sandbox's own store answers a proactive turn — the production
-    read path, not a query of my own."""
-    return list(await subject.deps.reminders.pending_for(subject.room[1]))
+    from nora.infra.sql.cognitive_graph_schema import CLAIM, EDGE, INTENTION
+
+    intentions, edges, claims = INTENTION.c, EDGE.c, CLAIM.c
+    room = f"{subject.room[0]}:{subject.room[1]}"
+    engine = create_sql_engine(subject.database_url)
+    try:
+        async with engine.connect() as conn:
+            return list((await conn.execute(sa.select(
+                claims.content["text"].astext.label("text"), intentions.state,
+                intentions.trigger["at"].astext.label("due_at"), intentions.owed_to,
+            ).select_from(INTENTION.join(
+                EDGE, (edges.unit == intentions.unit) & (edges.src_id == intentions.id),
+            ).join(
+                CLAIM, (claims.unit == edges.unit) & (claims.id == edges.dst_id),
+            )).where(
+                intentions.unit == subject.unit, intentions.origin_room == room,
+                intentions.state == "open", edges.type == "rests_on",
+            ).order_by(intentions.trigger["at"].astext, intentions.id))).all())
+    finally:
+        await engine.dispose()
 
 
 async def test_the_sandbox_holds_the_reminders_the_room_was_waiting_on(
@@ -356,7 +372,12 @@ async def test_the_sandbox_holds_the_reminders_the_room_was_waiting_on(
     await _seed(sandbox, source)
     assert [r.text for r in await _pending(sandbox)] == [
         "chase the booking", "ask whether friday holds",
-    ], "oldest first, and ONLY the two that were outstanding at the instant"
+    ]
+    engine = create_sql_engine(sandbox.database_url)
+    try:
+        assert not await SqlReminderStore(engine).all_pending(limit=50)
+    finally:
+        await engine.dispose()
 
 
 async def test_a_reminder_resolved_after_the_instant_comes_back_pending(
@@ -367,9 +388,7 @@ async def test_a_reminder_resolved_after_the_instant_comes_back_pending(
     at the instant it had not fired, so all three must be as-of."""
     await _seed(sandbox, source)
     [chased] = [r for r in await _pending(sandbox) if r.text == "chase the booking"]
-    assert chased.state is ReminderState.PENDING
-    assert chased.fired_at is None
-    assert chased.outcome is None
+    assert chased.state == "open"
 
 
 async def test_a_reminder_already_fired_by_then_is_not_in_the_queue(sandbox, source) -> None:
@@ -400,8 +419,8 @@ async def test_the_reminder_keeps_the_due_time_it_really_had(sandbox, source) ->
     `due_at` is the real one to the second."""
     await _seed(sandbox, source)
     [friday] = [r for r in await _pending(sandbox) if r.text == "ask whether friday holds"]
-    assert friday.due_at == _at(BEFORE_MS + 2 * HOUR)
-    assert friday.requester_person_id == "miles_novak"
+    assert datetime.fromisoformat(friday.due_at) == _at(BEFORE_MS + 2 * HOUR)
+    assert friday.owed_to == "miles_novak"
 
 
 async def test_the_source_is_not_written_to(sandbox, source, engine) -> None:
@@ -511,43 +530,7 @@ async def test_the_sandbox_database_exists_at_head_and_is_dropped_afterwards(
     assert name not in _databases(pg_admin)
 
 
-# --- the store itself enforces one open proactive row per note --------------
-
-
-async def test_the_store_refuses_two_open_proactive_rows_on_one_note(sandbox) -> None:
-    """THE PROOF `nora.subject.sandbox._collapse_duplicate_proactive_notes`
-    exists for: the constraint `uq_reminders_proactive_open_note` is what
-    actually enforces "one open proactive reminder per note", at the SQL store
-    `know()` writes through (`nora.infra.sql.reminders.SqlReminderStore.create`).
-
-    Production HISTORY can hold instants with two open proactive rows on one
-    note — `nora.infra.sql.snapshot._reminders` reconstructs the room AS IT WAS,
-    so `Snapshot.reminders` can still carry both. This is what `as_knowledge`
-    would hand `know()` if its own collapse (tested in
-    `tests/unit/test_subject_sandbox_translation.py`) were reverted: the SECOND
-    `create()` call raises here, live, against the real store, with
-    `DuplicateProactiveNoteError`.
-    """
-    duplicate = Knowledge(reminders=(
-        ReminderSeed(
-            text="ask about the dinner plan", due_in_seconds=3600.0,
-            requester_person_id="nora", kind="proactive",
-            payload={"note_id": "note-x", "note_title": "Dinner plan"},
-        ),
-        ReminderSeed(
-            text="ask about the dinner plan again", due_in_seconds=7200.0,
-            requester_person_id="nora", kind="proactive",
-            payload={"note_id": "note-x", "note_title": "Dinner plan"},
-        ),
-    ))
-    with pytest.raises(DuplicateProactiveNoteError):
-        await know(sandbox, duplicate, now_ms=BEFORE_MS)
-
-
-async def test_the_store_allows_two_open_reminders_on_different_notes(sandbox) -> None:
-    """The constraint is scoped to ONE note (`payload ->> 'note_id'`), not to
-    proactive rows in general — a unit legitimately owing reminders about two
-    different open corners the same morning must not collide."""
+async def test_the_subject_seeds_distinct_open_intentions(sandbox) -> None:
     two_notes = Knowledge(reminders=(
         ReminderSeed(
             text="ask about the dinner plan", due_in_seconds=3600.0,
@@ -570,152 +553,21 @@ async def test_the_store_allows_two_open_reminders_on_different_notes(sandbox) -
 # --- a note's SOURCE id, end to end -----------------------------------------
 
 
-async def test_a_seeded_note_keeps_its_source_id_end_to_end(
-    sandbox, source, engine,
-) -> None:
-    """A note keeps its SOURCE id in the sandbox. Seeding a note under a FRESH
-    sandbox id while its reminder's payload kept the SOURCE id would leave
-    nothing in the sandbox agreeing on what a note's id is, and the duplicate-note
-    constraint (keyed on `payload ->> 'note_id'`) could not see a seeded row and
-    a fresh one on the SAME note as the same note.
-
-    Two claims:
-    1. the reminder seeded alongside the note carries a `note_id` that IS a
-       real note's id in the sandbox's own store;
-    2. `DuplicateProactiveNoteError` fires for a second `remind` on that note,
-       INSIDE the sandbox — the store sees the seeded row and the new one as
-       one note, not two.
-
-    Revert `nora.subject.sandbox._note_seed`'s `id=note.id` (or `know()`'s
-    branch that honours it) and this goes RED: claim 1 fails first (the
-    seeded reminder's `note_id` is a source id no sandbox note carries).
-    """
-    notes = SqlNoteStore(engine)
-    linked = await notes.create(
-        unit="nora", title="Marathon signup", description="who is running",
+async def test_a_seeded_note_keeps_its_source_id_end_to_end(sandbox, source, engine):
+    linked = await SqlNoteStore(engine).create(
+        unit="nora", title="Generated signup", description="who is running",
         uncertainty="open", closing_condition="somebody answers",
-        established_in=ROOM[1], body="Blake asked, nobody answered",
+        established_in=ROOM[1], body="The signup is open.",
         established_by="test-seed", now_ms=BEFORE_MS - HOUR, anchor_date=20260920,
     )
-    await SqlReminderStore(engine).create(Reminder(
-        id=UUID("77777777-0000-4000-8000-000000000001"),
-        requester_person_id="nora", platform=ROOM[0], conversation_id=ROOM[1],
-        conversation_type="group", text="ask again about the marathon",
-        created_at=_at(BEFORE_MS - 30 * MINUTE), due_at=_at(BEFORE_MS + HOUR),
-        state=ReminderState.PENDING, fired_at=None, outcome=None,
-        kind="proactive",
-        payload={
-            "note_id": linked.id, "note_title": linked.title,
-            "established_in": ROOM[1],
-        },
-    ))
-
     await _seed(sandbox, source)
-
-    # 1. The seeded reminder's payload note_id is a REAL sandbox note's id —
-    #    and that id is the SOURCE's own (id-preserving seeding, not luck).
     sandbox_engine = create_sql_engine(sandbox.database_url)
     try:
-        sandbox_notes = await SqlNoteStore(sandbox_engine).standing(unit=sandbox.unit)
-        [sandbox_note] = [n for n in sandbox_notes if n.title == "Marathon signup"]
+        notes = await SqlNoteStore(sandbox_engine).standing(unit=sandbox.unit)
+        [sandbox_note] = [n for n in notes if n.title == linked.title]
         assert sandbox_note.id == linked.id
-        [seeded] = [
-            r for r in await _pending(sandbox)
-            if r.text == "ask again about the marathon"
-        ]
-        assert seeded.payload is not None
-        assert seeded.payload["note_id"] == sandbox_note.id
-
-        # 2. The duplicate-note constraint fires for a SECOND `remind` on this
-        #    note, inside the sandbox.
-        with pytest.raises(DuplicateProactiveNoteError):
-            await SqlReminderStore(sandbox_engine).create(Reminder(
-                id=UUID("77777777-0000-4000-8000-000000000002"),
-                requester_person_id="nora", platform=ROOM[0],
-                conversation_id=ROOM[1], conversation_type="group",
-                text="a second, unwanted ask", created_at=_at(BEFORE_MS),
-                due_at=_at(BEFORE_MS + 2 * HOUR), state=ReminderState.PENDING,
-                fired_at=None, outcome=None, kind="proactive",
-                payload={
-                    "note_id": sandbox_note.id, "note_title": sandbox_note.title,
-                },
-            ))
     finally:
         await sandbox_engine.dispose()
-
-
-
-async def test_a_case_row_replaces_the_seeded_copy_of_itself(
-    sandbox, source, engine,
-) -> None:
-    """A case cut just before a proactive row fired carries that row as
-    PENDING, on the same note `owe()` then links. The open-note index would
-    refuse the case's own row, so `owe()` cancels the seeded copy and writes its
-    own.
-
-    Revert the cancel loop in `nora.subject.proactive.owe` and this goes RED
-    with `DuplicateProactiveNoteError`."""
-    notes = SqlNoteStore(engine)
-    linked = await notes.create(
-        unit="nora", title="Sunday plan", description="where to meet",
-        uncertainty="open", closing_condition="somebody names a place",
-        established_in=ROOM[1], body="meeting place not settled",
-        established_by="test-seed", now_ms=BEFORE_MS - HOUR, anchor_date=20260920,
-    )
-    await SqlReminderStore(engine).create(Reminder(
-        id=UUID("77777777-0000-4000-8000-000000000003"),
-        requester_person_id="nora", platform=ROOM[0],
-        conversation_id=ROOM[1], conversation_type="group",
-        text="ask where to meet", created_at=_at(BEFORE_MS - 3 * MINUTE),
-        due_at=_at(BEFORE_MS + MINUTE), state=ReminderState.PENDING,
-        fired_at=None, outcome=None, kind="proactive",
-        payload={"note_id": linked.id, "note_title": linked.title},
-    ))
-
-    await _seed(sandbox, source)
-    # The sandbox holds its own copy of the row, under an id of its own.
-    [copy] = [r for r in await _pending(sandbox) if r.text == "ask where to meet"]
-    row = await owe(sandbox, note_title="Sunday plan", intent="ask where to meet")
-
-    pending = {r.id for r in await _pending(sandbox)}
-    assert row.id in pending
-    assert copy.id not in pending
-    cancelled = await sandbox.deps.reminders.get(copy.id)
-    assert cancelled is not None and cancelled.state is ReminderState.CANCELLED
-
-
-async def test_a_case_row_replaces_a_seeded_copy_that_names_no_note(
-    sandbox, source, engine,
-) -> None:
-    """Cognition's rows carry `subject_rows`, not `note_id`, so the seeded
-    copy of the case's own row does not collide: it would fire BESIDE the case's
-    row and the turn would read the intention twice. `owe()` matches it by its
-    identical text and cancels it.
-
-    Revert the text match in `nora.subject.proactive.owe` and this goes RED:
-    the copy is still pending."""
-    await SqlNoteStore(engine).create(
-        unit="nora", title="Day trip", description="where to meet",
-        uncertainty="open", closing_condition="somebody names a place",
-        established_in=ROOM[1], body="meeting place not settled",
-        established_by="test-seed", now_ms=BEFORE_MS - HOUR, anchor_date=20260920,
-    )
-    await SqlReminderStore(engine).create(Reminder(
-        id=UUID("77777777-0000-4000-8000-000000000004"),
-        requester_person_id="nora", platform=ROOM[0],
-        conversation_id=ROOM[1], conversation_type="group",
-        text="ask where to meet for the trip", created_at=_at(BEFORE_MS - 3 * MINUTE),
-        due_at=_at(BEFORE_MS + MINUTE), state=ReminderState.PENDING,
-        fired_at=None, outcome=None, kind="proactive",
-        payload={"by": "cognition:test", "intent": "ask", "subject_rows": "1 2"},
-    ))
-
-    await _seed(sandbox, source)
-    [copy] = [r for r in await _pending(sandbox) if r.text == "ask where to meet for the trip"]
-    row = await owe(sandbox, note_title="Day trip", intent="ask where to meet for the trip")
-
-    pending = {r.id for r in await _pending(sandbox)}
-    assert pending & {row.id, copy.id} == {row.id}
 
 
 async def test_a_note_anchored_only_by_entities_seeds_end_to_end(

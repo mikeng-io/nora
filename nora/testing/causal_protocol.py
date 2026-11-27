@@ -32,7 +32,6 @@ CAUSAL_TIMING = {
     "cognition.cooldown_seconds": 1.0,
     "cognition.time_floors": [],
     "heartbeat.tick_seconds": 1.0,
-    "reminders.min_lead_seconds": 2,
 }
 
 #: The system-role marker `fold_prompt(unit=True)` appends — the ONLY wire
@@ -234,7 +233,7 @@ class CausalProtocol:
                 if row.get("status") == "ok" and row.get("note_id")
             )
             self.note_id = created["note_id"]
-            at = datetime.now(UTC) + timedelta(seconds=self.cfg.reminders.min_lead_seconds + 5)
+            at = datetime.now(UTC) + timedelta(seconds=7)
             return "cognition", self.tool(
                 request,
                 "remind",

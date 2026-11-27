@@ -75,7 +75,7 @@
   "comment_blocks": 17
  },
  "evals/rebuilt/entry.py": {
-  "comment_blocks": 14,
+  "comment_blocks": 12,
   "functions": {
    "standing": 134
   },
@@ -254,9 +254,9 @@
   "internal_docstrings": 2
  },
  "nora/agent/shared_state.py": {
-  "comment_blocks": 5,
+  "comment_blocks": 4,
   "functions": {
-   "read_shared": 355
+   "read_shared": 255
   }
  },
  "nora/agent/social_read.py": {
@@ -347,10 +347,10 @@
   "internal_docstrings": 18
  },
  "nora/app/cli.py": {
-  "comment_blocks": 9,
-  "file_lines": 1058,
+  "comment_blocks": 7,
+  "file_lines": 963,
   "functions": {
-   "add_subcommands": 241
+   "add_subcommands": 216
   },
   "internal_docstrings": 5
  },
@@ -358,10 +358,10 @@
   "internal_docstrings": 1
  },
  "nora/app/composition.py": {
-  "comment_blocks": 15,
-  "file_lines": 1276,
+  "comment_blocks": 14,
+  "file_lines": 1246,
   "functions": {
-   "_compose_dependencies": 817
+   "_compose_dependencies": 805
   },
   "internal_docstrings": 1
  },
@@ -406,10 +406,6 @@
  "nora/app/graph_project.py": {
   "comment_blocks": 1
  },
- "nora/app/heartbeat.py": {
-  "comment_blocks": 13,
-  "internal_docstrings": 9
- },
  "nora/app/oauth_keepalive.py": {
   "internal_docstrings": 1
  },
@@ -436,7 +432,7 @@
   "internal_docstrings": 1
  },
  "nora/app/report.py": {
-  "comment_blocks": 3
+  "comment_blocks": 1
  },
  "nora/app/revisions.py": {
   "internal_docstrings": 1
@@ -471,9 +467,9 @@
   "comment_blocks": 5
  },
  "nora/config.py": {
-  "comment_blocks": 84,
-  "file_lines": 4054,
-  "internal_docstrings": 18
+  "comment_blocks": 81,
+  "file_lines": 3934,
+  "internal_docstrings": 16
  },
  "nora/doctrine/loader.py": {
   "comment_blocks": 11,
@@ -1648,10 +1644,10 @@
   "internal_docstrings": 3
  },
  "nora/subject/knowledge.py": {
-  "comment_blocks": 16,
-  "file_lines": 887,
+  "comment_blocks": 13,
+  "file_lines": 858,
   "functions": {
-   "know": 261
+   "know": 235
   },
   "internal_docstrings": 3
  },
@@ -1661,9 +1657,6 @@
  "nora/subject/obtain.py": {
   "comment_blocks": 15,
   "internal_docstrings": 1
- },
- "nora/subject/proactive.py": {
-  "comment_blocks": 3
  },
  "nora/subject/sandbox.py": {
   "comment_blocks": 11,
@@ -1726,24 +1719,18 @@
   "internal_docstrings": 2
  },
  "nora/web/api.py": {
-  "comment_blocks": 7,
+  "comment_blocks": 5,
   "functions": {
-   "register_web_routes": 449
+   "register_web_routes": 398
   },
   "internal_docstrings": 2
  },
  "nora/web/documents.py": {
   "internal_docstrings": 1
  },
- "nora/web/gatherings.py": {
-  "internal_docstrings": 1
- },
  "nora/web/presence.py": {
   "comment_blocks": 2,
   "internal_docstrings": 2
- },
- "nora/web/status.py": {
-  "comment_blocks": 1
  },
  "nora/web/voice.py": {
   "comment_blocks": 2
@@ -2200,10 +2187,6 @@
  "tests/integration/snapshot_rows.py": {
   "comment_blocks": 2
  },
- "tests/integration/test_a_real_snapshot_seeds_an_isolated_subject.py": {
-  "file_lines": 871,
-  "internal_docstrings": 1
- },
  "tests/integration/test_bridge_deferred.py": {
   "internal_docstrings": 1
  },
@@ -2252,7 +2235,7 @@
  },
  "tests/integration/test_managed_identity_journey.py": {
   "comment_blocks": 1,
-  "file_lines": 824,
+  "file_lines": 823,
   "functions": {
    "_link_first_pair": 158
   }
@@ -2387,17 +2370,14 @@
   "comment_blocks": 3,
   "internal_docstrings": 3
  },
- "tests/test_cli_control_plane.py": {
-  "internal_docstrings": 1
- },
  "tests/test_composition.py": {
   "comment_blocks": 7,
-  "file_lines": 1557,
+  "file_lines": 1481,
   "internal_docstrings": 2
  },
  "tests/test_config.py": {
   "comment_blocks": 7,
-  "file_lines": 2030,
+  "file_lines": 1988,
   "internal_docstrings": 6
  },
  "tests/test_discord_adapter.py": {
@@ -2765,7 +2745,7 @@
  },
  "tests/unit/test_fire_path.py": {
   "comment_blocks": 11,
-  "file_lines": 2694,
+  "file_lines": 2678,
   "internal_docstrings": 5
  },
  "tests/unit/test_generate_image_description.py": {
@@ -2774,11 +2754,6 @@
  },
  "tests/unit/test_headers_goldens.py": {
   "file_lines": 844,
-  "internal_docstrings": 1
- },
- "tests/unit/test_heartbeat_loop.py": {
-  "comment_blocks": 5,
-  "file_lines": 1019,
   "internal_docstrings": 1
  },
  "tests/unit/test_ingest_pipeline.py": {
@@ -3076,9 +3051,6 @@
  },
  "tests/unit/test_ytdlp_source.py": {
   "comment_blocks": 1,
-  "internal_docstrings": 1
- },
- "tests/web/test_api.py": {
   "internal_docstrings": 1
  },
  "tests/web/test_managed_ory_credentials.py": {

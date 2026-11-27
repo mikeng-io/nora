@@ -26,18 +26,18 @@ from typing import Any
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+import nora.memory as memory
 from nora.domain.culture import character_key, nora_character_key, unit_culture_key
 from nora.domain.media import MediaBlob
 from nora.domain.models import NormalizedMessage
 from nora.domain.note_body import citations_in
 from nora.domain.notes import Note
-from nora.domain.reminders import Reminder, ReminderState
+from nora.domain.rollup import room_key
 from nora.domain.standing import Standing
 from nora.infra.sql import create_sql_engine
 from nora.infra.sql.culture import SqlCultureStore
 from nora.infra.sql.lessons import SqlLessonStore
 from nora.infra.sql.notes import SqlNoteStore
-from nora.infra.sql.reminders import SqlReminderStore
 from nora.infra.sql.schema import NOTE, NOTE_REVISION
 from nora.infra.sql.standing import SqlStandingStore
 
@@ -255,10 +255,7 @@ class Knowledge:
     spacing_seconds: int = 60
     notes: tuple[NoteSeed, ...] = field(default_factory=tuple)
 
-    #: What the room was still WAITING on. Written through the real
-    #: `SqlReminderStore.create`, keyed on the subject's own room, so a
-    #: proactive turn reads them back through `ReminderStore.due` /
-    #: `pending_for` exactly as production does.
+    #: Outstanding snapshot reminders, seeded as scheduled intentions in the subject's room.
     reminders: tuple[ReminderSeed, ...] = field(default_factory=tuple)
 
     #: A room Culture fixture, keyed by the resolved room's primary id.
@@ -794,41 +791,15 @@ async def know(
                     anchor_entity_ids=note.anchor_entity_ids,
                 )
         if knowledge.reminders:
-            # THE REAL STORE, so the row a proactive turn reads is the row
-            # production would have read. `create` is the same method the
-            # `remind` tool calls; nothing here writes the table directly.
-            #
-            # `state` is PENDING and `fired_at`/`outcome` are None on every
-            # seeded row, which is not a default being accepted but the whole
-            # definition of the tier: `Knowledge.reminders` states what the
-            # room was still WAITING on, and a row that had already fired was
-            # not something it was waiting on.
-            # NOT `rows`: that name is the message-id map this function returns
-            # as `Written.rows`, and shadowing it would return a store there.
-            reminder_store = SqlReminderStore(engine)
             base = datetime.fromtimestamp(now_ms / 1000, tz=UTC)
-            for seed in knowledge.reminders:
-                await reminder_store.create(
-                    Reminder(
-                        # v4, not derived from the text: two cases seeding the
-                        # same reminder text must be two rows, and a
-                        # content-derived id would silently make them one
-                        # under the primary key.
-                        id=uuid.uuid4(),
-                        requester_person_id=seed.requester_person_id,
-                        platform=platform,
-                        conversation_id=conversation_id,
-                        conversation_type="group",
-                        text=seed.text,
+            async with engine.begin() as conn:
+                for seed in knowledge.reminders:
+                    await memory.wire.seed_scheduled_intention(
+                        conn, unit=subject.unit, room=room_key(platform, conversation_id),
+                        requester=seed.requester_person_id, text=seed.text,
                         created_at=base - timedelta(seconds=seed.created_seconds_ago),
                         due_at=base + timedelta(seconds=seed.due_in_seconds),
-                        state=ReminderState.PENDING,
-                        fired_at=None,
-                        outcome=None,
-                        kind=seed.kind,
-                        payload=seed.payload,
                     )
-                )
         if knowledge.culture is not None:
             # `established_by` is NOT NULL on `culture_revision`
             # (`nora/infra/sql/schema.py`), so it has to be something; the

@@ -76,10 +76,12 @@ class ProactivePoller:
                 log.exception("Proactive poll failed")
             await asyncio.sleep(self._tick_seconds)
 
-    async def poll(self) -> None:
+    async def poll(self, *, intention: str | None = None) -> None:
         now = self._clock()
         await self._store.recover(now, self._bound)
         for due in await self._store.due_intentions(now):
+            if intention is not None and due.intention != intention:
+                continue
             try:
                 await self._process(due)
             except Exception:

@@ -319,8 +319,7 @@ async def _run(subject: Any, case: Case, plan: dict[str, Any],
         return roll, wakes_report, turns_report, None
     wake_seconds = (subject.cfg.cognition.cue_quiet_seconds
                     + subject.cfg.cognition.tick_seconds + 300)
-    fire_seconds = (subject.cfg.reminders.min_lead_seconds
-                    + subject.cfg.heartbeat.tick_seconds * 2 + 60)
+    fire_seconds = subject.cfg.heartbeat.tick_seconds * 2 + 120
     pending: list[dict[str, Any]] = []
     open_turn: list[dict[str, Any]] = []
     journey_boundary: Any = None

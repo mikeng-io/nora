@@ -137,7 +137,7 @@ RULE_TESTS = {
     # the first rule because it is the one a scheduler gets wrong quietly: firing
     # a minute early is a message that arrives before the thing it is about, and
     # nobody reports it as a bug.
-    "R-36": "test_a_row_not_yet_due_does_not_fire",
+    "R-36": "test_the_graph_clock_does_not_publish_a_future_delivery",
     # R-37: a row fires ONCE, ever. Taking a row is a compare-and-set on
     # `state = 'pending'` inside the statement, not a read-then-write: `due()` is
     # a query rather than a claim, and the tick awaits a turn per group before it

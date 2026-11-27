@@ -21,7 +21,6 @@ from datetime import UTC, datetime, timedelta, timezone
 
 from nora.app.pending import PendingAccount, id_kind
 from nora.domain.identity import id_kinds
-from nora.domain.reminders import Reminder
 from nora.infra.life360 import DiscoveredCircle
 from nora.platform.discord.directory import DiscordChannel, DiscordGuild
 from nora.platform.signal.directory import SignalGroup
@@ -202,85 +201,6 @@ def _channel_mode(policy: Policy, entry: Conversation, ch: DiscordChannel) -> st
         else:
             mode = "mention-only"
     return f"{mode:<28} #{ch.name}  {ch.id}"
-
-
-def render_reminders(
-    *,
-    reminders: Sequence[Reminder],
-    now: datetime,
-    source: str,
-    truncated: bool,
-) -> list[str]:
-    """Every reminder still waiting, soonest first — the operator's read.
-
-    **No paste-ready stanza, unlike the other two reports, and that is the
-    point.** `nora groups` and `nora persons pending` end in a block the
-    operator edits into a file; there is nothing equivalent here, because the
-    only actions on a reminder are model-side (`remind_cancel`) or
-    deployment-side (`[heartbeat] enabled = false` plus a restart, which stops
-    all firing rather than one row). The control plane is read-only by
-    construction — `create_readonly_sql_engine` plus a `SELECT`-only grant — so
-    a `nora reminders cancel` would break both the module's invariant and the
-    database role, and it is not offered.
-
-    `overdue` is the diagnostic this report exists for: a row whose `due_at` has
-    passed and which is STILL pending means the tick is not running (or is not
-    reaching that conversation). It is the same question
-    `nora_heartbeat_last_tick_age_seconds` answers from the metrics side, asked
-    of the data instead.
-    """
-    lines = [
-        f"reminders from {source}",
-        f"now: {_local(now)}",
-        "",
-    ]
-    overdue = 0
-    for row in reminders:
-        late = row.due_at <= now
-        overdue += late
-        lines.append(f"{'OVERDUE' if late else 'waiting'}  {_local(row.due_at)}")
-        lines.append(f"         id   = {row.id}")
-        lines.append(f"         who  = {row.requester_person_id}")
-        lines.append(f"         where= {row.platform}:{row.conversation_id}")
-        lines.append(f"         text = {row.text}")
-        # (DEC-85) A recurring series shows as ONE pending row — the next
-        # occurrence — so without this line an operator counting rows would
-        # read a fourteen-day countdown as a single reminder, and «1 pending»
-        # would be true and misleading at once. `occurrence` is 0-based in the
-        # row and 1-based here: the operator is being told which one this is.
-        if row.series is not None:
-            rule = row.series.rule
-            ends = (
-                "" if rule.until is None else f", until {_local(rule.until)}"
-            )
-            lines.append(
-                f"         every= {rule.every.value} "
-                f"({row.series.occurrence + 1} of {rule.count}{ends})"
-            )
-            lines.append(f"         series={row.series.id}")
-        lines.append("")
-    lines.append(f"{len(reminders)} pending, {overdue} overdue.")
-    if overdue:
-        lines.append(
-            "An overdue row means the tick is not firing it. Check "
-            "`[heartbeat] enabled` in config.toml, then "
-            "nora_heartbeat_last_tick_age_seconds on /metrics — a climbing age "
-            "is a loop that has stopped."
-        )
-    if truncated:
-        lines.append("Listing was truncated — re-run with a larger --limit.")
-    if not reminders:
-        # True row-by-row (DEC-85): a RECURRING reminder is a chain of rows,
-        # each of which resolves once and is never re-run — the next
-        # occurrence is a NEW row, minted when this one is claimed. Nothing
-        # here re-runs anything.
-        lines.append("Nothing is waiting. Reminders resolve once and are never re-run.")
-    return lines
-
-
-def _local(when: datetime) -> str:
-    """One instant, in the operator's own zone, with the offset stated."""
-    return when.astimezone(_HKT).strftime("%a %-d %b %Y %H:%M %Z")
 
 
 def render_presence_members(circles: list[DiscoveredCircle]) -> list[str]:

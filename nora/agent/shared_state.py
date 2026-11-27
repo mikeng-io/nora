@@ -2,7 +2,7 @@
 
 `docs/design/cognition/graph.md`: one typed
 projection over the existing stores — scoped ledger entries,
-pending and recently resolved act rows, self-wakes, working-set findings and
+self-wakes, working-set findings and
 her own delivered sends — with every source's coverage named, so a failed
 read is `unavailable`, never `nothing_found` (R-27). Every source's read AND
 entry-build sit inside its own `try`: a row shape the projection did not
@@ -13,9 +13,7 @@ caller that would read it as an empty unit.
 is the unit read (the session — the unit IS the read boundary, DEC-231). A
 destination read keeps unit-scoped entries and its own room's entries
 readable, subjects other rooms' ledger entries to the caller's `permit`
-predicate, and renders every other room's scoped entries `permitted=False` —
-existence visible, content withheld. A person's reminder never carries its
-text into the shared block: existence only, in any read.
+predicate, and renders withheld entries as existence only.
 
 A store left `None` is a source this view was never asked for, not an
 unavailable one — the coverage line names only the sources that ran.
@@ -40,19 +38,10 @@ _ALL_SECTIONS = {BODY: True, HOLD_OPEN: True, I_OWE: True, WORKING_SET: True}
 
 #: How far back the "said lately" and act-history reads reach.
 _SEND_LOOKBACK_MS = 24 * 3600_000
-_HISTORY_LOOKBACK_MS = 7 * 24 * 3600_000
 
 #: The tool names whose toolUse/toolResult pairs the view reads as facts —
 #: unresolved act attempts.
 _TURN_FACT_TOOLS = ("remind",)
-
-
-def _ms(dt: datetime | None) -> int:
-    return 0 if dt is None else int(dt.timestamp() * 1000)
-
-
-def _room_of(entry_room: str) -> str:
-    return entry_room
 
 
 async def read_shared(
@@ -63,7 +52,6 @@ async def read_shared(
     now_ms: int,
     room: tuple[str, str] | None = None,
     ledger: Any = None,
-    reminders: Any = None,
     record_query: Any = None,
     standing: Any = None,
     traces: Any = None,
@@ -85,7 +73,6 @@ async def read_shared(
     entries: list[SharedEntry] = []
     sources: list[tuple[str, str]] = []
     partial = False
-    room_set = set(rooms)
 
     def scoped(entry_scope: str, entry_room: tuple[str, str] | None = None,
                *, ledger_entry: Any = None) -> bool:
@@ -239,104 +226,6 @@ async def read_shared(
             log.exception("shared view: findings read failed for %s", unit)
             sources.append(("findings", "unavailable"))
 
-    if reminders is not None:
-        try:
-            pending = [
-                r for r in await reminders.pending_of(ai_peer)
-                if (r.platform, r.conversation_id) in room_set
-            ]
-            since = datetime.fromtimestamp(
-                (now_ms - _HISTORY_LOOKBACK_MS) / 1000, UTC)
-            recent = await reminders.recent_in(
-                rooms, requester_person_id=ai_peer, since=since,
-                limit=history_limit,
-            )
-            human = [
-                r
-                for platform, conversation_id in rooms
-                for r in await reminders.pending_for(conversation_id)
-                if r.platform == platform
-                and r.requester_person_id != ai_peer
-            ]
-            sources.append((
-                "acts",
-                "ok" if (pending or recent or human) else "nothing_found",
-            ))
-            if len(recent) >= history_limit:
-                partial = True
-
-            def act_entry(r: Any, *, status: str, delivery: str) -> SharedEntry:
-                payload = r.payload or {}
-                subject_ref = ""
-                if payload.get("subject_kind") and payload.get("subject_id"):
-                    subject_ref = (
-                        f"{payload['subject_kind']}:{payload['subject_id']}")
-                action = payload.get("action") or payload.get("intent") or ""
-                refs = (subject_ref,) if subject_ref else ()
-                own = r.requester_person_id == ai_peer
-                scope = f"{r.platform}:{r.conversation_id}"
-                # A person's reminder never lends its text to the shared
-                # block — the scheduled-act FACT is unit knowledge, the words
-                # are the person's own.
-                text = (
-                    str(r.text or "").splitlines()[0][:140]
-                    if own else "a person's reminder"
-                )
-                return SharedEntry(
-                    kind="act", id=str(r.id), scope=scope,
-                    status=status, subject=text,
-                    destination=scope,
-                    action=str(action), subject_ref=subject_ref,
-                    refs=refs, at_ms=_ms(
-                        r.due_at if status == "pending" else r.fired_at or r.due_at),
-                    provenance="nora" if own else "person",
-                    delivery=delivery,
-                    permitted=scoped(scope, (r.platform, r.conversation_id)),
-                )
-
-            sends_read_ok = (
-                record_query is not None
-                and ("sends", "unavailable") not in sources
-            )
-            entries.extend(act_entry(r, status="pending", delivery="")
-                           for r in pending)
-            entries.extend(act_entry(r, status="pending", delivery="")
-                           for r in human)
-            pending_ids = {r.id for r in (*pending, *human)}
-            for r in recent:
-                if r.id in pending_ids:
-                    continue
-                fired_ms = _ms(getattr(r, "fired_at", None))
-                room_sends = sends.get((r.platform, r.conversation_id), ())
-                created_ms = (
-                    int(r.created_at.timestamp() * 1000) if r.created_at else 0
-                )
-                # Delivery labels are row-and-message facts, never a proximity
-                # guess: `sent` when the row says so or carries delivered
-                # evidence; `none` only when provable — never fired, or the
-                # sends read answered and NOTHING of hers reached that
-                # destination since the act was created; `unknown` when the
-                # check could not rule a send out (fired then failed, sends
-                # source absent, or a send exists that may be this row's).
-                if r.outcome == "sent" or (r.payload or {}).get(
-                    "delivered_message_ids"
-                ):
-                    delivery = "sent"
-                elif r.state.value == "cancelled" or not fired_ms or (
-                    sends_read_ok
-                    and created_ms >= now_ms - _SEND_LOOKBACK_MS
-                    and not any(h.row.ts >= created_ms for h in room_sends)
-                ):
-                    delivery = "none"
-                else:
-                    delivery = "unknown"
-                entries.append(act_entry(
-                    r, status=r.outcome or r.state.value, delivery=delivery,
-                ))
-        except Exception:
-            log.exception("shared view: acts read failed for %s", unit)
-            sources.append(("acts", "unavailable"))
-
     if wakes:
         sources.append(("wakes", "ok"))
         for w in wakes:
@@ -415,7 +304,6 @@ async def read_shared(
 def shared_reader(
     *,
     ledger: Any = None,
-    reminders: Any = None,
     record_query: Any = None,
     standing: Any = None,
     traces: Any = None,
@@ -438,7 +326,7 @@ def shared_reader(
         return await read_shared(
             unit=unit, rooms=rooms_of_unit(unit), ai_peer=ai_peer,
             now_ms=now_ms, room=room, ledger=ledger,
-            reminders=reminders, record_query=record_query,
+            record_query=record_query,
             standing=standing, traces=traces, wakes=wakes,
             permit=permit, permit_req=permit_req,
             standing_permits=standing_permits,

@@ -146,7 +146,6 @@ _ALLOWED: frozenset[str] = frozenset(
         "test_vision.py",
         "test_weather.py",
         "test_web_fetch_tool.py",
-        "test_web_gatherings.py",
         "test_whatsapp_listener.py",
         "test_whatsapp_parser.py",
         "test_whatsapp_react.py",

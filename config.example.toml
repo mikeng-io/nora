@@ -210,16 +210,8 @@ timeout_seconds = 3600.0
 
 [heartbeat]
 enabled = false
-tick_seconds = 60          # how often it wakes. Reminders fire at or after due_at,
+tick_seconds = 60          # proactive intention poll interval
 timeout_seconds = 120
-
-[reminders]
-max_pending_per_requester = 20
-min_lead_seconds = 120     # must exceed heartbeat.tick_seconds or Nora refuses to start
-max_horizon_days = 365     # furthest-out due date. Recurring series are bounded by
-max_occurrences_per_series = 60   # total firings in one recurring series (one pending row at a time)
-min_interval_seconds = 300 # fastest a series may repeat; 300 = at most 12 firings/hour.
-timezone = "Asia/Hong_Kong"   # IANA zone name (not an offset) a recurrence keeps its wall clock in
 
 [notes]
 enabled = false

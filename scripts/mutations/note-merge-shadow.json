@@ -32,7 +32,7 @@
     "file": "nora/app/proactive_screen.py",
     "old": "        if current[0].retired_at is not None and not merged:",
     "new": "        if current[0].retired_at is not None:",
-    "target": "tests/unit/test_heartbeat_loop.py::test_a_pending_proactive_row_on_a_merged_note_follows_its_survivor"
+    "target": "tests/unit/test_proactive_screen.py::test_the_legacy_screen_follows_a_merge_to_its_current_survivor"
   },
   {
     "name": "review #495 (sql): the duplicate's swap requires it open, not just its head",
@@ -46,6 +46,6 @@
     "file": "nora/app/proactive_screen.py",
     "old": "        if survivor is None:\n            return ReminderState.CANCELLED, CANCELLED_NOTE_RETIRED",
     "new": "        if survivor is None:\n            return None",
-    "target": "tests/unit/test_heartbeat_loop.py::test_a_row_on_a_merged_note_whose_survivor_closed_is_cancelled"
+    "target": "tests/unit/test_proactive_screen.py::test_the_legacy_screen_follows_a_merge_to_its_current_survivor"
   }
 ]
