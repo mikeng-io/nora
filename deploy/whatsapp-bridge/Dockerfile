@@ -10,6 +10,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl \
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
 COPY *.js ./
+ENV NORA_BRIDGE_SESSION_DIR=/app/session
 # Non-root, matching every other container in this compose project (M-1).
 USER node
 EXPOSE 18081

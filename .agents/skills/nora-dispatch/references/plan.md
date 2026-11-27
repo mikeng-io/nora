@@ -21,7 +21,7 @@ The plan lists units. Each unit states:
 | base | the integration head, or the branch of the unit it stacks on, plus the native stack number it joins |
 | side effects | anything outside the repository it touches: hosts, accounts, paid calls; "none" is valid |
 | rollback | how its effect is undone: reverting the PR, a config flip or a backup |
-| worker | the builder or the orchestrator, by the policy in `ORCHESTRATION.md` |
+| worker | the builder or the orchestrator, by the policy in `docs/engineering/orchestration.md` |
 
 Every Done-when item maps to at least one unit. An item that no unit
 addresses is a plan defect.

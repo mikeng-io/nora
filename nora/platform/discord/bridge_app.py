@@ -1,6 +1,6 @@
 """`DiscordBridge` — the discord-bridge's owned Discord graph.
 
-`design/platform-bridges/02-wire-and-platforms.md`: the bridge
+`docs/design/platform/README.md`: the bridge
 owns the Discord Gateway connection, the deterministic command surface, the
 music runtime and the voice-controller seam, so an app-only release leaves
 all of it running and nothing a member typed is lost. The app forwards into
@@ -838,7 +838,7 @@ class DiscordBridge:
         session, s = frame
         return f"g:{session}:{s}"
 
-    # ---- upstream transition identity (design/platform-bridges/00-contract.md) ---------
+    # ---- upstream transition identity (docs/design/platform/README.md) ---------
 
     def _reaction_ledger_key(self, msg: Any, raw: Any) -> str | None:
         """The durable per-(conversation,target,reactor,emoji,type) ledger
@@ -861,7 +861,7 @@ class DiscordBridge:
         where one exists, the durable transition ledger's sequence where
         Discord sends none. `(None, ambiguous_record)` when neither can
         establish identity: retained as evidence, never deduplicated under
-        a guessed key (design/platform-bridges/00-contract.md)."""
+        a guessed key (docs/design/platform/README.md)."""
         if msg.touch is not None:
             if msg.touch.kind == "delete":
                 # A delete names the message it removes — the target IS the
@@ -887,7 +887,7 @@ class DiscordBridge:
             # No wire revision: a state change here is INDISTINGUISHABLE
             # from a delayed replay of an old transition — only the recorded
             # same-state redelivery may re-resolve, under the identity it
-            # originally committed (design/platform-bridges/02-wire-and-platforms.md).
+            # originally committed (docs/design/platform/README.md).
             if ledger_key is not None and self._journal is not None:
                 identity, transition = resolve_clockless_transition(
                     self._journal, ledger_key, state)
@@ -936,7 +936,7 @@ class DiscordBridge:
         carried = list(carried)
         # The ONE short producer root for this capture — created at the
         # boundary, its context frozen onto the envelope BEFORE the
-        # journal append inside `capture` (design/platform-bridges/04-operations.md).
+        # journal append inside `capture` (docs/design/platform/README.md).
         with bt.producer_span(PLATFORM, kind=kind) as carrier:
             if self._custody_dir is not None:
                 # Custody is a bounded op LINKED to this capture — never a
@@ -992,7 +992,7 @@ class DiscordBridge:
         if not ok:
             log.warning("capture sink refused an admitted event (kind=%s)", kind)
 
-    # ---- platform observations (design/platform-observations/README.md) ---------------
+    # ---- platform observations (docs/design/platform/observations.md) ---------------
 
     async def _emit_observation(
         self, obs: Any, *, upstream: str,

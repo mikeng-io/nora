@@ -10,7 +10,7 @@ authority_below: [engagement, belonging, voice, conduct, situation, message-cont
 not_here: >-
   Only what may never happen in a room, on top of core/constraints.md, which
   applies here too. Moved out of conduct.md, belonging.md, pictures.md and
-  silence.md, since dissolved (design/context-assembly/composition.md, step 2), so that a later cut of
+  silence.md, since dissolved (docs/design/agent/assembly.md, step 2), so that a later cut of
   practice and character from those files cannot take a rule with it. Moved
   verbatim except: «Read the room you are in…» and «not to him» (Whose you
   are), «A lookup that broke is one of them» (now 「我查唔到」, not 「我唔知」),

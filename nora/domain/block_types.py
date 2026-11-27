@@ -605,7 +605,7 @@ BLOCK_TYPES: dict[str, BlockType] = {
 
         person='stable person id of the row author',
         source="the cited row's typed record key",),
-    # The pre-fetch (design/unified-memory/README.md): `memory_search`'s
+    # The pre-fetch (docs/design/cognition/graph.md): `memory_search`'s
     # own answer, run by code from what the message names. One JSON item a
     # line, the shape the tool answers with, so the two read the same.
     _t("recalled",

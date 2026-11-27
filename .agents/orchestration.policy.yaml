@@ -1,0 +1,39 @@
+kind: policy
+version: 1
+execution_tiers:
+  - id: routine
+    capabilities:
+      - Follow a known mechanical transformation or perform a bounded lookup/read-back.
+    required_evidence:
+      - Read the actual source or result and report revision, scope and limitations.
+  - id: scoped
+    capabilities:
+      - Implement a finished specification within explicit file and behavior boundaries.
+    required_evidence:
+      - Named focused checks with actual exit codes and a diff bound to the resulting head.
+  - id: complex
+    capabilities:
+      - Resolve ambiguity within a specification, trace causes, and compare design trade-offs.
+    required_evidence:
+      - Ground the chosen approach in inputs, alternatives and reachable failure paths.
+  - id: critical
+    capabilities:
+      - Reason about disclosure, security, data loss, concurrency, hot-table migrations or model spending.
+    required_evidence:
+      - Verify the real trust/cost boundary with failure evidence and independent scrutiny.
+review_tiers:
+  - id: none
+    capabilities:
+      - Read the diff for scope and reconcile the gate and read-back with acceptance.
+    required_evidence:
+      - Orchestrator records the applicable review row, appropriate validation and read-back.
+  - id: light
+    capabilities:
+      - Independently check a bounded change and its named acceptance paths.
+    required_evidence:
+      - Fresh independent reviewer reports reachable findings against the exact head.
+  - id: full
+    capabilities:
+      - Independently trace affected callers, failure paths and cross-cutting boundaries.
+    required_evidence:
+      - Review binds the spec, exact head/base, findings and their triage to evidence.

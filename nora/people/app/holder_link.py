@@ -1,4 +1,4 @@
-"""The holder-facing link lifecycle (`design/managed-identity-access/account-linking.md`).
+"""The holder-facing link lifecycle (`docs/design/people/linking.md`).
 
 Every HTTP-facing method revalidates the caller's exact account through
 the managed session check — a request body never names an actor, an

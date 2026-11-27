@@ -153,7 +153,10 @@ def test_policy_and_skills_name_no_coding_agent() -> None:
     quirk belongs in `.agents/runtimes/` and a model in `.agents/lanes.md`;
     written into a skill, it is followed by every other agent too. Vendored
     third-party skills (a PROVENANCE.md beside SKILL.md) are theirs."""
-    paths = [ROOT / "AGENTS.md", ROOT / "ORCHESTRATION.md", ROOT / "REVIEW.md"]
+    paths = [
+        ROOT / "AGENTS.md", ROOT / "docs/engineering/orchestration.md",
+        ROOT / "docs/engineering/review.md",
+    ]
     for skill in _skill_dirs():
         if (skill / "PROVENANCE.md").exists():
             continue

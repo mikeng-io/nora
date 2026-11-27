@@ -1,3 +1,9 @@
+---
+class: adr
+subject: 'Tool names, descriptions and content: the policy, and which rule is checked how'
+owns: []
+---
+
 # 0015 — Tool names, descriptions and content: the policy, and which rule is checked how
 
 - **Status:** accepted (operator, 2026-09-24)

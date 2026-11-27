@@ -1,3 +1,9 @@
+---
+class: adr
+subject: A dropped reasoning is a row in Postgres, not a Prometheus counter
+owns: []
+---
+
 # 0013 — A dropped reasoning is a row in Postgres, not a Prometheus counter
 
 - **Status:** accepted

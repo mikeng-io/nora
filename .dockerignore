@@ -11,7 +11,7 @@ data/
 *.log
 tests/
 docs/
-design/
+docs/design/
 .env
 .env.*
 config.toml

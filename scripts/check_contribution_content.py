@@ -199,13 +199,42 @@ def pr_problems(
     elif names != sorted(names, key=PR_HEADINGS.index):
         errors.append("Keep PR sections in the order shown in the template.")
     mapping = dict(found)
-    for name in ("What", "Gate on the merged tree", "Authored by"):
+    for name in ("What", "Gate on the merged tree", "Produced by"):
         if not substantive(mapping.get(name, "")):
             errors.append(f"Fill in `## {name}` with actual information/results.")
+    if "Produced by" in mapping:
+        errors.extend(producer_problems(mapping["Produced by"]))
     if has_placeholders(title + "\n" + body) or PLACEHOLDER.fullmatch(
         title.partition(":")[2].strip()
     ):
         errors.append("Replace unfilled TODO/TBD/PENDING or angle-bracket prompts.")
+    return errors
+
+
+PRODUCER_COLUMNS = ["role", "Environment", "Agent", "Model"]
+PRODUCER_ROLES = {"builder", "reviewer"}
+
+
+def producer_problems(text: str) -> list[str]:
+    """`## Produced by` is a table: one complete row per builder and reviewer."""
+    rows = [
+        [cell.strip() for cell in line.strip().strip("|").split("|")]
+        for line in prose(text)
+        if line.strip().startswith("|")
+    ]
+    if not rows or rows[0] != PRODUCER_COLUMNS:
+        return ["`## Produced by` must be the table `| role | Environment | Agent | Model |`."]
+    errors = []
+    body = [row for row in rows[1:] if not all(set(cell) <= set("-: ") for cell in row)]
+    if not any(row and row[0] == "builder" for row in body):
+        errors.append("`## Produced by` must name at least one builder.")
+    for row in body:
+        if len(row) != len(PRODUCER_COLUMNS) or row[0] not in PRODUCER_ROLES:
+            errors.append(f"`## Produced by` row {row!r} needs a role of builder or reviewer and four cells.")
+            continue
+        for column, cell in zip(PRODUCER_COLUMNS[1:], row[1:]):
+            if not cell.strip(" -—"):
+                errors.append(f"`## Produced by` {row[0]} row is missing its {column}.")
     return errors
 
 

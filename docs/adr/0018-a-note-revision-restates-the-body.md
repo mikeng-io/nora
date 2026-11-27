@@ -1,3 +1,9 @@
+---
+class: adr
+subject: A note revision restates the body
+owns: []
+---
+
 # 0018 · A note revision restates the body
 
 > 2026-10-03 (DEC-277): the note-candidates, curator, note-merge and proactive DECIDE passes named below are deleted; the Cognition session does this now.

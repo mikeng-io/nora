@@ -29,7 +29,7 @@ async def runtime(
     access: Any = None, room_command: Any = None, owner: Any = None,
 ) -> RuntimeWiring:
 
-    # ---- platform bridges (design/platform-bridges) ------------------------- Any platform
+    # ---- platform bridges (docs/design/platform/README.md) ------------------------- Any platform
     # with `mode = "bridge"` consumes inbound over Redis Streams instead of its live
     # listener, and its adapter is a BridgeAdapter client of that bridge's action API. The…
     bridged = bridge_platforms(cfg.platforms)

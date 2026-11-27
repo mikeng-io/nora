@@ -4,7 +4,7 @@
 Three failure shapes this catches:
 
 1. A subject with NO type at all, most often a bare `Merge ...` line (the
-   GitHub default merge message, which docs/maintainers/conventions.md's merge-strategy rule
+   GitHub default merge message, which docs/engineering/conventions.md's merge-strategy rule
    forbids).
 2. An UNDECLARED type. A type that is in use but not declared is a convention
    that only looks agreed.
@@ -25,6 +25,7 @@ the first violation, printing which rule and where the convention is written.
 from __future__ import annotations
 
 import re
+import subprocess
 import sys
 
 # Declared in CONTRIBUTING.md §Commit messages. Keep the two in lockstep.
@@ -57,12 +58,19 @@ BODY_TYPES = frozenset({"feat", "fix", "security", "perf", "change", "doctrine"}
 MIN_BODY = 20
 # Trailers are metadata, not the why. `PII-Ack` is appended by the commit-msg scanner.
 TRAILER_RE = re.compile(
-    r"^(Co-Authored-By|Claude-Session|Signed-off-by|Release-As|PII-Ack|Reviewed-by):", re.I
+    r"^(Co-Authored-By|Claude-Session|Signed-off-by|Release-As|PII-Ack|Reviewed-by"
+    r"|Environment|Agent|Model):",
+    re.I,
 )
+# Every commit names what produced it (docs/engineering/documents.md «Provenance»).
+# There is no exemption: a local hook cannot authenticate an author, and release
+# automation and the dependency bot commit on GitHub, where these hooks never run.
+PROVENANCE = ("Environment", "Agent", "Model")
+
 SUBJECT_RE = re.compile(rf"^({TYPES_RE})(\([^)]+\))?!?: .+")
 
 # Bare `Merge pull request #N from ...` / `Merge branch ...` are GitHub's
-# default merge subjects. The authored-merge rule (docs/maintainers/conventions.md §Merge
+# default merge subjects. The authored-merge rule (docs/engineering/conventions.md §Merge
 # strategy) REPLACES them with a `merge: <summary of the arc>` subject.
 BARE_MERGE_RE = re.compile(r"^(Merge pull request|Merge branch|Merge remote-tracking branch)\b")
 # `Revert "<original subject>"` is standard git plumbing; allowed as-is.
@@ -96,7 +104,7 @@ def check_subject(subject: str) -> list[str]:
                 "authored-merge prefix on a GitHub-DEFAULT body. The prefix is right;\n"
                 "    the body is the default merge message. Write the arc instead:\n"
                 "    merge: <what the branch set out to fix, what was measured, what shipped>\n"
-                "    (docs/maintainers/conventions.md §Merge strategy)"
+                "    (docs/engineering/conventions.md §Merge strategy)"
             )
         return problems
     if re.match(r"^merge\s*:", subject):
@@ -109,7 +117,7 @@ def check_subject(subject: str) -> list[str]:
             "malformed `merge:` subject — the arc is empty, or the prefix is not\n"
             "    flush (`merge: <arc>`). Say what the branch set out to fix and what\n"
             "    shipped, e.g. `merge: the conventions get delivered (#246)`.\n"
-            "    (docs/maintainers/conventions.md §Merge strategy)"
+            "    (docs/engineering/conventions.md §Merge strategy)"
         )
         return problems
     if OLD_MERGE_RE.match(subject):
@@ -117,7 +125,7 @@ def check_subject(subject: str) -> list[str]:
             "superseded merge-subject generation (`Merge <branch>: ...`). The current\n"
             "    shape is `merge: <the arc>` - what the branch set out to fix, what was\n"
             "    measured, what shipped. The branch name is already in the merge commit;\n"
-            "    it does not need to be in the subject. (docs/maintainers/conventions.md section Merge\n"
+            "    it does not need to be in the subject. (docs/engineering/conventions.md section Merge\n"
             "    strategy.)"
         )
         return problems
@@ -125,7 +133,7 @@ def check_subject(subject: str) -> list[str]:
         problems.append(
             "GitHub-default merge subject. Write an AUTHORED merge subject:\n"
             "    merge: <what the branch set out to fix, what was measured, what shipped>\n"
-            "    (docs/maintainers/conventions.md §Merge strategy)"
+            "    (docs/engineering/conventions.md §Merge strategy)"
         )
         return problems
     if REVERT_RE.match(subject):
@@ -186,6 +194,31 @@ def check_message(message: str) -> list[str]:
     return check_subject(lines[0].rstrip()) or check_body(lines[0].rstrip(), message_body(lines))
 
 
+def trailers(message: str) -> dict[str, str]:
+    """The message's trailers exactly as git parses them (`git interpret-trailers --parse`)."""
+    done = subprocess.run(  # noqa: S603 - git, with the message on stdin
+        ["git", "interpret-trailers", "--parse", "--no-divider"],  # noqa: S607
+        input=message, capture_output=True, text=True, check=True,
+    )
+    found = {}
+    for line in done.stdout.splitlines():
+        key, _, value = line.partition(":")
+        found[key.strip()] = value.strip()
+    return found
+
+
+def check_provenance(message: str) -> list[str]:
+    """Missing or empty provenance trailers in the message's trailer block."""
+    found = trailers(message)
+    return [
+        f"the `{name}:` trailer is missing or empty. Every commit ends with a trailer block\n"
+        "    Environment: <ADE or IDE>, Agent: <coding agent>, Model: <exact model id>.\n"
+        "    (docs/engineering/documents.md «Provenance»)"
+        for name in PROVENANCE
+        if not found.get(name)
+    ]
+
+
 def main(argv: list[str]) -> int:
     if len(argv) != 2:
         print("usage: check_commit_subject.py <commit-msg-file>", file=sys.stderr)
@@ -196,7 +229,7 @@ def main(argv: list[str]) -> int:
         print("commit subject is empty.", file=sys.stderr)
         return 1
     # A merge commit whose subject is already authored passes through the same check.
-    problems = check_message("\n".join(lines))
+    problems = check_message("\n".join(lines)) + check_provenance("\n".join(lines))
     if problems:
         print("commit subject violates the convention:", file=sys.stderr)
         print(f"    subject: {lines[0]!r}", file=sys.stderr)

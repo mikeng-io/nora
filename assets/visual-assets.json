@@ -17,7 +17,7 @@
         "app/public/offline.html (URL /favicon.ico)",
         "app/public/sw.js (URL /favicon.ico)"
       ],
-      "provenance": "The clasp emblem (assets/nora-emblem.svg, the canonical mark; DESIGN.md \u00a72 and \u00a77), rendered by app/scripts/make-icons.py with rsvg-convert; paper square where a platform forbids transparency.",
+      "provenance": "The clasp emblem (assets/nora-emblem.svg, the canonical mark; docs/design/appearance/identity.md and components.md), rendered by app/scripts/make-icons.py with rsvg-convert; paper square where a platform forbids transparency.",
       "unchanged_reason": null,
       "sha256": "ceb9e8eaa6dc4f4a5bf674130c29372fe1cdbe92423229f9c78a0b8fc7436b1f",
       "size": [
@@ -41,7 +41,7 @@
         "app/public/sw.js (URL /icons/apple-touch-icon.png)",
         "app/src/app/[locale]/layout.tsx (URL /icons/apple-touch-icon.png)"
       ],
-      "provenance": "The clasp emblem (assets/nora-emblem.svg, the canonical mark; DESIGN.md \u00a72 and \u00a77), rendered by app/scripts/make-icons.py with rsvg-convert; paper square where a platform forbids transparency.",
+      "provenance": "The clasp emblem (assets/nora-emblem.svg, the canonical mark; docs/design/appearance/identity.md and components.md), rendered by app/scripts/make-icons.py with rsvg-convert; paper square where a platform forbids transparency.",
       "unchanged_reason": null,
       "sha256": "d47ad3cfca966c41f29b2d736ca4510ab05e3d73edada7135929455ccd66fc04",
       "size": [
@@ -67,7 +67,7 @@
         "app/public/sw.js (URL /icons/icon-192.png)",
         "app/src/app/[locale]/layout.tsx (URL /icons/icon-192.png)"
       ],
-      "provenance": "The clasp emblem (assets/nora-emblem.svg, the canonical mark; DESIGN.md \u00a72 and \u00a77), rendered by app/scripts/make-icons.py with rsvg-convert; paper square where a platform forbids transparency.",
+      "provenance": "The clasp emblem (assets/nora-emblem.svg, the canonical mark; docs/design/appearance/identity.md and components.md), rendered by app/scripts/make-icons.py with rsvg-convert; paper square where a platform forbids transparency.",
       "unchanged_reason": null,
       "sha256": "6bf92f1e5c370ecca2365df344964411303224a428aca4cf14b598991cd1db34",
       "size": [
@@ -93,7 +93,7 @@
         "app/public/sw.js (URL /icons/icon-512.png)",
         "app/src/app/[locale]/layout.tsx (URL /icons/icon-512.png)"
       ],
-      "provenance": "The clasp emblem (assets/nora-emblem.svg, the canonical mark; DESIGN.md \u00a72 and \u00a77), rendered by app/scripts/make-icons.py with rsvg-convert; paper square where a platform forbids transparency.",
+      "provenance": "The clasp emblem (assets/nora-emblem.svg, the canonical mark; docs/design/appearance/identity.md and components.md), rendered by app/scripts/make-icons.py with rsvg-convert; paper square where a platform forbids transparency.",
       "unchanged_reason": null,
       "sha256": "f5d4d41ae87b0b0c411c7450dfad4c2fd08e5c2b32196ee5405fd3e347464721",
       "size": [
@@ -117,7 +117,7 @@
         "app/public/manifest.webmanifest (URL /icons/icon-maskable-512.png)",
         "app/public/sw.js (URL /icons/icon-maskable-512.png)"
       ],
-      "provenance": "The clasp emblem (assets/nora-emblem.svg, the canonical mark; DESIGN.md \u00a72 and \u00a77), rendered by app/scripts/make-icons.py with rsvg-convert; paper square where a platform forbids transparency.",
+      "provenance": "The clasp emblem (assets/nora-emblem.svg, the canonical mark; docs/design/appearance/identity.md and components.md), rendered by app/scripts/make-icons.py with rsvg-convert; paper square where a platform forbids transparency.",
       "unchanged_reason": null,
       "sha256": "b932a3f843258a78e0d4b791a0db2034a607f6e5c889778c001f043c97694c8b",
       "size": [
@@ -384,14 +384,7 @@
       ],
       "recipe": "copy",
       "consumers": [
-        "DESIGN.md (explicit path reference)",
-        "design/self-reference/README.md (explicit path reference)",
-        "design/self-reference/identity.md (explicit path reference)",
-        "design/self-reference/references.md (explicit path reference)",
-        "design/self-reference/references.md (explicit path reference)",
-        "design/self-reference/references.md (explicit path reference)",
-        "design/self-reference/README.md (explicit path reference)",
-        "design/video-generation/README.md (explicit path reference)",
+        "docs/design/appearance/identity.md (explicit path reference)",
         "scripts/ingest_self_asset.py (explicit path reference)"
       ],
       "provenance": "2026-10-26, supplied 2D anime Bauhinia production source; parent inspected artwork PASS. Prompt intent: preserve Mini proportions and option08 eyes, compact broad hair clumps and five-petal clasp, Bauhinia clothing, no audio accessories. Original PNG and metadata retained privately; identifying PNG metadata omitted on import.",
@@ -416,7 +409,7 @@
       ],
       "recipe": "copy",
       "consumers": [
-        "DESIGN.md (cinematic artwork direction)"
+        "docs/design/appearance/identity.md (cinematic artwork direction)"
       ],
       "provenance": "Operator accepted 2026-11-02; AI cinematic artwork anchor. Social icon is full-bleed square; platforms own cropping. Existing 3D model retained. No runtime, website or external profile replacement.",
       "unchanged_reason": null,
@@ -440,11 +433,11 @@
       "recipe": "copy",
       "consumers": [
         "app/src/assets/nora-emblem.svg (copy for the portal)",
-        "DESIGN.md (explicit path reference)",
+        "docs/design/appearance/identity.md (explicit path reference)",
         "README.md (project mark)",
         "app/scripts/make-icons.py (favicon, app icons)"
       ],
-      "provenance": "The project's canonical mark, the clasp emblem: her five-petal Bauhinia clasp with one copper thread tied off, drawn as vector (DESIGN.md \u00a72: the project's mark, never her face). Chosen by the operator from three rendered candidates; made canonical by the operator.",
+      "provenance": "The project's canonical mark, the clasp emblem: her five-petal Bauhinia clasp with one copper thread tied off, drawn as vector (docs/design/appearance/identity.md: the project's mark, never her face). Chosen by the operator from three rendered candidates; made canonical by the operator.",
       "unchanged_reason": null,
       "sha256": "226340b9d5685634e28134e859689569985f8b8cedbc561ce14483b20e467df5",
       "size": [

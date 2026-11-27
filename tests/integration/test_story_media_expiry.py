@@ -9,7 +9,7 @@ carried from one tick to the next. Production wires no embedding callback,
 so a frame waits for the hard limit; when the bytes go once BOTH exist is
 `bytes_due`'s, `tests/unit/test_story_bytes_due.py`.
 
-Database scoped to the MODULE and truncated between tests (docs/code-standards.md).
+Database scoped to the MODULE and truncated between tests (docs/engineering/code-standards.md).
 """
 
 from __future__ import annotations

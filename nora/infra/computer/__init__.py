@@ -1,1 +1,1 @@
-"""Nora's computer: the client side of computerd (design/sandbox-runtime/README.md)."""
+"""Nora's computer: the client side of computerd (docs/design/computer/sandbox.md)."""

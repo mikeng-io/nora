@@ -1,3 +1,9 @@
+---
+class: adr
+subject: A block says what it is, and its TYPE is what says it
+owns: []
+---
+
 # 0013 — A block says what it is, and its TYPE is what says it
 
 > 2026-10-03 (DEC-277): the note-candidates, curator, note-merge and proactive DECIDE passes named below are deleted; the Cognition session does this now.

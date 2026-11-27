@@ -1,3 +1,9 @@
+---
+class: adr
+subject: Code is grouped by area, and every area depends inward
+owns: []
+---
+
 # 0037 · Code is grouped by area, and every area depends inward
 
 - **Status:** accepted (operator, 2026-11-11)

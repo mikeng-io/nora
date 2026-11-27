@@ -2,37 +2,37 @@
   {
     "name": "the real engagement context receives immutable alias sets",
     "file": "nora/platform/bridge/client.py",
-    "old": "                              members=tuple(frozenset(account) for account in members))",
-    "new": "                              members=tuple(members))",
-    "target": "tests/integration/subject/test_causal_runtime_journey.py::test_real_app_bridge_admission_settles_before_cancellation"
+    "old": "            return Roster(available=True, members=tuple(frozenset(m) for m in members))\n",
+    "new": "            return Roster(available=True, members=tuple(members))\n",
+    "target": "tests/integration/test_whatsapp_roster_read.py::test_whatsapp_roster_decodes_the_bridge_response"
   },
   {
     "name": "an unreadable JSON roster remains unavailable",
     "file": "nora/platform/bridge/client.py",
-    "old": "        except (TimeoutError, aiohttp.ClientError, ValueError):\n",
-    "new": "        except (TimeoutError, aiohttp.ClientError):\n",
-    "target": "tests/integration/test_the_subject_is_the_deployed_graph.py::test_bridge_roster_decodes_accounts_once_and_keeps_unknown_unavailable"
+    "old": "        except (TimeoutError, aiohttp.ClientError, ValueError) as exc:\n",
+    "new": "        except (TimeoutError, aiohttp.ClientError) as exc:\n",
+    "target": "tests/integration/test_whatsapp_roster_read.py::test_whatsapp_roster_decodes_the_bridge_response"
   },
   {
     "name": "a non-list roster payload cannot become a membership result",
     "file": "nora/platform/bridge/client.py",
-    "old": "        if not isinstance(groups, list):\n            return Roster(available=False)\n",
+    "old": "        if not isinstance(data, dict):\n            return Roster(available=False)\n",
     "new": "",
-    "target": "tests/integration/test_the_subject_is_the_deployed_graph.py::test_bridge_roster_decodes_accounts_once_and_keeps_unknown_unavailable"
+    "target": "tests/integration/test_whatsapp_roster_read.py::test_whatsapp_roster_decodes_the_bridge_response"
   },
   {
     "name": "a string is not an account alias list",
     "file": "nora/platform/bridge/client.py",
-    "old": "                    not isinstance(account, list) or not account\n",
-    "new": "                    not account\n",
-    "target": "tests/integration/test_the_subject_is_the_deployed_graph.py::test_bridge_roster_decodes_accounts_once_and_keeps_unknown_unavailable"
+    "old": "            if any(not isinstance(m, list) or not m\n",
+    "new": "            if any(not m\n",
+    "target": "tests/integration/test_whatsapp_roster_read.py::test_whatsapp_roster_decodes_the_bridge_response"
   },
   {
     "name": "aliases must be nonempty identifiers",
     "file": "nora/platform/bridge/client.py",
-    "old": "                    or any(not isinstance(alias, str) or not alias for alias in account)\n",
-    "new": "",
-    "target": "tests/integration/test_the_subject_is_the_deployed_graph.py::test_bridge_roster_decodes_accounts_once_and_keeps_unknown_unavailable"
+    "old": "                   or any(not isinstance(i, str) or not i for i in m) for m in members):\n",
+    "new": "                   for m in members):\n",
+    "target": "tests/integration/test_whatsapp_roster_read.py::test_whatsapp_roster_decodes_the_bridge_response"
   },
   {
     "name": "the shared signal fixture preserves the declared upstream timestamp",

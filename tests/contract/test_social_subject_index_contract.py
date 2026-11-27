@@ -1,7 +1,8 @@
 """One suite, every implementation of `SocialSubjectIndex`.
 
 The port has two implementations, `PersonsSubjectIndex` and
-`FakeSocialSubjectIndex`, so both are held to the same answers here (docs/code-standards.md:
+`FakeSocialSubjectIndex`, so both are held to the same answers here
+(docs/engineering/code-standards.md:
 a port never gains a second implementation without a shared contract suite).
 Every router test that drives the tier ladder through the fake is only
 evidence about production if the fake answers the way production does, and

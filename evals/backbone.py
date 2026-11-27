@@ -1185,7 +1185,7 @@ def _read_deployment(name: str) -> str:
             "own policy entry and the roster its speakers resolve through. "
             "Run this where the deployment lives, or point "
             "$NORA_DEPLOYMENT_DIR at it "
-            "(design/evaluation/subject.md)."
+            "(docs/engineering/evaluation-subject.md)."
         ) from exc
 
 
@@ -1643,7 +1643,7 @@ async def _drive_draw(case: Case, spec: Spec, *, recording: RecordedServices) ->
             "(a real room and a real instant) and is not parked. A case with "
             "no anchor cannot run — there is no room to reconstruct — and is "
             "an ERROR rather than a skip, so the report shows the work "
-            "(design/evaluation/subject.md)."
+            "(docs/engineering/evaluation-subject.md)."
         )
     unknown = set(shot) - SNAPSHOT_KEYS
     if unknown:

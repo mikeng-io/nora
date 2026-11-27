@@ -5,10 +5,10 @@
  * Node 24 daemon that connects to WhatsApp via Baileys and exposes two
  * surfaces:
  *
- *  - LEGACY (design/whatsapp-adoption/bridge.md): HTTP + SSE
+ *  - LEGACY (docs/design/platform/whatsapp.md): HTTP + SSE
  *    for the pre-streams app. Kept byte-compatible while the migration runs;
  *    it is not the correctness path.
- *  - DURABLE (design/platform-bridges, frozen nora-bridge-wire v1): every
+ *  - DURABLE (docs/design/platform/README.md, frozen nora-bridge-wire v1): every
  *    inbound transition is normalized once, fsync-journaled, dedupe-
  *    enqueued to `nq:in:whatsapp:{account_key}` and may earn a queued
  *    receipt; outbound effects go through the reserved-action API
@@ -20,10 +20,10 @@
  * unreserved effect.
  *
  * Adapted from Hermes' scripts/whatsapp-bridge/ (MIT). Deliberately NOT
- * copied: express (built-in http instead), qrcode-terminal (pairing-code
- * flow instead), long-poll /messages (SSE instead), the silent-overflow
- * messageQueue (drop-and-count instead), media custody, allowlist/mode
- * gating, polls, location, typing, read receipts.
+ * copied: express (built-in http instead), long-poll /messages (SSE
+ * instead), the silent-overflow messageQueue (drop-and-count instead),
+ * media custody, allowlist/mode gating, polls, location, typing, read
+ * receipts.
  *
  * Endpoints:
  *   GET  /health      - liveness + drop counter (always 200 while serving)
@@ -43,7 +43,7 @@
  *
  * Usage:
  *   node bridge.js --port 18081 --session /app/session
- *   node bridge.js --pair --phone 85290000100 --session /app/session
+ *   node bridge.js --pair --session /app/session
  */
 
 import http from 'node:http';
@@ -92,6 +92,7 @@ import {
   jidUserDigits,
   normalizeJid,
   redactJid,
+  renderQr,
   resolveIdentity,
   timestampMs,
 } from './bridge_helpers.js';
@@ -105,14 +106,14 @@ function getArg(name, defaultVal) {
 }
 
 const PORT = parseInt(getArg('port', process.env.NORA_BRIDGE_PORT || '18081'), 10);
-const SESSION_DIR = path.resolve(getArg('session', path.join(process.env.HOME || '~', '.nora', 'whatsapp', 'session')));
+const SESSION_DIR = path.resolve(getArg('session', process.env.NORA_BRIDGE_SESSION_DIR
+  || path.join(process.env.HOME || '~', '.nora', 'whatsapp', 'session')));
 const PAIR_MODE = args.includes('--pair');
-const PAIR_PHONE = String(getArg('phone', '')).replace(/\D/g, '');
 // Shared contract name first; the deployed NORA_BRIDGE_TOKEN stays accepted
 // until the root secret projection is renamed with lead coordination.
 const BRIDGE_TOKEN = process.env.NORA_BRIDGE_API_TOKEN || process.env.NORA_BRIDGE_TOKEN || '';
 
-// -- Durable-mode env (design/platform-bridges/02-wire-and-platforms.md) ----------------------
+// -- Durable-mode env (docs/design/platform/README.md) ----------------------
 const JOURNAL_PATH = process.env.NORA_BRIDGE_JOURNAL || '';
 const DURABLE = Boolean(JOURNAL_PATH) && !PAIR_MODE;
 const REDIS_URL = process.env.NORA_REDIS_URL || '';
@@ -129,10 +130,6 @@ const ATTACH_DIR = process.env.NORA_BRIDGE_ATTACH_DIR
 // is the deployed legacy fallback, dropped once root projections rename.
 const DATABASE_URL = process.env.DATABASE_URL || process.env.NORA_DATABASE_URL || '';
 
-if (PAIR_MODE && !PAIR_PHONE) {
-  console.error('[bridge] --pair requires --phone <digits> (international format, no +)');
-  process.exit(2);
-}
 if (!PAIR_MODE && !BRIDGE_TOKEN) {
   console.error('[bridge] NORA_BRIDGE_API_TOKEN is not set; refusing to start an unauthenticated bridge');
   process.exit(2);
@@ -263,7 +260,7 @@ const obsCtx = {
   decryptPollVote,
 };
 
-// -- SSE fan-out + buffering (design/platform-bridges/02-wire-and-platforms.md «Inbound v1») ------------------------------
+// -- SSE fan-out + buffering (docs/design/platform/README.md «Inbound v1») ------------------------------
 
 function sseWrite(res, event) {
   res.write(`data: ${JSON.stringify(event)}\n\n`);
@@ -305,7 +302,6 @@ const scheduleReconnect = createReconnectScheduler(() => startSocket(), {
   log,
 });
 
-let pairingCodeRequested = false;
 
 async function startSocket() {
   const { state, saveCreds } = await useMultiFileAuthState(SESSION_DIR);
@@ -358,24 +354,10 @@ async function startSocket() {
     const { connection, lastDisconnect, qr } = update;
 
     if (qr && PAIR_MODE) {
-      // Fallback only: the pairing-code flow is primary. The raw QR string
-      // is printed so an operator can render it elsewhere if needed.
-      log('QR string emitted by WhatsApp (fallback pairing path):');
-      console.log(qr);
-    }
-
-    if (PAIR_MODE && !pairingCodeRequested && sock && !state.creds.registered) {
-      pairingCodeRequested = true;
-      // Baileys requires the socket to be mid-handshake before this call.
-      setTimeout(async () => {
-        try {
-          const code = await sock.requestPairingCode(PAIR_PHONE);
-          log(`pairing code for +${PAIR_PHONE}: ${code}`);
-          log('on the phone: Linked Devices -> Link with phone number -> enter the code');
-        } catch (err) {
-          log(`requestPairingCode failed (${err?.message || err}); use the QR string above instead`);
-        }
-      }, 3000);
+      // WhatsApp rotates the QR about every 20 s. It carries a session secret, so the
+      // runbook runs pairing with the container log driver off.
+      log('scan on the phone: Linked Devices -> Link a device (a fresh QR replaces this one every ~20 s)');
+      console.log(renderQr(qr));
     }
 
     if (connection === 'open') {
@@ -400,7 +382,7 @@ async function startSocket() {
         // re-pair with the foreground command.
         loggedOut = true;
         paired = false;
-        log('LOGGED OUT by WhatsApp — session kept on disk; re-pair with: node bridge.js --pair --phone <digits>');
+        log('LOGGED OUT by WhatsApp — session kept on disk; re-pair with: node bridge.js --pair');
         if (PAIR_MODE) process.exit(1);
       } else {
         log(`connection closed (reason=${statusCode ?? 'unknown'}); reconnecting with backoff`);
@@ -770,7 +752,7 @@ function handleSelf(req, res) {
   const me = sock?.user || {};
   const id = normalizeJid(me.id) || null;
   const lidJid = normalizeJid(me.lid) || null;
-  // Contract (design/whatsapp-adoption/bridge.md): `phone` and
+  // Contract (docs/design/platform/whatsapp.md): `phone` and
   // `lid` are DIGIT strings — the Python adapter feeds them straight into its
   // phone_form()/lid_form() normalization. The JID spellings ride along under
   // their own names for the operator.
@@ -899,6 +881,7 @@ function healthV1() {
 const handleV1 = createV1({
   get store() { return actionStore; },
   ctx: actionCtx,
+  identityMaps: () => ({ lidToPhone, phoneToLid }),
   tracer,
   get attachments() { return attachments; },
   get sock() { return sock; },
@@ -962,12 +945,15 @@ const server = http.createServer(async (req, res) => {
 
 // -- Boot ----------------------------------------------------------------------
 
-server.listen(PORT, '0.0.0.0', () => {
-  log(`listening on 0.0.0.0:${PORT} (session: ${SESSION_DIR})`);
-  if (!paired && !PAIR_MODE) {
-    log('NOT PAIRED — no creds.json in session dir. HTTP surface is up; pair with: node bridge.js --pair --phone <digits>');
-  }
-});
+// Pairing serves no HTTP, so it never contends for the live bridge's port.
+if (!PAIR_MODE) {
+  server.listen(PORT, '0.0.0.0', () => {
+    log(`listening on 0.0.0.0:${PORT} (session: ${SESSION_DIR})`);
+    if (!paired) {
+      log('NOT PAIRED — no creds.json in session dir. HTTP surface is up; pair with: node bridge.js --pair');
+    }
+  });
+}
 
 // Durable bootstrap BEFORE upstream receive: journal probe → custody dir →
 // projection → Redis → journal replay, all ahead of the first stanza.
@@ -976,7 +962,7 @@ if (DURABLE) {
 }
 
 if (PAIR_MODE) {
-  log(`pairing mode for +${PAIR_PHONE}`);
+  log('pairing mode: scan the QR');
   startSocket().catch((err) => {
     log(`pairing failed: ${err?.message || err}`);
     process.exit(1);

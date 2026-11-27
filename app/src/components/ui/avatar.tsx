@@ -45,7 +45,7 @@ export function PersonAvatar({
 
 // Nora among other people's round avatars: her cut-out on a blush-wash
 // disc, a 2px blush ring while she is active, a blush presence dot
-// (DESIGN.md §7 "Nora in the UI"). Beside the wordmark stands the clasp
+// (docs/design/appearance/README.md §7 "Nora in the UI"). Beside the wordmark stands the clasp
 // emblem instead: NoraMark.
 export function NoraAvatar({
   size = 36,
@@ -86,7 +86,7 @@ export function NoraAvatar({
   );
 }
 
-/** The clasp emblem, the project's canonical mark (DESIGN.md §2): beside
+/** The clasp emblem, the project's canonical mark (docs/design/appearance/README.md §2): beside
  * the wordmark and anywhere the app stands for itself, never her face. */
 export function NoraMark({ size = 32, className }: { size?: number; className?: string }) {
   return (

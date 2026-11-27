@@ -6,7 +6,7 @@ description: Lands a Nora change from first edit to merged master, covering a ne
 # nora-land
 
 Worktree → impact-based validation → PR → applicable review → merge → read-back. Rules: `CONTRIBUTING.md`, `AGENTS.md`.
-`ORCHESTRATION.md` owns assignment/review policy; `nora-dispatch` owns worker
+`docs/engineering/orchestration.md` owns assignment/review policy; `nora-dispatch` owns worker
 handoffs. Workers stop at their assigned boundary; the parent owns acceptance.
 ```bash
 TYPE=<commit-type>; SLUG=<kebab-slug>; WT=<new-worktree-path>        # WT outside every checkout
@@ -141,11 +141,11 @@ gh pr view <N> --json baseRefName,headRefOid       # master, and == git rev-pars
   delta, never implied fully reviewed; a receipt refresh reruns nothing.
   A changed tree returns to impact selection, not an automatic full gate. Read it back: `gh pr view <N> --json body,headRefOid`.
 - `Closes #N` only when this PR fully resolves it; otherwise `issue #N`.
-- A fix reports its mutation result (`docs/maintainers/conventions.md` Proving a fix).
+- A fix reports its mutation result (`docs/engineering/conventions.md` Proving a fix).
 
 ## 7. Review, when the change earns one
 
-- Confirm the tier under `ORCHESTRATION.md`: none uses orchestrator read-back;
+- Confirm the tier under `docs/engineering/orchestration.md`: none uses orchestrator read-back;
   otherwise resolve an independent reviewer and have it load `nora-review`.
 - Supply original scope/non-goals, revisioned acceptance, exact base/head, diff,
   claims, evidence and prior findings. Check actual coverage, not just APPROVE.
@@ -197,7 +197,7 @@ make heads > "$LOG/heads.txt" 2>&1; grep -c '(head)' "$LOG/heads.txt"    # must 
 make decision-numbers > "$LOG/dn.txt" 2>&1; grep -vc '^==' "$LOG/dn.txt" # must print 0
 ```
 
-Then resolve ([reference.md](reference.md#resolve)): settle the artifact (merged, or `make archive BRANCH=<b> REASON="..."`), run `make gc APPLY=1` and read back its totals, update the Linear brief with the reviewer's met/unmet/unavailable marks, and add or extend a lesson in `docs/maintainers/lessons.md` when the lifecycle's resolve step calls for one.
+Then resolve ([reference.md](reference.md#resolve)): settle the artifact (merged, or `make archive BRANCH=<b> REASON="..."`), run `make gc APPLY=1` and read back its totals, update the Linear brief with the reviewer's met/unmet/unavailable marks, and add or extend a lesson in `docs/engineering/lessons.md` when the lifecycle's resolve step calls for one.
 Close only a fully satisfied outcome; GitHub defect reports keep their separate resolution. Report completed/unmet obligations and stop at the agreed boundary. Deploying: nora-deploy.
 
 Stacked delivery, scanner triage and resolve: `nora-land/reference.md`; runtime quirks: `.agents/runtimes/`.

@@ -37,6 +37,7 @@ from nora.domain.ports import (
     SendResult,
     TextStyle,
 )
+from nora.platform.signal.directory import ids_of
 
 log = logging.getLogger("nora.platform.bridge.client")
 
@@ -375,11 +376,17 @@ class BridgeMediaSource:
             return MediaBytes(available=False, reason="bridge_unreachable")
 
 
+def _member_record(m: object) -> bool:
+    """A signal-cli member record whose id fields are strings or null (hidden)."""
+    return isinstance(m, dict) and bool(ids_of(m)) and all(
+        m[k] is None or isinstance(m[k], str) for k in ("number", "uuid", "username") if k in m)
+
+
 class BridgeRoster:
-    """`RosterSource` over the bridge's `GET /v1/groups` — the bridge proxies
-    the platform's own membership list (signal-cli `listGroups`). Follows
-    `SignalRoster`'s fail-closed rule exactly: a group the bridge does not
-    list is `available=False`, never an empty roster.
+    """`RosterSource` over the bridge's `POST /v1/reads` op `roster` for one
+    group: signal-cli member records on Signal, a list of every known id form
+    per member on WhatsApp. Fail-closed: an unlisted group or a malformed member is
+    `available=False`.
     """
 
     def __init__(self, platform: str, endpoint: BridgeEndpoint) -> None:
@@ -389,27 +396,27 @@ class BridgeRoster:
     async def roster(self, *, conversation_id: str) -> Roster:
         try:
             async with aiohttp.ClientSession(headers={
-                    "Authorization": f"Bearer {self._endpoint.token}"}) as s, s.get(
-                    f"{self._endpoint.base_url}/v1/groups",
+                    "Authorization": f"Bearer {self._endpoint.token}"}) as s, s.post(
+                    f"{self._endpoint.base_url}/v1/reads",
+                    json={"op": "roster", "params": {"conversation_id": conversation_id}},
                     timeout=aiohttp.ClientTimeout(total=30)) as resp:
                 if resp.status != 200:
+                    log.warning("%s roster read returned HTTP %s", self.platform, resp.status)
                     return Roster(available=False)
-                groups = await resp.json()
-        except (TimeoutError, aiohttp.ClientError, ValueError):
+                data = await resp.json()
+        except (TimeoutError, aiohttp.ClientError, ValueError) as exc:
+            log.warning("%s roster read failed: %s", self.platform, type(exc).__name__)
             return Roster(available=False)
-        if not isinstance(groups, list):
+        if not isinstance(data, dict):
             return Roster(available=False)
-        for g in groups:
-            if not isinstance(g, dict):
+        members = data.get("members")
+        if data.get("available") is not True or not isinstance(members, list):
+            return Roster(available=False)
+        if self.platform == "whatsapp":
+            if any(not isinstance(m, list) or not m
+                   or any(not isinstance(i, str) or not i for i in m) for m in members):
                 return Roster(available=False)
-            if g.get("id") == conversation_id:
-                members = g.get("members")
-                if not isinstance(members, list) or any(
-                    not isinstance(account, list) or not account
-                    or any(not isinstance(alias, str) or not alias for alias in account)
-                    for account in members
-                ):
-                    return Roster(available=False)
-                return Roster(available=True,
-                              members=tuple(frozenset(account) for account in members))
-        return Roster(available=False)
+            return Roster(available=True, members=tuple(frozenset(m) for m in members))
+        if any(not _member_record(m) for m in members):
+            return Roster(available=False)
+        return Roster(available=True, members=tuple(ids_of(m) for m in members))

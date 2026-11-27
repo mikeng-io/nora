@@ -41,7 +41,7 @@ artifact before execute starts?* Yes is `standard`; no (a prompt, doctrine or
 quality change judged by an eval) is `goal-driven` («Goal-driven track»).
 The review panel is tier 0, the route's own review; a larger panel needs a
 named question one reviewer cannot answer (`nora-review/references/council.md`).
-Read `docs/maintainers/lessons.md` for the area before scoring. Record the
+Read `docs/engineering/lessons.md` for the area before scoring. Record the
 factors, route and track in the brief, or the PR body for light work; direct
 work records a one-line route, and factors are scored only if it is disputed.
 
@@ -159,7 +159,7 @@ A skipped gate therefore stops the work at verify or merge, at the latest.
 Resolve settles every artifact: merged, or archived with `make archive`, then
 `make gc APPLY=1` (`nora-land/reference.md` «Resolve»). When the work fixed
 something an earlier merge got wrong, or the process stalled it, the PR adds
-or extends one lesson in `docs/maintainers/lessons.md`: the rule that would
+or extends one lesson in `docs/engineering/lessons.md`: the rule that would
 have caught it, and its evidence. A process lesson also names the skill edit
 that fixes the process, made in the same PR or filed as a follow-up. A lesson
-seen on three separate days is promoted to `docs/code-standards.md`.
+seen on three separate days is promoted to `docs/engineering/code-standards.md`.

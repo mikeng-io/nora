@@ -1,4 +1,4 @@
-"""The social stream's projection into the memory index (design/cognition-loop/
+"""The social stream's projection into the memory index (docs/design/cognition/loop.md
 22 §9, the operator's rulings): one `social` node per item and one
 `social_media` node per medium, `attached_to` it, both their author's
 (`persons`, no unit, no room), and a `social_location` node for the place

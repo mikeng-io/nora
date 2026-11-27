@@ -4,9 +4,9 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_the_superseded_design_doc_is_gone():
-    # `DESIGN.md` names the visual system, so the file may exist; the v1 spec
+    # `docs/design/appearance/README.md` names the visual system, so the file may exist; the v1 spec
     # must not come back as it.
-    path = ROOT / "DESIGN.md"
+    path = ROOT / "docs/design/appearance/README.md"
     if path.exists():
         text = path.read_text()
         assert "Ambient Signal Group Agent" not in text
@@ -34,7 +34,7 @@ def test_the_readme_never_contains_a_secret_value():
 
 
 def test_the_runbook_covers_the_operator_scenarios():
-    text = (ROOT / "docs" / "runbook.md").read_text().lower()
+    text = (ROOT / "docs" / "operations" / "runbook.md").read_text().lower()
     for topic in ("nora is silent", "rollback", "doctrine", "watchdog",
                   "silent failure rate", "restore"):
         assert topic in text

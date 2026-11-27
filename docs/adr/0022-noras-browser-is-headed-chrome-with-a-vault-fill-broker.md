@@ -1,3 +1,9 @@
+---
+class: adr
+subject: Nora's browser is headed Chrome in sbx, driven in tiers, with credentials only through a vault fill broker
+owns: []
+---
+
 # 0022 · Nora's browser is headed Chrome in sbx, driven in tiers, with credentials only through a vault fill broker
 
 - **Status:** accepted (2026-10-07, operator); Decision 2 superseded in part for the target HTTP egress architecture by [0035](0035-shared-smokescreen-http-egress.md), implementation pending.

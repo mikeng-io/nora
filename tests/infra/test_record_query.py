@@ -418,7 +418,8 @@ async def test_an_unreadable_time_is_unavailable_and_never_a_silent_read(
 
 
 async def test_the_trigram_index_can_serve_both_operators(engine, said):
-    """The cost side (docs/code-standards.md: an instrument measures the result, something
+    """The cost side (docs/engineering/code-standards.md: an instrument measures the result,
+    something
     must measure the cost): with a sequential scan priced out, the planner
     reaches `idx_messages_body_trgm` for the substring and the word-similarity
     operator alike. On a small table it may still choose a scan, which is

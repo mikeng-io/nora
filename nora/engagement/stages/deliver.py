@@ -97,7 +97,7 @@ def build(
     `nora.app.fire.FirePath`. **No default**, at either level: a defaulted
     `"tag"` would let the fire path be wired without it and report its failures
     as conversation failures, inside the very budget A8 filters to
-    `audience="tag"` (`docs/runbook.md`). That is invisible; a missing keyword
+    `audience="tag"` (`docs/operations/runbook.md`). That is invisible; a missing keyword
     is a `TypeError`.
 
     **`composer` has no default here either, and `None` is a legal value** —
@@ -270,7 +270,7 @@ def check_outcome(
     timeout, its own §8.1 outcome mapping), but the participation occasion
     threads "participation" through here, and a
     defaulted "tag" would land its failures inside the very budget A8 filters
-    to `audience="tag"` (`docs/runbook.md`).
+    to `audience="tag"` (`docs/operations/runbook.md`).
     """
     # THE STRICT-SILENCE BOUNDARY. "She chose not to speak" (R-4/R-5: an empty
     # reply, the participation cooldown holding it, or a model that never

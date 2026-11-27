@@ -44,7 +44,7 @@ def commit(repo, path, subject):
 @pytest.mark.parametrize(
     "path,subject,expected",
     [
-        ("design/new-capability.md", "feat: propose a capability", False),
+        ("docs/design/new-capability.md", "feat: propose a capability", False),
         ("docs/setup.md", "fix: clarify setup", False),
         ("README.md", "feat: decorate README", False),
         ("tests/test_new.py", "fix: improve test", False),
@@ -75,7 +75,7 @@ def test_later_docs_do_not_release_after_the_previous_range_is_published(repo):
     commit(repo, "docs/feature.md", "docs: describe the feature")
     assert scope.eligible("v1.0.0")
     run("tag", "v1.1.0")
-    commit(repo, "design/future.md", "feat: describe future work")
+    commit(repo, "docs/design/future.md", "feat: describe future work")
     assert not scope.eligible("v1.1.0")
 
 

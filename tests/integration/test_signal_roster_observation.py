@@ -6,7 +6,7 @@ import pytest
 
 from nora.app.composition_onboarding import _signal_bridge_fetch
 from nora.domain.identity import Identifier
-from nora.platform.bridge.client import BridgeEndpoint
+from nora.platform.bridge.client import BridgeEndpoint, BridgeRoster
 from nora.platform.signal.discovery import SignalDiscovery
 from nora.testing.signal_daemon import FakeSignalDaemon
 from tests.integration.test_signal_bridge_routes import (
@@ -73,3 +73,21 @@ async def test_roster_route_produces_and_discovery_preserves_source_time(roster_
     failed = await SignalDiscovery(fetch=fetch, own_account=OWN).members(collection=ROOM)
     assert not failed.available and not failed.members
     assert daemon.rpc_calls == ["listGroups", "listGroups", "listGroups"]
+
+
+async def test_bridge_roster_reads_the_real_bridge_route(roster_bridge):
+    client, daemon = roster_bridge
+    endpoint = BridgeEndpoint(base_url=str(client.make_url("")).rstrip("/"),
+                              token=AUTH["Authorization"].removeprefix("Bearer "))
+    roster = BridgeRoster("signal", endpoint)
+    known = await roster.roster(conversation_id=ROOM)
+    assert known.available
+    assert known.members == (frozenset({PHONE, ACI}),)
+    assert not (await roster.roster(conversation_id="absent")).available
+    daemon.groups = [{"id": ROOM, "members": [{"number": None, "uuid": ACI}]}]
+    assert (await roster.roster(conversation_id=ROOM)).members == (frozenset({ACI}),)
+    for bad in ({"number": True}, {"uuid": ACI, "number": False}, {"uuid": ACI, "number": []}):
+        daemon.groups = [{"id": ROOM, "members": [bad]}]
+        assert not (await roster.roster(conversation_id=ROOM)).available
+    daemon.rpc_errors.add("listGroups")
+    assert not (await roster.roster(conversation_id=ROOM)).available

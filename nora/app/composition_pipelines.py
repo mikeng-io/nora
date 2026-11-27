@@ -91,7 +91,7 @@ def build_shared(
         subagents=subagents_context,
         # The typed source events of the transcript window and the room's
         # folded object heads for the standing slot: the ONE store the bridge
-        # writes (design/platform-observations/observations.md).
+        # writes (docs/design/platform/observations.md).
         observations=observation_store,
     )
 
@@ -167,7 +167,7 @@ async def standing(
             working_set_max_chars=cfg.standing.working_set_max_chars,
             content_checks=content_checks,
         )
-    # The Cognition session's completion hook (design/notebook-memory-types/ 20-standing.md
+    # The Cognition session's completion hook (docs/design/cognition/graph.md 20-standing.md
     # §3): the tools-less Standing fold, run once per room the finished session
     # actually bound. The tag path's own per-turn fold went through graph
     # admission with the debrief (NOR-36); this is the session's copy.

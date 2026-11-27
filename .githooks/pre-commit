@@ -25,4 +25,9 @@ if [ ! -f "$SCANNER" ]; then
   echo "  are you on a branch without it? (see .githooks/README.md)" >&2
   exit 1
 fi
+# Changed documents follow docs/engineering/documents.md. The checker needs the
+# project environment; without uv, CI checks the same files on the PR.
+if command -v uv >/dev/null 2>&1 && [ -f "$TOPLEVEL/scripts/check_documents.py" ]; then
+  (cd "$TOPLEVEL" && uv run --quiet python -m scripts.check_documents --staged) || exit 1
+fi
 exec python3 -I -S "$SCANNER" staged

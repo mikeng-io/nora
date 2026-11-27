@@ -60,7 +60,8 @@ def resolve_clockless_transition(
 ) -> tuple[str | None, None]:
     """The ledger answer for a clockless observation that carries NO upstream
     revision — frame lost, buffer overflow, or a delayed callback after a
-    restart (design/platform-bridges/02-wire-and-platforms.md: "a reconnect replay without a source
+    restart (docs/design/platform/README.md: "a reconnect replay without a
+    source
     revision that can distinguish an old transition from a new one is
     ambiguous, retained for diagnosis without fabricating a new
     transition").
@@ -307,7 +308,7 @@ class JournalPublisher:
                 try:
                     # A journaled envelope's publication is a NEW bounded
                     # root — never ambient — LINKED to the producer context
-                    # the envelope froze at capture (design/platform-bridges/04-operations.md).
+                    # the envelope froze at capture (docs/design/platform/README.md).
                     with bt.producer_span(
                         env.platform,
                         links=bt.carrier_links(env.trace),
@@ -394,7 +395,7 @@ class JournalCaptureSink:
         """A clockless event whose identity could NOT be established is
         retained as diagnostic evidence in the same journal — never
         guessed an identity, never silently dropped —
-        design/platform-bridges/00-contract.md: "the bridge
+        docs/design/platform/README.md: "the bridge
         either identifies it durably or retains it as ambiguous evidence").
         """
         self._journal.append({"ambiguous": record})
@@ -506,7 +507,7 @@ class DurableActionService:
             return ActionReply(
                 "conflict", kind="id_reused", message="action id spent")
         # The outbound effect is its own bounded root — never a child of an
-        # ambient span (design/platform-bridges/04-operations.md): it links to the producer
+        # ambient span (docs/design/platform/README.md): it links to the producer
         # context only when the caller carries one (the receipt lane).
         with bt.operation_span("deliver", platform=self._platform,
                                links=list(links or []),

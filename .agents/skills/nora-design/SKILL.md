@@ -1,6 +1,6 @@
 ---
 name: nora-design
-description: Writes and edits Nora's design bundles (design/<topic>/), the anchor the code is built from, with design/cognition/ as the architecture every bundle uses. Decides whether a change is architecture (design first) or code (straight to code), keeps a bundle at design altitude, and edits it in place. Load before any design/ edit, any architecture change, or when a bundle and the code disagree.
+description: Writes and edits Nora's design bundles (docs/design/<topic>/), the anchor the code is built from, with docs/design/cognition/ as every bundle's architecture. Decides whether a change is architecture (design first) or code (straight to code), keeps a bundle at design altitude, and edits it in place. Load before any docs/design/ edit, any architecture change, or when a bundle and the code disagree.
 ---
 
 # nora-design
@@ -13,9 +13,17 @@ progress. `nora-work` owns continuation after design within the authorized task.
 ## 1. Is this an architecture change?
 
 First compare the relevant bundle promises with current entry points, wiring
-and existing evidence. Include connected bundles sharing the changed invariant;
-do not census every design. Use `nora-review`'s acceptance-audit mode if an
+and existing evidence. Use `nora-review`'s acceptance-audit mode if an
 independent comparison is required. A missing proof is not missing code.
+
+**`docs/design/` is one design, not a shelf of bundles.** A subject is owned by
+exactly one file in the whole tree: before writing, `git grep -n '<subject
+words>' -- docs/design` and read every hit, not only the bundle you came for. Two
+files describing one subject is the defect, whichever is newer — resolve it by
+deleting the one that is not the owner, never by editing both. A bundle whose
+subject the anchor now owns is abandoned design: **delete it** (§4.3), because a
+bundle left in the tree will be read and derived from, and a reader cannot tell
+which of two present-tense descriptions is live.
 
 Ask: **would a reader of the bundle see a difference?** It is architecture when
 the change alters
@@ -29,7 +37,7 @@ Then the bundle changes in the same PR, before or with the code.
 
 It is a code change when only *how* a part does its job moves: a hotfix, a
 refactor, a threshold, prompt or doctrine wording, an eval case, a performance
-fix. The design does not move; do not touch `design/`.
+fix. The design does not move; do not touch `docs/design/`.
 
 Check: the PR's «Architecture» section names each bundle changed with its
 trigger, the behaviour before and after, and the test or read-back that shows
@@ -63,7 +71,7 @@ A rule forced into a table loses its "because"; a set written as prose hides
 its gaps. Each term is defined once, in the file that owns it, and every other
 file links to it.
 
-**The architecture anchor.** [`design/cognition/`](../../../design/cognition/README.md)
+**The architecture anchor.** [`docs/design/cognition/`](../../../docs/design/cognition/README.md)
 defines how Nora works: one Cognitive Graph (basis, scope, five kinds) worked
 by engagement and reflection loops sharing OODAS stages, passes and executors.
 Every bundle uses its vocabulary. A bundle that adds its own classifying axis, store, loop
@@ -73,7 +81,7 @@ every capability, or express the capability in its kinds and stages.
 ## 3. Shape
 
 ```
-design/<topic>/
+docs/design/<topic>/
   README.md        overview: purpose, the parts, relevant work/roadmap links
   <subject>.md     one file per design subject, named for what it describes
 ```
@@ -92,11 +100,11 @@ design/<topic>/
 
 ## 4. Editing
 
-1. **Find the owner.** `git grep -n -i '<subject words>' -- design` and read the
+1. **Find the owner.** `git grep -n -i '<subject words>' -- docs/design` and read the
    bundle's `README.md`. Check: one file owns the subject, or none does.
 2. **Revise the owner in place**: update or consolidate it so it reads as if it
    had always said the new thing. Delete what the change makes untrue. Add a
-   section or file only for a subject nothing covers. Check: `git diff --stat -- design` shows edits and deletions,
+   section or file only for a subject nothing covers. Check: `git diff --stat -- docs/design` shows edits and deletions,
    not only additions; a purely additive diff needs a new subject to justify it.
 3. **Abandoned design is deleted**, not marked. The commit says what replaced it.
 4. **Move non-design content out** as you meet it: execution work to

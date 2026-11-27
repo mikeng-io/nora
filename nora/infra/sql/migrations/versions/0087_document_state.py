@@ -1,5 +1,5 @@
 """document_state — a document's lifecycle: archived, deleted, restored (ADR 0020,
-design/artifact/README.md).
+docs/design/documents/README.md).
 
 One APPEND-ONLY table. Each row is one change of state (`active`, `archived`,
 `deleted`) for one document, with who asked (`set_by`) and when (`recorded_at`).

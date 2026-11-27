@@ -1,4 +1,4 @@
-"""The pending read's COST, not its answer (docs/code-standards.md: «Instruments measure
+"""The pending read's COST, not its answer (docs/engineering/code-standards.md: «Instruments measure
 the RESULT; something must measure the COST»).
 
 `stimulus` is append-only and grows with every item of every room forever, so

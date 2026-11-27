@@ -1,3 +1,9 @@
+---
+class: adr
+subject: A tagged place outranks an auto-identified one
+owns: []
+---
+
 # 0014 — A tagged place outranks an auto-identified one
 
 - **Status:** accepted — built 2026-09-27 (design/cognition-loop/observation.md)

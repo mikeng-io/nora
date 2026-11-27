@@ -12,7 +12,7 @@ import type { Render } from "./types";
 type Seat = Render<"Seating">["props"]["tables"][number]["seats"][number];
 type Key = SeatStatus | "none";
 
-// A reply is never colour alone (DESIGN.md §3): each has an icon and a spoken word.
+// A reply is never colour alone (docs/design/appearance/README.md §3): each has an icon and a spoken word.
 const ICON: Record<Key, LucideIcon> = { confirmed: Check, pending: Clock, declined: X, none: CircleDashed };
 const ICON_TONE: Record<Key, string> = {
   confirmed: "text-success",

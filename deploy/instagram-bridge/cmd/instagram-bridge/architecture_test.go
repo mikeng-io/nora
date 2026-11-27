@@ -1,6 +1,6 @@
 package main
 
-// The dependency rule, as a test (design/instagram-adoption/bridge.md, the
+// The dependency rule, as a test (docs/design/platform/instagram.md, the
 // "must not import" column). `go list -deps` gives each layer's TRANSITIVE
 // production imports, so a forbidden package reached through a helper counts
 // the same as one imported directly. Test-only imports are not production

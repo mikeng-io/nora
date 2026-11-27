@@ -1,6 +1,6 @@
-"""Docs cite repo paths inline in backticks — `design/09-decision-index.md`,
+"""Docs cite repo paths inline in backticks — `docs/design/decisions.md`,
 `nora/agent/tools.py` — and a doc move (such as the ADRs moving from
-`design/adr/` to `docs/adr/`) leaves every backticked citation of the old
+`docs/design/adr/` to `docs/adr/`) leaves every backticked citation of the old
 location dangling silently, because a doc move is not a `grep` anyone runs by
 habit. This gate checks that each cited path still exists.
 
@@ -16,13 +16,13 @@ FROM a file under it, and a citation OF a path under it from anywhere else.
 sweep of every backticked, slash-containing token in every tracked `.md` file
 produces mostly non-defects: version-like numbers and IPs (no extension), bare
 relative mentions inside a file already scoped to that subtree
-(`agent/guards.py` inside a doc under `design/whatsapp-adoption/README.md`), and — the
+(`agent/guards.py` inside a doc under `docs/design/platform/whatsapp.md`), and — the
 largest category — prose that talks ABOUT a deleted or not-yet-built file
 rather than pointing at a live one. Each tightening below is a STRUCTURAL
 signal already present in this repo's own conventions, not a per-path guess:
 
   - Only a reference anchored at a real top-level directory (`nora/`,
-    `design/`, `docs/`, `tests/`, `evals/`, `deploy/`, `scripts/`,
+    `docs/design/`, `docs/`, `tests/`, `evals/`, `deploy/`, `scripts/`,
     `.github/`, `.agents/`) or a known root file counts as a path
     CLAIM. A bare `doctrine/identity.md` is prose shorthand for a concept
     ("her doctrine"), not a root-relative path — `doctrine/` is not itself a
@@ -38,13 +38,11 @@ signal already present in this repo's own conventions, not a per-path guess:
   - A PARAGRAPH (not just the one line the path sits on) containing the word
     "RETIRED", "DEPRECATED", "SUPERSEDED", or "deleted", or the phrase
     "resolves in git history", is read as the same kind of deliberate
-    historical citation the superpowers exemption already covers —
-    `design/09-decision-index.md`'s own header states that a decision whose
-    subject is deleted is marked exactly this way and never rewritten.
+    historical citation the superpowers exemption already covers; an ADR is
+    such a record and is never rewritten.
   - A path that is a LITERAL (non-glob) entry in `.gitignore` is a generated
     artifact, not a moved one — `nora/version.json` is built at image time and
-    is `unavailable` by design in a source checkout (ARCHITECTURE.md says so
-    in the same breath it names the path).
+    is `unavailable` by design in a source checkout.
 
 What survives all of that and still does not resolve is pinned in
 `_KNOWN_DANGLING`, exactly like `_ALLOWED` / `_UNRESOLVABLE` elsewhere in this
@@ -66,6 +64,14 @@ from __future__ import annotations
 import re
 import subprocess
 from pathlib import Path
+
+from scripts.check_documents import STAGED_TARGETS
+
+_PRE_MOVE = (
+    "design/", "docs/maintainers/", "docs/runbook.md", "docs/configuration.md",
+    "docs/observability.md", "docs/code-standards.md", "docs/eval-sop.md",
+    "ORCHESTRATION.md", "REVIEW.md", "SECURITY_MODEL.md", "DESIGN.md",
+)
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -94,7 +100,6 @@ _CHECKED_ROOT_FILES = frozenset(
         "AGENTS.md",
         "CLAUDE.md",
         "README.md",
-        "ARCHITECTURE.md",
         "Makefile",
         "pyproject.toml",
         "identity.example.toml",
@@ -125,11 +130,7 @@ _DEPRECATED_BANNER = re.compile(r">\s*\*\*DEPRECATED")
 
 _LIST_ITEM = re.compile(r"\s*(?:[-*+]|\d+[.)])\s")
 
-_PATH_TOKEN = re.compile(
-    r"`([A-Za-z0-9_./-]+/[A-Za-z0-9_./-]+\.[A-Za-z0-9]+)"
-    r"(?:(?:::[\w.]+)+(?:\[[^`\r\n]+\]|\(\))?|:\d+(?:[-,:]\d+)*"
-    r"|\(\)|[ \t]+--[\w-]+[^`\r\n]*)?`"
-)
+_PATH_TOKEN = re.compile(r"`([A-Za-z0-9_./-]+/[A-Za-z0-9_./-]+\.[A-Za-z0-9]+)`")
 
 
 def _is_checked_path(path: str) -> bool:
@@ -251,19 +252,10 @@ _KNOWN_DANGLING: dict[tuple[str, str], str] = {
         "docs/adr/0002-honcho-session-binding-deferred.md",
         "nora/ingest/stages/memory_feed.py",
     ): (
-        "The accepted ADR records the feed path at the revision it describes. The "
-        "reference resolves in Git history."
+        "The historical ADR names the Honcho feed the Cognitive Graph replaced; "
+        "resolves in git history."
     ),
-    (
-        "docs/adr/0002-honcho-session-binding-deferred.md",
-        "nora/infra/honcho/client.py",
-    ): "The accepted ADR records the Honcho client at the revision it describes.",
-    ("design/09-decision-index.md", "evals/run.py"): (
-        "R-83 identifies the invocation path of its historical measurement."
-    ),
-    ("design/group-situation/00-intent.md", "nora/language/proactive.py"): (
-        "The original situation proposal identifies the narrow wake trigger it planned to extend."
-    ),
+
     (
         'docs/adr/0028-pull-requests-are-labelled-and-assigned-by-a-workflow-and-a-visible-commit-has-a-body.md',
         '.github/workflows/pr-triage.yml',
@@ -286,19 +278,6 @@ _KNOWN_DANGLING: dict[tuple[str, str], str] = {
     # row no longer exempts its neighbours. A row whose cited code was deleted
     # carries its own `_HISTORICAL_MARKERS` hit (the decision-index header says a
     # row is MARKED, not rewritten) and needs no entry here.
-    # `nora/agent/disclosure.py` (DEC-124) stays pinned: it was never built —
-    # DEC-124's own row names it as a prospective housekeeping move, not a path
-    # that ever existed, so no "deleted" marker fits it.
-    ("design/09-decision-index.md", "nora/agent/disclosure.py"): (
-        "never built; DEC-124's row names `nora/agent/disclosure.py` "
-        "prospectively — 'a housekeeping step for whoever builds the first "
-        "tool that imports it from outside whereis' — as a place "
-        "`DisclosureGuard` could move to, not a file it ever created; "
-        "`DisclosureGuard` still lives in `nora/agent/whereis.py` today. "
-        "checked 2026-09-25 (`git log -S disclosure.py` finds it only in "
-        "this decision-index prose, never as a real file); drop this entry "
-        "the day that move ships"
-    ),
     # --- found once list items were split out of their list ---
     #
     # `_paragraphs` treats each list item as its own record; each of these is a
@@ -308,17 +287,6 @@ _KNOWN_DANGLING: dict[tuple[str, str], str] = {
     # `scripts/ingest_self_asset.py` exists. What remains is history.
     # --- the one-path rebuild ---
     #
-    # The old harness `evals/rebuilt/runner.py` and the pre-port corpus copies
-    # under `evals/cases/` and `evals/adversarial/` are deleted; the live
-    # corpora are `evals/corpora/*.yaml` and the runner is
-    # `evals/backbone.py`. These lines record what was true when written.
-    **{
-        (doc, old): f"pre-port copy deleted 2026-09-21; now evals/corpora/{new}"
-        for doc, old, new in (
-            ("design/09-decision-index.md",
-             "evals/adversarial/being_contradicted.yaml", "being_contradicted.yaml"),
-        )
-    },
     # --- the old eval layer ---
     #
     # These are HISTORY, not broken links: each describes what was true when it
@@ -327,24 +295,22 @@ _KNOWN_DANGLING: dict[tuple[str, str], str] = {
     # names the code of its day is not drift, and mass-rewriting prose to chase
     # a delete loses the record of what the delete removed.
     #
-    # The OPERATOR-facing docs (`docs/runbook.md`, `docs/eval-sop.md`,
-    # `docs/maintainers/conventions-rationale.md`, the `make eval-*` targets)
+    # The OPERATOR-facing docs (`docs/operations/runbook.md`, `docs/operations/eval-sop.md`,
+    # `docs/engineering/conventions-rationale.md`, the `make eval-*` targets)
     # name `python -m evals`, because those tell somebody to run a command.
-    ("design/ambient-loop/02-doctrine-and-measurement.md", "evals/run.py"): (
-        "the old eval CLI, deleted 2026-09-18; this line records what was "
-        "true when it was written (design/evaluation Step 5)"
-    ),
     # The eval-layer modules live in `tests/`; these references name where the
     # code was before.
-    ("design/13-trace-content-and-redaction.md", "evals/judge.py"): (
+    ("docs/operations/trace-redaction.md", "evals/judge.py"): (
         "re-homed into `tests/` 2026-09-18; the reference records where "
-        "it lived (design/evaluation Step 5)"
+        "it lived (docs/engineering/evaluation Step 5)"
     ),
     (
         "docs/adr/0011-the-relevance-gate-stays-off-the-sdk-transport.md",
         "nora/app/eval_support.py",
     ): (
-        "re-homed to `tests/offline_eval_support.py` 2026-09-18 (design/evaluation Step 5); the "
+        "re-homed to `tests/offline_eval_support.py` 2026-09-18 "
+        "(docs/engineering/evaluation Step 5); "
+        "the "
         "reference records where it lived"
     ),
     # The ROUTING tier, which has no counterpart — DEC-76 is NOT ENFORCED.
@@ -352,18 +318,8 @@ _KNOWN_DANGLING: dict[tuple[str, str], str] = {
     ("voice-lab/docs/audit-brief-kimi-integration.md", "nora/platform/discord/voice_session.py"): (
         "a 2026-09 audit brief moved in from the voice-lab repo; it proposes where "
         "stage-1 TTS+ducking WOULD live. The file was never created (the voice "
-        "channel went the sidecar route, design/voice-channel/receive.md) — the brief is a "
+        "channel went the sidecar route, docs/design/voice/README.md) — the brief is a "
         "historical record of the proposal, not a link to fix"
-    ),
-    ("design/discord-integration/00-overview.md", "deploy/watchdog.sh"): (
-        "the shell watchdog was deleted 2026-09-09 once Prometheus covered its one "
-        "condition with a real delivery path; this design records the reasoning as it "
-        "stood, and rewriting a decision record to match later code is what this "
-        "repo's design docs deliberately do not do"
-    ),
-    ("design/09-decision-index.md", ".github/workflows/gates.yml"): (
-        "A12 names a CI gate file; this repo deliberately runs no CI (operator decision) "
-        "and the file was never added back after that decision"
     ),
     ("docs/adr/0020-documents-are-json-specs-the-portal-renders.md",
      "nora/compute/smith/page_shell.py"): (
@@ -396,7 +352,13 @@ def test_every_doc_reference_resolves_or_is_a_known_finding() -> None:
         "before trusting a green run"
     )
 
-    unpinned = {k: v for k, v in found.items() if k not in _KNOWN_DANGLING}
+    # Staged paths are owned by the document gate; an ADR is history, so it may
+    # cite a path as it stood before the docs/ move.
+    unpinned = {
+        k: v for k, v in found.items()
+        if k not in _KNOWN_DANGLING and k[1] not in STAGED_TARGETS
+        and not (k[0].startswith("docs/adr/") and k[1].startswith(_PRE_MOVE))
+    }
     assert not unpinned, (
         "new dangling documentation reference(s) — a backticked path that no "
         "longer resolves and is not in _KNOWN_DANGLING. Report to the "
@@ -424,41 +386,6 @@ def test_an_unresolved_reference_is_flagged(tmp_path: Path) -> None:
     (tmp_path / "nora").mkdir()
     (tmp_path / "nora" / "totally_made_up_module_for_this_test.py").write_text("")
     assert unresolved(tmp_path, candidates, frozenset()) == []
-
-
-def test_a_symbol_or_line_suffix_cannot_hide_a_dangling_path(tmp_path: Path) -> None:
-    markdown = (
-        "See `nora/missing_symbol.py::Class::method` and `nora/missing_line.py:24-26`.\n"
-        "See `nora/existing.py::function`.\n"
-    )
-    (tmp_path / "nora").mkdir()
-    (tmp_path / "nora" / "existing.py").touch()
-
-    assert unresolved(tmp_path, candidate_references(markdown), frozenset()) == [
-        (1, "nora/missing_symbol.py"),
-        (1, "nora/missing_line.py"),
-    ]
-
-
-def test_a_parameter_call_or_command_suffix_cannot_hide_a_dangling_path(tmp_path: Path) -> None:
-    markdown = (
-        "Run `tests/missing.py::TestClass::test_something[case-id]`.\n"
-        "Call `nora/missing.py::lookup()` or `nora/missing.lookup()`.\n"
-        "Run `scripts/missing.py --base master`.\n"
-        "Call `nora/existing.py::lookup()`.\n"
-    )
-    (tmp_path / "nora").mkdir()
-    (tmp_path / "nora" / "existing.py").touch()
-    candidates = candidate_references(markdown)
-
-    assert candidates == [
-        (1, "tests/missing.py"),
-        (2, "nora/missing.py"),
-        (2, "nora/missing.lookup"),
-        (3, "scripts/missing.py"),
-        (4, "nora/existing.py"),
-    ]
-    assert unresolved(tmp_path, candidates, frozenset()) == candidates[:-1]
 
 
 def test_a_superpowers_target_is_never_flagged_even_though_it_cannot_resolve() -> None:

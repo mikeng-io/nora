@@ -177,7 +177,7 @@ class IsolatedServices:
                 cfg.bridges.redis_url_env: self.redis_url,
                 cfg.computer.scoped.redis_url_env: self.redis_url,
                 # Bridge mode refuses to start without the shared bearer
-                # (design/platform-bridges/platform-liveness.md «Startup»);
+                # (docs/design/platform/README.md «Startup»);
                 # the case-owned bridges are local, so a generated one serves.
                 cfg.bridges.token_env: cfg.credentials.get(cfg.bridges.token_env)
                 or uuid.uuid4().hex,

@@ -74,7 +74,7 @@ class SignalContact:
     name: str = ""
 
 
-def _ids_of(entry: dict[str, Any]) -> frozenset[str]:
+def ids_of(entry: dict[str, Any]) -> frozenset[str]:
     """Every non-empty id form on one contact or group-member record."""
     return frozenset(
         str(entry[key])
@@ -166,7 +166,7 @@ async def list_groups(
             members=tuple(
                 ids
                 for m in (g.get("members") or [])
-                if isinstance(m, dict) and (ids := _ids_of(m))
+                if isinstance(m, dict) and (ids := ids_of(m))
             ),
         )
         for g in await _rpc(base_url=base_url, method="listGroups",
@@ -182,7 +182,7 @@ async def group_members(
     timeout: float = 10.0,  # noqa: ASYNC109 -- caller budget, matching send.py
 ) -> dict[str, tuple[dict[str, Any], ...]]:
     """`listGroups` reduced to `{group id: raw member rows}` — the
-    per-member dicts BEFORE `_ids_of` flattens them, for a caller that must
+    per-member dicts BEFORE `ids_of` flattens them, for a caller that must
     type `number`/`uuid` into identifier kinds. The daemon's own field
     names are the only honest proof of which string is which; an
     unflattened row keeps the `number`+`uuid` pairing one member carries.
@@ -212,5 +212,5 @@ async def list_contacts(
         SignalContact(ids=ids, name=_display_name(c))
         for c in await _rpc(base_url=base_url, method="listContacts",
                             account=account, timeout=timeout)
-        if (ids := _ids_of(c))
+        if (ids := ids_of(c))
     ]
