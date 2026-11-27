@@ -252,9 +252,6 @@ _MAY_DIFFER = {
     # (the code default, `TriggerConfig.enabled = True`); this deployment has opted OUT.
     # `@mention` and reply-to-her still engage her either way.
     "engagement.trigger.enabled",
-    # The Dreamer runtime, live here and INERT in the template for the same reason as its
-    # neighbours above: it spends model calls on a background clock. A copied file must
-    # not do that without somebody deciding to.
     # RustFS media custody (DEC-136) and the Discord music bot, both live here for the
     # same reason as their neighbours above -- opted in by the operator, INERT in the
     # template until someone decides to.

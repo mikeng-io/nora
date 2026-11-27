@@ -348,7 +348,7 @@
  },
  "nora/app/cli.py": {
   "comment_blocks": 9,
-  "file_lines": 1055,
+  "file_lines": 1058,
   "functions": {
    "add_subcommands": 241
   },
@@ -2371,7 +2371,7 @@
  },
  "tests/test_acceptance_rules.py": {
   "comment_blocks": 33,
-  "file_lines": 920,
+  "file_lines": 927,
   "internal_docstrings": 1
  },
  "tests/test_affected_tests.py": {
