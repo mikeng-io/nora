@@ -11,8 +11,9 @@ same bar as the lane it replaces.
 | role | lane | fallback, in order |
 |---|---|---|
 | orchestrator | Claude Opus 5.5 (Claude Code), effort medium | Claude Sonnet 5.5 high |
-| builder | Claude Sonnet 5.5 high; small edits stay with the orchestrator | Devin SWE-2 (`acpRegistry_devin`, `swe-2-high`); GPT-6.2 Sol xhigh (`codex`) |
-| reviewer | Devin SWE-2 (`acpRegistry_devin`, `swe-2-high`) | GPT-6.2 Sol high (`codex`); Kimi K3.1 Pro (`kimi-code/k3.1-pro`) |
+| builder | GPT-6.2 Sol high (`codex`); small edits stay with the orchestrator | Devin SWE-2 (`acpRegistry_devin`, `swe-2-high`); Claude Sonnet 5.5 high |
+| reviewer of a change | Claude Sonnet 5.5 high | Devin SWE-2 (`acpRegistry_devin`, `swe-2-high`); Kimi K3.1 Pro (`kimi-code/k3.1-pro`) |
+| reviewer of a brief and plan | Devin SWE-2 (`acpRegistry_devin`, `swe-2-high`) | Kimi K3.1 Pro (`kimi-code/k3.1-pro`) |
 | adversarial review of a prompt or doctrine | DeepSeek V4.1 Flash (Nora's production model) | — |
 
 - A fallback replaces a lane that is out of quota, errors twice, or returns no
