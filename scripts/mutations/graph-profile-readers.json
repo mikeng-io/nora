@@ -68,5 +68,12 @@
     "old": "CLAIM.c.state.in_((\"live\", \"awaiting_weighing\")),",
     "new": "CLAIM.c.state.in_((\"live\", \"awaiting_weighing\", \"superseded\")),",
     "target": "tests/infra/test_retrieval_scope.py::test_profile_snapshot_keeps_visible_graph_heads_in_the_requested_room"
+  },
+  {
+    "name": "portal claims withhold a claim that excludes its viewer",
+    "file": "nora/memory/adapters/subject_claims.py",
+    "old": "                viewer != sa.all_(CLAIM.c.excluded_identities),\n",
+    "new": "",
+    "target": "tests/infra/test_retrieval_scope.py::test_portal_subject_page_withholds_a_claim_that_excludes_its_viewer"
   }
 ]

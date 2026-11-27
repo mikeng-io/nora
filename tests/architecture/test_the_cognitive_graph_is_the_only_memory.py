@@ -1,6 +1,5 @@
 """The Cognitive Graph is the only memory: the retired backend, Honcho, is named
-nowhere in the code, the compose file or the two config templates outside the
-one-release config compatibility shim.
+nowhere in the code, the compose file or the two config templates.
 
 The test runs the project's locked command itself, against the working tree,
 so the gate and its test cannot drift apart:
