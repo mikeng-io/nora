@@ -1414,7 +1414,7 @@ approval; this section does not authorize host actions.
 The browser runtime behind the X and LinkedIn tools (DEC-201) is four pieces on the
 host, all systemd **user** services or user installs — none of them is the
 Nora container, and Nora runs fine with all of them down (the tool answers
-`unavailable`). See [Architecture — State and trust boundaries](../../ARCHITECTURE.md#state-and-trust-boundaries).
+`unavailable`). See [Configuration](configuration.md) and [the content-filter decision](../adr/0030-content-filters-are-disabled-by-default-and-reversible.md).
 
 The Tailscale address, the OpenCLI profile alias and the host user in the unit
 names below are placeholders; the real ones are on the deploy host

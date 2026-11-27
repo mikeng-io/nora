@@ -1,3 +1,9 @@
+---
+class: adr
+subject: Pull requests are labelled and assigned by a workflow, and a visible commit has a body
+owns: []
+---
+
 # 0028 · Pull requests are labelled and assigned by a workflow, and a visible commit has a body
 
 - **Status:** proposed (2026-10-22), on operator direction: PRs had no labels and no

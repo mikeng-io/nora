@@ -1,3 +1,9 @@
+---
+class: adr
+subject: Every release is a patch; minor and major are owner milestones; the deploy checks the host
+owns: []
+---
+
 # 0040 · Every release is a patch; minor and major are owner milestones; the deploy checks the host
 
 - **Status:** accepted (operator, 2026-11-22)

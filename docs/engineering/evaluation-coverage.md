@@ -1,8 +1,7 @@
 ---
-class: design
+class: engineering
 subject: what the evaluation suite covers and what it does not
 owns: []
-area: evaluation
 ---
 
 # Scenario coverage
@@ -25,7 +24,7 @@ A successful write alone establishes none of the later steps. A quiet outcome
 can establish restraint but does not by itself establish useful memory.
 Later recall, action and restraint are measured on the produced turn's
 observable outcome; which store carried the retained state is provenance,
-never the claim. [Cognition journeys](cognition-loop.md) defines the
+never the claim. [Cognition journeys](evaluation-cognition-loop.md) defines the
 cross-wake relationship and the versioned case formats that measure it.
 
 ## Execution modes and their claims
@@ -88,7 +87,7 @@ hypotheticals, but not invented real-world presence. Source-grounded contrasts
 cover attribution versus eyewitness claims, contextual roles versus invented
 authority, unknown versus supported identity, and public provenance versus
 private internals. Their product rule belongs to
-[doctrine](../cognition/learning.md); evaluation measures it without creating
+[doctrine](../design/cognition/learning.md); evaluation measures it without creating
 a new version of that rule.
 
 Comparisons use the same anchors and measurement contract. Repeated draws

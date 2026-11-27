@@ -37,7 +37,6 @@ NON_RUNTIME_FILES = frozenset(
         "AGENTS.md",
         "CLAUDE.md",
         "README.md",
-        "ARCHITECTURE.md",
         "CONTRIBUTING.md",
         "docs/design/appearance/README.md",
         "docs/engineering/orchestration.md",

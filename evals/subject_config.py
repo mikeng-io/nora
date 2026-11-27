@@ -311,7 +311,7 @@ _HEADER = """\
 # Generated evaluation configuration; private and never committed.
 # Functional settings come from the declared deployment. External endpoints
 # are bound to case-owned services by nora.subject.obtain.
-# See docs/design/evaluation/subject.md.
+# See docs/engineering/evaluation-subject.md.
 """
 
 

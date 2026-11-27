@@ -1,8 +1,7 @@
 ---
-class: design
+class: engineering
 subject: "how Nora is measured through her production entry points"
 owns: []
-area: evaluation
 ---
 
 # Evaluation
@@ -10,11 +9,8 @@ area: evaluation
 Evaluation measures Nora through her production entry points. It supplies a
 scenario and an isolated environment, observes execution, and judges the
 result. Production owns composition, context, tools and control flow; a suite
-adds cases and measurements without constructing another Nora.
-
-**Status:** building
-
-[Open issues](https://github.com/mikeng-io/nora/issues?q=is%3Aopen+%22design%2Fevaluation%2F%22)
+adds cases and measurements without constructing another Nora. The suite is
+built on the Strands Evals SDK (`strands-agents-evals`), reused rather than rebuilt.
 
 ## Parts and flow
 
@@ -26,14 +22,14 @@ scenario + restored state + isolated dependencies
   -> report: execution, measurement validity, behaviour
 ```
 
-- [Subject and sandbox](subject.md) owns production equivalence, dependency
+- [Subject and sandbox](evaluation-subject.md) owns production equivalence, dependency
   isolation and the boundary between replay and a complete journey.
-- [Measurement and verdicts](measurement.md) owns evidence, judge visibility,
+- [Measurement and verdicts](evaluation-measurement.md) owns evidence, judge visibility,
   criterion authority, comparison and reporting. SDK execution records feed
   the existing evidence recorder; judge and report views derive from it.
-- [Scenario coverage](coverage.md) owns the claims different cases and
+- [Scenario coverage](evaluation-coverage.md) owns the claims different cases and
   execution modes can establish, including rehearsal without quality scoring.
-- [Cognition journeys](cognition-loop.md) owns the causal sequence across wakes
+- [Cognition journeys](evaluation-cognition-loop.md) owns the causal sequence across wakes
   and conscious turns. It applies the common contracts rather than defining
   another harness.
 
@@ -55,5 +51,5 @@ scenario + restored state + isolated dependencies
 - Production storage and person-visible services receive no evaluation effects.
   Private evidence remains private, including when a run fails.
 
-The [eval SOP](../../operations/eval-sop.md) owns operating order and commands.
+The [eval SOP](../operations/eval-sop.md) owns operating order and commands.
 Implementation gaps do not relax these contracts or license a smaller subject.

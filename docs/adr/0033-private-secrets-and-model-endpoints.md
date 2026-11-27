@@ -1,3 +1,9 @@
+---
+class: adr
+subject: Private secrets and named model endpoints
+owns: []
+---
+
 # 0033 Private secrets and named model endpoints
 
 - **Status**: accepted; operator-authorized implementation, 2026-10-30

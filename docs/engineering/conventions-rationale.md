@@ -835,7 +835,7 @@ clause was the one that shipped the defect.
 
 ## The five operational constraints (spec §2, with corrections)
 
-These came from `docs/design/08-stack-refactor-brief.md` and are preserved here
+These came from the retired stack-refactor brief and are preserved here
 because the spec that retired that document said they were the most
 operationally valuable text in it. Losing any of these wastes an afternoon.
 
