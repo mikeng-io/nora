@@ -19,5 +19,12 @@
     "old": "    stop_grace_period: 75s\n",
     "new": "",
     "target": "tests/architecture/test_the_stop_grace_covers_the_shutdown.py"
+  },
+  {
+    "name": "App.run never recovers stale graph wake claims",
+    "file": "nora/__main__.py",
+    "old": "            await deps.wake_poller.recover()\n",
+    "new": "",
+    "target": "tests/integration/subject/test_causal_runtime_journey.py::test_real_app_bridge_admission_settles_before_cancellation[g1-False]"
   }
 ]

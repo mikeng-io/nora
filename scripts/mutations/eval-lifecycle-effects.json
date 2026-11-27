@@ -61,5 +61,12 @@
     "old": "                lower = sa.or_(lower, table.c.started_at >= since.at,\n                               table.c.completed_at >= since.at)",
     "new": "                lower = lower",
     "target": "tests/integration/subject/test_canonical_effects.py::test_a_prior_delivery_action_completed_inside_the_boundary_is_retained"
+  },
+  {
+    "name": "completion requests remain inside the trajectory",
+    "file": "scripts/cognition_loop/trajectory.py",
+    "old": "        if event.get(\"name\") == \"nora.session.settled\":",
+    "new": "        if event.get(\"name\") == \"nora.session.terminal\":",
+    "target": "tests/integration/subject/test_autonomous_turn_controls.py::test_bound_turn_events_joins_the_bound_session_by_identity"
   }
 ]

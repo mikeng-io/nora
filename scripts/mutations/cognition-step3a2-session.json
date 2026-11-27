@@ -5,5 +5,40 @@
     "old": "                out[name] = _as_tool(tool) if callable(tool) else tool",
     "new": "                out[name] = tool",
     "target": "tests/unit/test_cognition_agent_runner.py"
+  },
+  {
+    "name": "stimuli sql: an expired tracked wake is actually skipped by the mark query",
+    "file": "nora/infra/sql/stimuli.py",
+    "old": "    if stale_before_ms is None:\n        return ended_badly",
+    "new": "    if True:\n        return ended_badly",
+    "target": "tests/contract/test_stimulus_store_contract.py::test_tracked_wakes_that_fail_expire_or_carry_still_claim_every_stimulus[sql-3-0]"
+  },
+  {
+    "name": "stimuli (domain): a tracked wake with no outcome actually expires past the timeout",
+    "file": "nora/domain/stimuli.py",
+    "old": "    if recorded_at_ms < stale_before_ms:\n        return LastSession(state=\"failed\", started_at_ms=recorded_at_ms)",
+    "new": "    if False:\n        return LastSession(state=\"failed\", started_at_ms=recorded_at_ms)",
+    "target": "tests/contract/test_stimulus_store_contract.py::test_tracked_wakes_that_fail_expire_or_carry_still_claim_every_stimulus[memory-3-0]"
+  },
+  {
+    "name": "stimuli (domain): a tracked wake with no outcome is actually OPEN (in flight, claimed), not a plain watermark",
+    "file": "nora/domain/stimuli.py",
+    "old": "    if not tracked or stale_before_ms is None:\n        return None",
+    "new": "    if True:\n        return None",
+    "target": "tests/contract/test_stimulus_store_contract.py::test_tracked_wakes_that_fail_expire_or_carry_still_claim_every_stimulus[memory-3-0]"
+  },
+  {
+    "name": "stimuli sql: the closed outcome and its carries are actually one transaction",
+    "file": "nora/infra/sql/stimuli.py",
+    "old": "            if rows:\n                await conn.execute(sa.insert(COGNITION_CARRY), [",
+    "new": "            await conn.commit()\n            if rows:\n                await conn.execute(sa.insert(COGNITION_CARRY), [",
+    "target": "tests/contract/test_stimulus_store_contract.py::test_tracked_wakes_that_fail_expire_or_carry_still_claim_every_stimulus[sql-3-0]"
+  },
+  {
+    "name": "stimuli twin: a retracted stimulus is actually never pending",
+    "file": "nora/testing/stimuli.py",
+    "old": "            if s.unit == unit and s.id not in self.uncommitted and self._live(s.id)\n",
+    "new": "            if s.unit == unit and s.id not in self.uncommitted\n",
+    "target": "tests/contract/test_stimulus_store_contract.py::test_a_retracted_unclaimed_stimulus_is_not_pending[memory]"
   }
 ]

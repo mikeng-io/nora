@@ -103,5 +103,12 @@
     "old": "    if (json.dumps(admitted.to_fields(), sort_keys=True, allow_nan=False)\n            != json.dumps(ctx[\"envelope\"].to_fields(), sort_keys=True, allow_nan=False)\n            or declared_source(admitted) != ctx.get(\"source\")",
     "new": "    if (declared_source(admitted) != ctx.get(\"source\")",
     "target": "tests/unit/test_journey_inputs.py::test_same_body_cannot_hide_a_substituted_quote_or_media"
+  },
+  {
+    "name": "a declared case turn keeps its envelope, not its string",
+    "file": "scripts/cognition_loop/cases.py",
+    "old": "                return DeclaredTurn(**raw_turn)",
+    "new": "                return str(raw_turn)",
+    "target": "tests/unit/test_cognition_loop_rejudge.py::test_a_declared_turn_is_judged_against_the_original_declaration[None]"
   }
 ]

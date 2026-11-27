@@ -40,5 +40,19 @@
     "old": "    now = time.time() if at is None else at\n    delay = math.ceil(now / interval_seconds) * interval_seconds - now\n    return delay if delay > 0 else interval_seconds",
     "new": "    return interval_seconds",
     "target": "tests/unit/test_ticks.py::test_the_drivers_wait_to_a_cadence_boundary_not_a_fixed_interval"
+  },
+  {
+    "name": "pending read: a claimed stimulus resurfaces under the mark (SQL)",
+    "file": "nora/infra/sql/stimuli.py",
+    "old": "            eligible, live_stimulus(STIMULUS.c.id), ~claimed,",
+    "new": "            eligible, live_stimulus(STIMULUS.c.id),",
+    "target": "tests/infra/test_stimulus_store_plan.py::test_the_pending_and_activity_reads_plan_onto_indexes"
+  },
+  {
+    "name": "pending read: a claimed stimulus resurfaces under the mark (twin)",
+    "file": "nora/testing/stimuli.py",
+    "old": "            and s.eligible_ms <= now_ms and s.id not in claimed",
+    "new": "            and s.eligible_ms <= now_ms",
+    "target": "tests/contract/test_stimulus_store_contract.py::test_a_wake_is_the_watermark_and_consumes_what_it_claimed[memory]"
   }
 ]

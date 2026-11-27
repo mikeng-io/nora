@@ -12,5 +12,33 @@
     "old": "        if key in _DERIVED_ATTRS:\n            raise ValueError(\n                f\"<{tag}> is given",
     "new": "        if False:\n            raise ValueError(\n                f\"<{tag}> is given",
     "target": "tests/unit/test_render_group.py::test_an_element_may_not_carry_what_a_block_type_writes"
+  },
+  {
+    "name": "3b (b): the reads line is not escaped, so a room label writes markup",
+    "file": "nora/domain/blocks.py",
+    "old": "f'{key}=\"{escape_attr(collapsed)}\"'",
+    "new": "f'{key}=\"{collapsed}\"'",
+    "target": "tests/unit/test_edited_row_render.py::test_the_first_text_cannot_break_out_of_its_attribute"
+  },
+  {
+    "name": "3b (b): the shared element renderer does not escape a row's words",
+    "file": "nora/domain/blocks.py",
+    "old": "        out.append(f\"<{tag} {rendered}>{escape(render_file_links(body(row) or ''))}</{tag}>\")",
+    "new": "        out.append(f\"<{tag} {rendered}>{render_file_links(body(row) or '')}</{tag}>\")",
+    "target": "tests/unit/test_eval_full_restore.py::test_a_full_restore_preserves_the_configured_geocoder"
+  },
+  {
+    "name": "3b (b): the shared element renderer does not escape an attribute value, so a name closes its quote",
+    "file": "nora/domain/blocks.py",
+    "old": "            f'{key}=\"{escape_attr(collapsed)}\"'",
+    "new": "            f'{key}=\"{collapsed}\"'",
+    "target": "tests/unit/test_edited_row_render.py::test_the_first_text_cannot_break_out_of_its_attribute"
+  },
+  {
+    "name": "3b item 1: the nesting wrapper does not escape an attribute value, so a room label closes its quote",
+    "file": "nora/domain/blocks.py",
+    "old": "        f' {key}=\"{escape_attr(collapsed)}\"'",
+    "new": "        f' {key}=\"{collapsed}\"'",
+    "target": "tests/unit/test_eval_full_restore.py::test_a_full_restore_preserves_the_configured_geocoder"
   }
 ]

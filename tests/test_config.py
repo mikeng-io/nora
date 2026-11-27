@@ -15,7 +15,6 @@ from nora.config import (
     ConfigError,
     DocumentsConfig,
     DreamBudgetConfig,
-    DreamerConfig,
     LimitsConfig,
     LLMConfig,
     MediaConfig,

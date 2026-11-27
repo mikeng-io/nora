@@ -82,5 +82,19 @@
     "old": "(?<!唔)記住(?!啦你|囉你|呀你|咗|嚟)",
     "new": "記住",
     "target": "tests/unit/test_cues.py::test_banter_and_reminiscing_carry_no_keep_cue"
+  },
+  {
+    "name": "stale base: the fake appends on any head",
+    "file": "nora/testing/memo_store.py",
+    "old": "        if head.id != base_revision_id:",
+    "new": "        if False:",
+    "target": "tests/contract/test_memo_store_contract.py::test_a_revision_lands_on_its_head_and_a_stale_base_is_refused[memory]"
+  },
+  {
+    "name": "own send: a note may now cite Nora's message",
+    "file": "nora/domain/note_body.py",
+    "old": "    _check_ids(ids, item, rendered, shown.carried, keys, shown.rollup_keys)\n",
+    "new": "    _check_ids(ids, item, rendered, shown.carried, keys, shown.rollup_keys, may_cite_nora=True)\n",
+    "target": "tests/unit/test_note_body.py::test_a_line_citing_noras_own_message_is_refused"
   }
 ]

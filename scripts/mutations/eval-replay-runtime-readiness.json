@@ -54,5 +54,19 @@
     "old": "        if evidence := current():\n            evidence.record(\"external_service_mismatch\", **diagnostic)\n",
     "new": "",
     "target": "tests/integration/subject/test_recorded_services.py::test_unmatched_does_not_consume"
+  },
+  {
+    "name": "vector readiness follows the actual vector-consuming surfaces",
+    "file": "scripts/memory_graph_spike.py",
+    "old": "        require_vectors=index.embed,\n",
+    "new": "        require_vectors=True,\n",
+    "target": "tests/integration/subject/test_causal_runtime_journey.py::test_real_app_bridge_admission_settles_before_cancellation[g1-False]"
+  },
+  {
+    "name": "record-only preparation propagates its readiness requirement",
+    "file": "nora/subject/sandbox_index.py",
+    "old": "    source_cov = await source_coverage(source_url, model_id, require_vectors=require_vectors)\n",
+    "new": "    source_cov = await source_coverage(source_url, model_id)\n",
+    "target": "tests/integration/test_eval_sandbox_vectors.py::test_another_models_vector_is_never_adopted"
   }
 ]

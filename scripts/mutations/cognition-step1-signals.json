@@ -40,5 +40,26 @@
     "old": "        if not emoji and not removed:",
     "new": "        if not emoji:",
     "target": "tests/unit/test_instagram_parser.py::test_a_reaction_removal_with_no_emoji_is_still_a_removal"
+  },
+  {
+    "name": "touch routing: a reaction takes the message path and becomes a messages row",
+    "file": "nora/ingest/pipeline.py",
+    "old": "        if message.touch is not None:\n            return await self._run_touch(",
+    "new": "        if False:\n            return await self._run_touch(",
+    "target": "tests/unit/test_ingest_pipeline.py::test_every_ingest_exit_exports_with_its_hint"
+  },
+  {
+    "name": "wake policy: a waits stimulus counts toward a trigger",
+    "file": "nora/domain/stimuli.py",
+    "old": "        not stimulus.waits\n        and stimulus.kind not in view.inert_kinds",
+    "new": "        True\n        and stimulus.kind not in view.inert_kinds",
+    "target": "tests/contract/test_stimulus_store_contract.py::test_tracked_wakes_that_fail_expire_or_carry_still_claim_every_stimulus[memory-3-0]"
+  },
+  {
+    "name": "twin view: a stimulus due after the watermark's time counts as consumed by the id range",
+    "file": "nora/testing/stimuli.py",
+    "old": "            sid for w in mine for sid in w.claimed_ids",
+    "new": "            sid for w in mine for sid in range(1, w.through_stimulus_id + 1)",
+    "target": "tests/contract/test_stimulus_store_contract.py::test_a_stimulus_due_later_stays_pending_across_an_earlier_wake[memory]"
   }
 ]

@@ -154,9 +154,6 @@
   "comment_blocks": 12,
   "file_lines": 921
  },
- "nora/agent/fetch_watch.py": {
-  "internal_docstrings": 1
- },
  "nora/agent/guards.py": {
   "comment_blocks": 38,
   "file_lines": 1452,
@@ -247,9 +244,6 @@
  "nora/agent/room.py": {
   "comment_blocks": 2,
   "internal_docstrings": 1
- },
- "nora/agent/room_routing.py": {
-  "comment_blocks": 1
  },
  "nora/agent/run_budget_transport.py": {
   "comment_blocks": 2,
@@ -363,25 +357,11 @@
  "nora/app/cognition_agent_runner.py": {
   "internal_docstrings": 1
  },
- "nora/app/cognition_memory.py": {
-  "comment_blocks": 3,
-  "functions": {
-   "WakeMemory.prepare": 159,
-   "WakeMemory.propose": 182
-  },
-  "internal_docstrings": 1
- },
  "nora/app/composition.py": {
   "comment_blocks": 15,
-  "file_lines": 1277,
+  "file_lines": 1276,
   "functions": {
    "_compose_dependencies": 817
-  },
-  "internal_docstrings": 1
- },
- "nora/app/comprehend.py": {
-  "functions": {
-   "MemoryProposalAdmission._admit": 325
   },
   "internal_docstrings": 1
  },
@@ -492,7 +472,7 @@
  },
  "nora/config.py": {
   "comment_blocks": 84,
-  "file_lines": 4058,
+  "file_lines": 4054,
   "internal_docstrings": 18
  },
  "nora/doctrine/loader.py": {
@@ -2412,12 +2392,12 @@
  },
  "tests/test_composition.py": {
   "comment_blocks": 7,
-  "file_lines": 1630,
+  "file_lines": 1557,
   "internal_docstrings": 2
  },
  "tests/test_config.py": {
   "comment_blocks": 7,
-  "file_lines": 2047,
+  "file_lines": 2030,
   "internal_docstrings": 6
  },
  "tests/test_discord_adapter.py": {
@@ -2922,9 +2902,6 @@
  },
  "tests/unit/test_online_now.py": {
   "internal_docstrings": 2
- },
- "tests/unit/test_orient_kind_table.py": {
-  "internal_docstrings": 1
  },
  "tests/unit/test_outbound_composer.py": {
   "comment_blocks": 1,

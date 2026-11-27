@@ -26,5 +26,12 @@
     "old": "and row.get(\"outcome\") == \"closed\"",
     "new": "and True",
     "target": "tests/unit/test_evaluation_instruction_custody.py::test_only_matching_closed_no_session_receipt_establishes_instruction_absence[outcome]"
+  },
+  {
+    "name": "judge receives actual transmitted instruction roles",
+    "file": "scripts/cognition_loop/judges.py",
+    "old": "\"subject_instructions\": subject_instructions(trajectory),",
+    "new": "\"subject_instructions\": {\"status\": \"observed\", \"messages\": []},",
+    "target": "tests/integration/subject/test_autonomous_wake_census.py::test_census_exact_population_passes"
   }
 ]

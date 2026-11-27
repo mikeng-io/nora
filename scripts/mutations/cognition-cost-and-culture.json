@@ -40,5 +40,19 @@
     "old": "    if citable.echo_rule and not episodes and not items and messages <= citable.nora:\n",
     "new": "    if False:\n",
     "target": "tests/unit/test_lessons_checks.py::test_her_own_sends_alone_are_not_evidence"
+  },
+  {
+    "name": "2 review: an unmapped account no longer blocks (shared audience decision)",
+    "file": "nora/agent/whereis.py",
+    "old": "    if content_checks and view.unnamed > 0 and not location_trusted:\n        return \"unnamed\"\n",
+    "new": "",
+    "target": "tests/test_where_been.py::test_where_been_refuses_an_unnamed_account"
+  },
+  {
+    "name": "1 ride-along: a floor's wake leaves the pending rollups behind",
+    "file": "nora/domain/stimuli.py",
+    "old": "            if (s.kind == reason and not s.waits) or s.kind in RIDES_ALONG",
+    "new": "            if (s.kind == reason and not s.waits)",
+    "target": "tests/contract/test_stimulus_store_contract.py::test_a_random_run_of_wakes_claims_every_stimulus_exactly_once[memory-1]"
   }
 ]

@@ -1,0 +1,9 @@
+[
+  {
+    "name": "stimuli (sql): the per-unit advisory lock is actually taken",
+    "file": "nora/infra/sql/stimuli.py",
+    "old": "    await conn.execute(sa.select(sa.func.pg_advisory_xact_lock(\n        sa.literal(_LOCK_CLASS), sa.func.hashtext(sa.literal(unit)),\n    )))",
+    "new": "    return",
+    "target": "tests/integration/test_stimulus_pending_seed.py::test_first_seed_and_append_serialize_without_losing_a_row[append]"
+  }
+]
