@@ -400,8 +400,9 @@ rebuilds `config.evaluation.toml` against it (the same drift-checked
 `materialise` `python -m evals` runs) into its own private run directory —
 never the checkout's shared file — and binds it to each subject through
 `SubjectSpec.config`. It resolves the `eval_judge` route
-through `nora.subject.obtain.model_endpoint`, which resolves deployment
-endpoints for the local evaluation subject. The production route gets one plain POST at temperature zero, without
+through `nora.subject.obtain.model_endpoint`, so a `host.docker.internal` or
+`honcho` name is rewritten to loopback exactly as a subject's own endpoints
+are. The production route gets one plain POST at temperature zero, without
 `response_format` and without retries. Never show agents the model inputs,
 raw responses or private logs.
 
@@ -446,7 +447,8 @@ deployment configuration,
 identity/policy and private pseudonym map, a frozen database clone, disposable
 writable case databases, model access and the services enabled by that corpus.
 Graph retrieval also needs compatible embedding state/model access. Source
-reads are read-only. The run creates disposable databases and spends model calls.
+reads are read-only, but the run itself is not: it creates databases and
+private Honcho workspaces and spends model calls.
 
 A minimal next step is an isolated evaluation worker beside the deployment, running the
 existing CLI from a separate checkout. An operator prepares a snapshot on a
@@ -498,8 +500,8 @@ whether she replied.
 ## Known limitations: read before you trust a number
 
 1. **Repeated draws do not establish a population error rate.** Each draw has
-   its own writable case database. Draws share a corpus, model and evaluation
-   setup. Report the sample count and its scope.
+   its own Honcho workspace, but the draws still share a corpus, model and
+   evaluation setup. Report the sample count and its scope.
 2. **An eval whose tool results differ from production measures a different
    decision.** 2026-09-24: an image handle the sandbox could not resolve made a
    tool fail in the eval and pushed the model on to the right next step (about
