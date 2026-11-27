@@ -520,17 +520,18 @@ relevant when `[platforms.whatsapp] enabled = true`.
 **Pairing (first run, and after any session invalidation):**
 
 ```bash
-docker compose run --rm --no-deps whatsapp-bridge node bridge.js --pair --phone <digits, no +>
+docker compose run --rm --no-deps whatsapp-bridge node bridge.js --pair
 ```
 
-It draws a QR (a fresh one about every 20 s) and prints a pairing code. On
-the bot number's phone: Settings → Linked Devices → Link a device to scan
-the QR, or Link with phone number to type the code. Pairing serves no HTTP,
+It draws a QR, a fresh one about every 20 s. On the bot number's phone:
+Settings → Linked Devices → Link a device, then scan it. The phone-number
+pairing code is not offered. Pairing serves no HTTP,
 so it runs beside the live bridge; restart that service afterwards
 ([Komodo recovery](../deploy/komodo/README.md#failure-and-recovery)) so it
 loads the new session. Normal `docker compose up -d` then boots with the saved
-session. If you mess it up, re-run the same command — no cleanup needed. Losing `./state/whatsapp` loses the pairing,
-not history (the audit DB is the record).
+session. If you mess it up, re-run the same command — no cleanup needed.
+Losing `./state/whatsapp` loses the pairing, not history (the audit DB is
+the record).
 
 **Admitting a WhatsApp room:** get the group JID (`...@g.us`) from the audit
 DB or the bridge's logs, add a `[[conversations]]` entry with

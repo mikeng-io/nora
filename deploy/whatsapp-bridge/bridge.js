@@ -43,7 +43,7 @@
  *
  * Usage:
  *   node bridge.js --port 18081 --session /app/session
- *   node bridge.js --pair --phone 85290000100 --session /app/session
+ *   node bridge.js --pair --session /app/session
  */
 
 import http from 'node:http';
@@ -109,7 +109,6 @@ const PORT = parseInt(getArg('port', process.env.NORA_BRIDGE_PORT || '18081'), 1
 const SESSION_DIR = path.resolve(getArg('session', process.env.NORA_BRIDGE_SESSION_DIR
   || path.join(process.env.HOME || '~', '.nora', 'whatsapp', 'session')));
 const PAIR_MODE = args.includes('--pair');
-const PAIR_PHONE = String(getArg('phone', '')).replace(/\D/g, '');
 // Shared contract name first; the deployed NORA_BRIDGE_TOKEN stays accepted
 // until the root secret projection is renamed with lead coordination.
 const BRIDGE_TOKEN = process.env.NORA_BRIDGE_API_TOKEN || process.env.NORA_BRIDGE_TOKEN || '';
@@ -131,10 +130,6 @@ const ATTACH_DIR = process.env.NORA_BRIDGE_ATTACH_DIR
 // is the deployed legacy fallback, dropped once root projections rename.
 const DATABASE_URL = process.env.DATABASE_URL || process.env.NORA_DATABASE_URL || '';
 
-if (PAIR_MODE && !PAIR_PHONE) {
-  console.error('[bridge] --pair requires --phone <digits> (international format, no +)');
-  process.exit(2);
-}
 if (!PAIR_MODE && !BRIDGE_TOKEN) {
   console.error('[bridge] NORA_BRIDGE_API_TOKEN is not set; refusing to start an unauthenticated bridge');
   process.exit(2);
@@ -307,7 +302,6 @@ const scheduleReconnect = createReconnectScheduler(() => startSocket(), {
   log,
 });
 
-let pairingCodeRequested = false;
 
 async function startSocket() {
   const { state, saveCreds } = await useMultiFileAuthState(SESSION_DIR);
@@ -362,22 +356,8 @@ async function startSocket() {
     if (qr && PAIR_MODE) {
       // WhatsApp rotates the QR about every 20 s; each one is drawn in full
       // beside the pairing code, and either links the device.
-      log('scan on the phone: Linked Devices -> Link a device (a fresh code replaces this one every ~20 s)');
+      log('scan on the phone: Linked Devices -> Link a device (a fresh QR replaces this one every ~20 s)');
       console.log(renderQr(qr));
-    }
-
-    if (PAIR_MODE && !pairingCodeRequested && sock && !state.creds.registered) {
-      pairingCodeRequested = true;
-      // Baileys requires the socket to be mid-handshake before this call.
-      setTimeout(async () => {
-        try {
-          const code = await sock.requestPairingCode(PAIR_PHONE);
-          log(`pairing code for +${PAIR_PHONE}: ${code}`);
-          log('on the phone: Linked Devices -> Link with phone number -> enter the code');
-        } catch (err) {
-          log(`requestPairingCode failed (${err?.message || err}); use the QR string above instead`);
-        }
-      }, 3000);
     }
 
     if (connection === 'open') {
@@ -402,7 +382,7 @@ async function startSocket() {
         // re-pair with the foreground command.
         loggedOut = true;
         paired = false;
-        log('LOGGED OUT by WhatsApp — session kept on disk; re-pair with: node bridge.js --pair --phone <digits>');
+        log('LOGGED OUT by WhatsApp — session kept on disk; re-pair with: node bridge.js --pair');
         if (PAIR_MODE) process.exit(1);
       } else {
         log(`connection closed (reason=${statusCode ?? 'unknown'}); reconnecting with backoff`);
@@ -969,7 +949,7 @@ if (!PAIR_MODE) {
   server.listen(PORT, '0.0.0.0', () => {
     log(`listening on 0.0.0.0:${PORT} (session: ${SESSION_DIR})`);
     if (!paired) {
-      log('NOT PAIRED — no creds.json in session dir. HTTP surface is up; pair with: node bridge.js --pair --phone <digits>');
+      log('NOT PAIRED — no creds.json in session dir. HTTP surface is up; pair with: node bridge.js --pair');
     }
   });
 }
@@ -981,7 +961,7 @@ if (DURABLE) {
 }
 
 if (PAIR_MODE) {
-  log(`pairing mode for +${PAIR_PHONE}`);
+  log('pairing mode: scan the QR');
   startSocket().catch((err) => {
     log(`pairing failed: ${err?.message || err}`);
     process.exit(1);
