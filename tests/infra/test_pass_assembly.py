@@ -404,6 +404,7 @@ async def test_fire_prefill_uses_the_room_unit_person_and_nora_graph_profiles(
     assert ('<graph_profile of="nora-pointer"' in prefill) is show_nora
     assert ("Nora observation" in prefill) is show_nora
     lesson = prefill.index("<graph_lessons")
+    assert "</graph_lessons>" in prefill[lesson:]
     assert "fixture-lesson" in prefill[lesson:].split("</graph_lessons>", 1)[0]
     assert lesson < prefill.index('<graph_profile of="room-here"') < prefill.index(
         '<graph_profile of="unit-pointer"'

@@ -387,8 +387,6 @@ def test_no_message_text_is_passed_raw_as_a_model_input():
 #: Functions that interpolate a `.body` into an f-string and are NOT handing a
 #: member's message to a model, each with the reason.
 _FSTRING_EXEMPT = {
-    ("nora/app/lessons_cli.py", "render_chain"): "a lesson revision, on the operator CLI",
-    ("nora/app/lessons_cli.py", "_line"): "a lesson, on the operator CLI",
     ("nora/domain/blocks.py", "render"): "ContextBlock's own body, already rendered",
     ("nora/domain/notes.py", "__post_init__"): "a length in an error message",
     ("nora/domain/standing.py", "__post_init__"): "a length in an error message",

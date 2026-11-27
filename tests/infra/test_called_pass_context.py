@@ -146,3 +146,20 @@ async def test_a_room_without_a_unit_does_not_read_message_graph_ids(scenario, c
     assert blocks.find("graph_standing").get("cause") == "reading_room_unavailable"
     assert blocks.find("tag_message").text.strip() == "An addressing message"
     assert not shown and not reads and not retrieval.reads
+
+
+async def test_a_called_pass_carries_the_graph_lesson_and_no_legacy_block(scenario, called):
+    access, ctx, row, now = called
+    await scenario.claim("fixture-lesson", part="lesson")
+    await write_edge(scenario, "fixture-lesson", "nora-pointer", "about")
+    assembler, _retrieval = _counted(scenario)
+
+    _, rendered, shown = await _prompt(
+        EngagementGraph(access, wire.message_graph_ids(scenario.engine), assembler),
+        ctx, row, now,
+    )
+
+    lessons = elements(rendered).findall("graph_lessons")
+    assert len(lessons) == 1 and "fixture-lesson" in (lessons[0].text or "")
+    assert "fixture-lesson" in shown
+    assert "<lessons" not in rendered.replace("<graph_lessons", "")

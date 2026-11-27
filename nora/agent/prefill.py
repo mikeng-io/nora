@@ -45,7 +45,6 @@ from ..domain.self_presence import Presence
 from ..language.catalogue_render import render_tool_catalogue
 from ..language.computer_render import render_computer
 from ..language.documents_render import render_documents
-from ..language.lesson_render import render_lessons
 from ..language.memo_render import render_memos
 from ..language.note_render import render_notes
 from ..language.presence_render import render_presence
@@ -120,8 +119,6 @@ def _now_line(now: datetime | None) -> str:
 #: message rather than the cached head. `BlockKey`'s docstring argues that
 #: rule and `test_no_block_in_this_table_belongs_in_the_cached_head` pins it.
 _BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
-    # The active lessons for this unit, below the doctrine and her profile.
-    ("lessons", 2, "unit"),
     # The tool catalogue. Ahead of `presence`, because it is the steadier of
     # the two: it varies by the room's tool SCOPE (a Discord room carries the
     # music verbs, a Signal room does not), never by the turn or the person.
@@ -998,7 +995,6 @@ def build_prefill(
             # what the context assembler read.
             restamp(render_tool_catalogue(catalogue), _ROW) if catalogue else None,
             _room_members_block(ctx),
-            _restamp(render_lessons(ctx.lessons)),
             _restamp(_presence_block(ctx)),
             None if switched else _peer_card_block(ctx),
             None if switched else _peer_history_block(ctx),

@@ -224,6 +224,13 @@ async def test_operator_retirement_hides_graph_lesson_and_sets_evidence_floor(
     output = capsys.readouterr().out
     assert lesson.id in output and "support=0 contradiction=0" in output
     assert all(id_ in output for id_ in ids)
+    assert await cli.cmd_lessons_show(Namespace(lesson_id=lesson.id)) == 0
+    shown = capsys.readouterr().out
+    assert lesson.id in shown and "[live]" in shown and BODY in shown
+    assert "support=0 contradiction=0" in shown
+    assert all(id_ in shown for id_ in ids)
+    with pytest.raises(cli.CliError, match="no unique graph lesson"):
+        await cli.cmd_lessons_show(Namespace(lesson_id="not-a-lesson"))
 
     args = Namespace(lesson_id=lesson.id, why="Generated operator correction", apply=False)
     assert await cli.cmd_lessons_retire(args) == 0
@@ -238,6 +245,13 @@ async def test_operator_retirement_hides_graph_lesson_and_sets_evidence_floor(
         "operator", "operator", lesson.id,
     )
     assert retirement["pass"].startswith("operator:")
+    capsys.readouterr()
+    assert await cli.cmd_lessons_show(Namespace(lesson_id=retirement["id"])) == 0
+    gone = capsys.readouterr().out
+    assert retirement["id"] in gone and "[retired]" in gone
+    assert "support=0 contradiction=0" in gone and all(id_ in gone for id_ in ids)
+    with pytest.raises(cli.CliError, match="no unique graph lesson"):
+        await cli.cmd_lessons_show(Namespace(lesson_id=lesson.id))
     view = await _assembler(scenario).assemble(
         "wake", WakeInput(()), (), SCOPE, await scenario.now(),
     )
@@ -280,3 +294,30 @@ async def test_wake_retirement_sets_no_operator_relearn_floor(scenario, lesson_s
         Stored("wake-retirement", lesson.id),
     )
     assert isinstance(await admit(svc, ids), Stored)
+
+
+async def test_show_refuses_a_lesson_outside_policy_a_non_lesson_and_an_id_in_two_units(
+    scenario, clean_pg_url, monkeypatch,
+):
+    outside = "unit-outside-policy"
+    assert outside not in scenario.policy.unit_workspaces()
+    await scenario.claim("outside-lesson", unit=outside, part="lesson")
+    await scenario.claim("plain-fact")
+    await scenario.claim("twin-lesson", part="lesson")
+    await scenario.claim("twin-lesson", unit=outside, part="lesson")
+    here, sibling, dm = scenario.policy.conversations
+    rooms = (here, replace(sibling, unit="second-unit"), dm)
+    policy = replace(scenario.policy, conversations=rooms, _by_id={
+        (room.platform, key): room for room in rooms for key in room.ids
+    })
+    assert {UNIT, "second-unit"} <= set(policy.unit_workspaces())
+    await scenario.claim("shared-lesson", part="lesson")
+    await scenario.claim("shared-lesson", unit="second-unit", part="lesson")
+    monkeypatch.setattr(cli, "_config", lambda _args: SimpleNamespace())
+    monkeypatch.setattr(cli, "_database_url", lambda _cfg: clean_pg_url)
+    monkeypatch.setattr(cli, "_policy", lambda _cfg: policy)
+
+    for graph_id in ("outside-lesson", "plain-fact", "shared-lesson"):
+        with pytest.raises(cli.CliError, match="no unique graph lesson"):
+            await cli.cmd_lessons_show(Namespace(lesson_id=graph_id))
+    assert await cli.cmd_lessons_show(Namespace(lesson_id="twin-lesson")) == 0

@@ -2482,8 +2482,8 @@ class LessonsConfig(BaseModel):
     through `lesson_write` and `lesson_retire`.
 
     **Off by default, and off is the safe reading.** On, the session writes lessons
-    into its store; `render` decides whether they reach a prompt. Needs
-    `[cognition] enabled`.
+    into its store. Needs `[cognition] enabled`. The old key `render` is refused at
+    load: tag and fire turns read the graph's lessons.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -2503,13 +2503,6 @@ class LessonsConfig(BaseModel):
     #: Closed episodes one session is handed, the newest. What is past it is
     #: consumed, as a Character session's backlog is.
     batch_limit: int = Field(default=100, ge=1)
-
-    #: Render the unit's active lessons as `<lessons>` on tag and fire turns, after
-    #: `<self>`. **Off by default**: it changes what she reads on every turn of a unit
-    #: that has lessons, so it is switched on after its before/after eval, not by the
-    #: deploy that ships it. Independent of `enabled`: lessons already written keep
-    #: rendering if the session stops.
-    render: bool = False
 
     #: The correction fast path: a message that speaks to her and reads as an
     #: instruction about how she acts is shown to the next session once it is
@@ -3584,6 +3577,12 @@ class Config(BaseModel):
             raise ValueError(
                 "[message_readings] was renamed to [memory.extraction], which has "
                 "been removed; delete the section"
+            )
+        lessons = data.get("lessons", {})
+        if isinstance(lessons, dict) and "render" in lessons:
+            raise ValueError(
+                "[lessons] render has been removed; tag and fire turns read the graph's "
+                "lessons. Delete the key"
             )
         memory = data.get("memory", {})
         if isinstance(memory, dict):

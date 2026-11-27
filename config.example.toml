@@ -237,7 +237,6 @@ enabled = false
 stale_seconds = 604800
 horizon_seconds = 5184000
 batch_limit = 100
-render = false
 correction_quiet_seconds = 600
 check_model = ""
 check_reasoning_effort = ""            # "" = low

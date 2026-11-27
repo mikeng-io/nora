@@ -85,7 +85,6 @@ from nora.engagement.computer_context import ComputerContextReader
 from nora.engagement.documents_context import DocumentsContextReader
 from nora.engagement.self_presence import PresenceReader
 from nora.engagement.subagents_context import SubagentsContextReader
-from nora.language.lesson_render import ActiveLessons, read_lessons
 from nora.obs.tracing import traced_read
 from nora.persons import Persons
 from nora.policy import Policy
@@ -170,7 +169,6 @@ class TranscriptInjection:
 
         media_join: MediaJoin | None = None,
         presence: PresenceReader | None = None,
-        lessons: ActiveLessons | None = None,
         lineage: LineagePolicy | None = None,
         computer: ComputerContextReader | None = None,
         documents: DocumentsContextReader | None = None,
@@ -248,8 +246,6 @@ class TranscriptInjection:
         # state, her handles. `None` is a harness with no reader, and the
         # prefill then renders the network alone.
         self._presence_reader = presence
-        # `<lessons>`: `None` while `[lessons] render` is off.
-        self._lessons_reader = lessons
         # WHO THIS ROOM IS, for lineage. A pure value built at the composition
         # root; `None` is `[lineage] mode = "off"` for a harness that wires none.
         # No read: the room's facts are policy, and the live roster the
@@ -347,24 +343,6 @@ class TranscriptInjection:
             if parent is not None:
                 start = min(start, parent)
         return rows[start:]
-
-    async def _lessons(self, msg: NormalizedMessage) -> tuple[str, ...]:
-        """Her active lessons in this room's UNIT,
-        bounded, fail-soft and counted (`stage="tag_lessons"`); `()` with no
-        reader (`[lessons] render` off), no unit, or a room that may not show
-        `<self>` (`Policy.shows_self_in`, R-31): lessons are written from her
-        sends in every room of the unit, as her account is."""
-        if self._lessons_reader is None or self._policy is None:
-            return ()
-        convo = self._policy.conversation(msg.platform, msg.conversation_id)
-        if convo is None or not convo.unit:
-            return ()
-        if not self._policy.shows_self_in(msg.platform, msg.conversation_id):
-            return ()
-        return await read_lessons(
-            traced_read("lessons", "active", self._lessons_reader.bodies(unit=convo.unit)),
-            stage="tag_lessons", platform=msg.platform, metrics=self._metrics,
-        )
 
     async def _computer(self, msg: NormalizedMessage) -> ComputerView | None:
         """What is on her computer for this room, or `None` (no reader, or a

@@ -34,7 +34,7 @@ def _ctx(transcript=(), peer_card=(), body="nora.000 what time", tagger=None,
          decisions=(), people_in_window=(),
          room_members=(), computer=None, documents=None,
          subagents=None,
-         lessons=(), memos=(), voice=False, recalled=(),
+         memos=(), voice=False, recalled=(),
          recalled_partial=False, shared=None) -> TagContext:
     msg = NormalizedMessage(platform, "g1", "group", "+852111", "Miles", 1, body, {},
                             quote=quote, voice=voice)
@@ -44,7 +44,7 @@ def _ctx(transcript=(), peer_card=(), body="nora.000 what time", tagger=None,
               "people_in_window": tuple(people_in_window),
               "room_members": tuple(room_members), "computer": computer,
               "documents": documents,
-              "subagents": subagents, "lessons": tuple(lessons),
+              "subagents": subagents,
               "memos": tuple(memos), "recalled": tuple(recalled),
               "recalled_partial": recalled_partial, "shared": shared}
     return TagContext("tag-1", msg, tagger, tuple(transcript), tuple(peer_card), 0.0,
@@ -221,8 +221,6 @@ def _full_prefill_body() -> str:
     "all of them" can fail on one of them."""
     ctx = _ctx(
         _rows("hello"), peer_card=("likes espresso",),
-
-        lessons=("Name one place, not five.",),
         tagger_card=("asked about dinner",), tagger=PersonRef("miles", "Miles"),
         notes=(_note(),), memos=(_memo(),),
         decisions=_decisions(),

@@ -90,7 +90,6 @@ from nora.app.composition_stores import (
     instructions,
     obs_stores,
     observation,
-    readers,
     runtime_stores,
 )
 from nora.app.composition_wake import build_wake
@@ -646,8 +645,6 @@ async def _compose_dependencies(
     onboarding_runner = onboarding(
         cfg=cfg, managed_services=_stores_managed.services,
         discord_control=discord_control, discord_token=discord_token).onboarding
-    _stores_readers = readers(cfg=cfg, engine=engine)
-    lessons_reader = _stores_readers.lessons_reader
     _people_note_maps = _people_wire.note_maps(allowlist=allowlist)
     _people_unit_rooms = _people_wire.unit_rooms(allowlist=allowlist)
     unit_rooms = _people_unit_rooms.unit_rooms
@@ -662,7 +659,6 @@ async def _compose_dependencies(
         documents_context=documents_context,
         engine=engine,
         ledger_store=ledger_store,
-        lessons_reader=lessons_reader,
         media_join=media_join,
         memo_store=memo_store,
         metrics=metrics,

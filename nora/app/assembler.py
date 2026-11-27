@@ -37,7 +37,6 @@ from nora.engagement.context import (
 from nora.engagement.documents_context import DocumentsContextReader
 from nora.engagement.self_presence import PresenceReader
 from nora.engagement.subagents_context import SubagentsContextReader
-from nora.language.lesson_render import ActiveLessons
 from nora.obs.metrics import Metrics
 from nora.persons import Persons
 from nora.policy import Policy
@@ -65,7 +64,6 @@ def build_assembler(
     media_join: MediaJoin | None = None,
     quote_window: QuoteWindow | None = None,
     presence: PresenceReader | None = None,
-    lessons: ActiveLessons | None = None,
     computer: ComputerContextReader | None = None,
     documents: DocumentsContextReader | None = None,
     subagents: SubagentsContextReader | None = None,
@@ -106,9 +104,6 @@ def build_assembler(
         # turn hold, built once at the composition root over `policy.toml` and
         # the live adapter map. `None` renders the network alone.
         presence=presence,
-        # `<lessons>`: `None` while `[lessons]
-        # render` is off, and in every harness that does not wire it.
-        lessons=lessons,
         # Lineage. Built here, from the
         # same policy and identity every harness already passes, so an eval
         # turn is filtered exactly as a live one in every `[lineage] mode`.
