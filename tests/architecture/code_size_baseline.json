@@ -1417,7 +1417,7 @@
  },
  "nora/obs/metric_specs.py": {
   "comment_blocks": 77,
-  "file_lines": 2241
+  "file_lines": 2124
  },
  "nora/obs/metrics.py": {
   "internal_docstrings": 1
@@ -2185,7 +2185,7 @@
  },
  "tests/infra/test_standing_ledger.py": {
   "comment_blocks": 1,
-  "file_lines": 1029
+  "file_lines": 860
  },
  "tests/infra/test_standing_revision.py": {
   "comment_blocks": 2
@@ -2391,7 +2391,7 @@
  },
  "tests/test_acceptance_rules.py": {
   "comment_blocks": 33,
-  "file_lines": 921,
+  "file_lines": 920,
   "internal_docstrings": 1
  },
  "tests/test_affected_tests.py": {
@@ -2708,8 +2708,8 @@
  },
  "tests/unit/test_debrief.py": {
   "comment_blocks": 7,
-  "file_lines": 1789,
-  "internal_docstrings": 3
+  "file_lines": 1624,
+  "internal_docstrings": 2
  },
  "tests/unit/test_debrief_render.py": {
   "comment_blocks": 8,
@@ -3074,9 +3074,6 @@
   "internal_docstrings": 1
  },
  "tests/unit/test_tool_route_grader.py": {
-  "comment_blocks": 1
- },
- "tests/unit/test_tool_selection_cognition_corpus.py": {
   "comment_blocks": 1
  },
  "tests/unit/test_tool_surface.py": {
