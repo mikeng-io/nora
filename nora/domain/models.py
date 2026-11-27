@@ -762,11 +762,6 @@ class TagContext:
     # read fresh here, never copied onto the note.
     retained_sources: tuple[Any, ...] = ()
     retained_sources_more: int = 0
-    # What she has learned to do differently in this unit: the bodies of its
-    # active lessons, oldest first, read under `[lessons] render` on tag and
-    # fire turns where `<self>` may show.
-    # Empty: no block.
-    lessons: tuple[str, ...] = ()
     # The shared decision log — what NORA'S OWN LOOP already did across this
     # UNIT, as `<loop_decisions>`. `(room label, rows)` per group, because the row
     # that matters is usually from the OTHER room: a `kind="proactive"` row fires

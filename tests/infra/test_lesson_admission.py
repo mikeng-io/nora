@@ -224,6 +224,11 @@ async def test_operator_retirement_hides_graph_lesson_and_sets_evidence_floor(
     output = capsys.readouterr().out
     assert lesson.id in output and "support=0 contradiction=0" in output
     assert all(id_ in output for id_ in ids)
+    assert await cli.cmd_lessons_show(Namespace(lesson_id=lesson.id)) == 0
+    shown = capsys.readouterr().out
+    assert lesson.id in shown and "[live]" in shown and BODY in shown
+    with pytest.raises(cli.CliError, match="no graph lesson"):
+        await cli.cmd_lessons_show(Namespace(lesson_id="not-a-lesson"))
 
     args = Namespace(lesson_id=lesson.id, why="Generated operator correction", apply=False)
     assert await cli.cmd_lessons_retire(args) == 0

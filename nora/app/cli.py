@@ -4,8 +4,8 @@ the config write surface (`nora config set/get/unset/validate` — see
 `nora.app.config_cli`). Most of this module's commands only READ the record
 store; each one that writes says so where it is registered. Among them:
 `xai-login` and `openai-codex-login` (the host `secret.toml`),
-`lessons retire` and `lessons rollback` (one lesson revision, only with
-`--apply`), `snapshot --into` (a separate empty sandbox database), and
+`lessons retire` (a graph lesson retirement, only with `--apply`),
+`snapshot --into` (a separate empty sandbox database), and
 `assess run-nightly` (an `assess_report` row).
 
 The read commands answer «which group does this ID belong to» without
@@ -60,7 +60,6 @@ from nora.app.pending import correlate
 from nora.app.place_backfill import backfill_places
 from nora.app.place_backfill import render as render_place_backfill
 from nora.config import Config, ConfigError, load
-from nora.domain.lessons import Lesson
 from nora.domain.models import UnattributedRow
 from nora.domain.participation_measures import Refusal
 from nora.domain.ports import ChannelDirectory
@@ -73,7 +72,6 @@ from nora.infra.sql import (
 )
 from nora.infra.sql.gatherings import SqlGatheringStore
 from nora.infra.sql.geocode_cache import SqlGeocodeCacheStore
-from nora.infra.sql.lessons import SqlLessonStore
 from nora.infra.sql.reminders import SqlReminderStore
 from nora.infra.sql.tension import SqlTensionStore
 from nora.persons import Persons, PersonsError, load_persons
@@ -230,7 +228,6 @@ def add_subcommands(
     )
     snap.set_defaults(func=cmd_snapshot)
 
-    # List and retire operate on the graph; show and rollback address legacy history.
     lessons = subparsers.add_parser(
         "lessons", parents=[parent], help="Nora's lessons per unit (operator only)",
     )
@@ -244,7 +241,7 @@ def add_subcommands(
     )
     lessons_list.set_defaults(func=cmd_lessons_list)
     lessons_show = lessons_sub.add_parser(
-        "show", parents=[parent], help="one lesson, every revision, newest first",
+        "show", parents=[parent], help="one graph lesson by id, live or retired",
     )
     lessons_show.add_argument("lesson_id")
     lessons_show.set_defaults(func=cmd_lessons_show)
@@ -257,15 +254,6 @@ def add_subcommands(
     lessons_retire.add_argument("--why", required=True, help="reason shown in the command result")
     lessons_retire.add_argument("--apply", action="store_true", help="write")
     lessons_retire.set_defaults(func=cmd_lessons_retire)
-    lessons_rollback = lessons_sub.add_parser(
-        "rollback", parents=[parent],
-        help="put an earlier revision back as the newest one (also undoes a "
-             "retirement; a dry run unless --apply)",
-    )
-    lessons_rollback.add_argument("lesson_id")
-    lessons_rollback.add_argument("--to", required=True, type=int, help="the revision")
-    lessons_rollback.add_argument("--apply", action="store_true", help="write")
-    lessons_rollback.set_defaults(func=cmd_lessons_rollback)
     # The lessons the doctrine check refused, with the law each pulled
     # against. Operator-only by design.
     lessons_tensions = lessons_sub.add_parser(
@@ -708,13 +696,6 @@ async def cmd_memory_backfill_places(args: argparse.Namespace) -> int:
 
 
 
-async def _lesson_of(store: SqlLessonStore, lesson_id: str) -> Lesson:
-    lesson = await store.get(lesson_id=lesson_id)
-    if lesson is None:
-        raise CliError(f"no lesson {lesson_id}")
-    return lesson
-
-
 async def cmd_lessons_list(args: argparse.Namespace) -> int:
     return await graph_lessons_cli.list_lessons(
         _database_url(_config(args)), args.unit, everything=bool(args.all),
@@ -734,21 +715,11 @@ async def cmd_lessons_tensions(args: argparse.Namespace) -> int:
 
 
 async def cmd_lessons_show(args: argparse.Namespace) -> int:
-    """`nora lessons show ID`, READ ONLY."""
-    engine = create_readonly_sql_engine(_database_url(_config(args)))
+    """`nora lessons show ID`, READ ONLY: one graph lesson."""
     try:
-        store = SqlLessonStore(engine)
-        lesson = await _lesson_of(store, args.lesson_id)
-        chain = await store.revisions(lesson_id=lesson.id)
-    finally:
-        await engine.dispose()
-    for line in lessons_cli.render_chain(lesson, chain):
-        print(line)
-    return 0
-
-
-def _now_ms() -> int:
-    return int(datetime.now(UTC).timestamp() * 1000)
+        return await graph_lessons_cli.show_lesson(_database_url(_config(args)), args.lesson_id)
+    except graph_lessons_cli.GraphLessonError as exc:
+        raise CliError(str(exc)) from exc
 
 
 async def cmd_lessons_retire(args: argparse.Namespace) -> int:
@@ -759,26 +730,6 @@ async def cmd_lessons_retire(args: argparse.Namespace) -> int:
         )
     except graph_lessons_cli.GraphLessonError as exc:
         raise CliError(str(exc)) from exc
-
-
-async def cmd_lessons_rollback(args: argparse.Namespace) -> int:
-    """`nora lessons rollback ID --to N [--apply]`: a WRITABLE engine, one
-    revision, a dry run without `--apply`."""
-    engine = create_sql_engine(_database_url(_config(args)))
-    try:
-        lesson = await _lesson_of(SqlLessonStore(engine), args.lesson_id)
-        if not args.apply:
-            print(f"would put revision {args.to} of {lesson.id} back as the newest "
-                  f"(now rev {lesson.head.seq}, {lesson.head.state}); nothing written")
-            return 0
-        result = await lessons_cli.book_for(engine, _now_ms).rollback(
-            unit=lesson.unit, lesson_id=lesson.id, to_seq=int(args.to),
-            established_by=lessons_cli.OPERATOR,
-        )
-    finally:
-        await engine.dispose()
-    print(json.dumps(result))
-    return 0 if result["status"] == "ok" else 1
 
 
 async def cmd_assess_run_nightly(args: argparse.Namespace) -> int:

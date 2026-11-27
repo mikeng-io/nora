@@ -31,9 +31,9 @@ the verbs are offered live only: a historical session never sees them.
 **A lesson is never shown by id.** The session addresses a held lesson as
 `L1`, `L2`, ... and the book maps the handle back (`LessonBook.verbs(handles=...)`).
 
-**Rendering is separate:** `render_lessons` (`nora.language.lesson_render`),
-gated by `[lessons] render`, is what shows the held lessons to a prompt; the
-session's own evidence blocks are `nora.language.cognition_render`'s.
+**Rendering is separate:** `render_lessons` (`nora.language.lesson_render`)
+shows the held lessons to this session's prompt; the session's own
+evidence blocks are `nora.language.cognition_render`'s.
 """
 
 from __future__ import annotations

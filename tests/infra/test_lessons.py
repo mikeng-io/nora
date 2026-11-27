@@ -8,8 +8,6 @@ than unlikely. The pure refusals are `tests/unit/test_lessons_checks.py`.
 
 from __future__ import annotations
 
-import json
-from argparse import Namespace
 from types import SimpleNamespace
 
 import pytest
@@ -221,20 +219,8 @@ async def test_the_table_refuses_what_the_book_never_writes(env):
                 await conn.execute(stmt, row)
 
 
-# -- the operator's CLI --------------------------------------------------------
-
-
-async def _cli(monkeypatch, env, func, capsys, **args):
-    monkeypatch.setattr(cli, "_config", lambda a: SimpleNamespace())
-    monkeypatch.setattr(cli, "_database_url", lambda cfg: env.url)
-    rc = await func(Namespace(config="unused.toml", **args))
-    return rc, capsys.readouterr().out
-
-
-async def test_the_cli_shows_and_rolls_back_legacy_revisions(env, monkeypatch, capsys):
+async def test_a_rollback_restores_the_projection_of_the_earlier_revision(env):
     lid = (await _write(env))["lesson_id"]
-    rc, out = await _cli(monkeypatch, env, cli.cmd_lessons_show, capsys, lesson_id=lid)
-    assert rc == 0 and "rev 1" in out and "cites: 110, 111" in out
     await env.book.retire(
         unit=UNIT, lesson_id=lid, by="operator", why="Generated correction",
         established_by="operator", record_head=111,
@@ -250,30 +236,28 @@ async def test_the_cli_shows_and_rolls_back_legacy_revisions(env, monkeypatch, c
         await memory_index.project(conn, "lesson", lid)
     before = await projection()
     assert before.state == "retired"
-    rc, out = await _cli(monkeypatch, env, cli.cmd_lessons_rollback, capsys, lesson_id=lid,
-                         to=1, apply=True)
-    assert rc == 0 and json.loads(out)["revision"] == 3
+    assert (await env.book.rollback(
+        unit=UNIT, lesson_id=lid, to_seq=1, established_by="o",
+    ))["revision"] == 3
     assert len(await env.book.active(unit=UNIT)) == 1
     assert await projection() == before
     async with env.engine.begin() as conn:
         await memory_index.project(conn, "lesson", lid)
     assert (await projection()).state == "live"
-    rc, out = await _cli(monkeypatch, env, cli.cmd_lessons_rollback, capsys, lesson_id=lid,
-                         to=9, apply=True)
-    assert rc == 1 and json.loads(out)["status"] == "refused"
-    with pytest.raises(cli.CliError):
-        await _cli(monkeypatch, env, cli.cmd_lessons_show, capsys, lesson_id="not-there")
-    assert rc == 1
+    assert (await env.book.rollback(
+        unit=UNIT, lesson_id=lid, to_seq=9, established_by="o",
+    ))["status"] == "refused"
 
 
-def test_the_subcommands_are_registered():
+def test_the_lessons_commands_are_registered_without_rollback():
     import argparse
     parser = argparse.ArgumentParser()
     sub = parser.add_subparsers(dest="command")
     cli.add_subcommands(sub, argparse.ArgumentParser(add_help=False))
-    got = parser.parse_args(["lessons", "rollback", "abc", "--to", "2", "--apply"])
-    assert (got.func, got.to, got.apply) == (cli.cmd_lessons_rollback, 2, True)
     assert parser.parse_args(["lessons", "list", "--unit", "u"]).func is cli.cmd_lessons_list
+    assert parser.parse_args(["lessons", "show", "abc"]).func is cli.cmd_lessons_show
+    with pytest.raises(SystemExit):
+        parser.parse_args(["lessons", "rollback", "abc", "--to", "2"])
 
 
 async def test_a_lesson_id_that_is_not_a_uuid_names_no_lesson(env):

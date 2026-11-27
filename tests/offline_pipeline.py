@@ -154,9 +154,6 @@ def build_offline_pipeline(
         memos=None,
         rosters={adapter.platform: roster_source} if roster_source else {},
         self_ids=frozenset(),
-        # `<lessons>` (L5) — no store here, and the
-        # eval subject seeds lessons through its own sandbox.
-        lessons=None,
         # `<computer>` — `None`: this harness has no computer, and an eval's VM workspace
         # would be empty anyway.
         computer=None,

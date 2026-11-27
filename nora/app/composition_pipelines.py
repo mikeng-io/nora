@@ -32,7 +32,7 @@ class SharedWiring:
 def build_shared(
     access: Any, allowlist: Any, audit: Any, background: Any, cfg: Any,
     clock: Any, computer_context: Any, documents_context: Any,
-    engine: Any, ledger_store: Any, lessons_reader: Any, media_join: Any,
+    engine: Any, ledger_store: Any, media_join: Any,
     memo_store: Any, metrics: Any,
     note_store: Any, observation_store: Any, persons: Any, presence_reader: Any,
     quote_window: Any, registry: Any, reminders: Any,
@@ -79,9 +79,6 @@ def build_shared(
         # `FirePath` below is given — the point of building it once.
         quote_window=quote_window,
         presence=presence_reader,
-        # `<lessons>`: `None` while `[lessons]
-        # render` is off. The same reader the fire path gets.
-        lessons=lessons_reader,
         # `<computer>`: `None` while
         # `[computer]` is off; the same reader the fire path gets.
         computer=computer_context,

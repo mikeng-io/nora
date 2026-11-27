@@ -23,7 +23,6 @@ from nora.infra.sql.item_registration import (
     RuntimeRevisions,
     SqlItemRegistration,
 )
-from nora.infra.sql.lessons import SqlLessonStore
 from nora.infra.sql.observations import SqlObservationStore
 from nora.infra.sql.otp import SqlOtpStore
 from nora.infra.sql.reasoning_strip import SqlReasoningStripStore
@@ -31,7 +30,6 @@ from nora.infra.sql.tag_traces import SqlTagTraceStore
 from nora.infra.sql.tool_call_log import SqlToolCallLogStore
 from nora.instructions.dreamer import DreamerInstructions
 from nora.instructions.frontmatter import InstructionError
-from nora.language.lesson_render import ActiveLessons
 from nora.persons import PersonsError
 from nora.policy import PolicyError
 
@@ -255,21 +253,6 @@ def instructions(cfg: Any, metrics: Any)-> InstructionsWiring:
         raise StartupError(f"Dreamer instruction error: {exc}") from exc
 
     return InstructionsWiring(dreamer_instructions=dreamer_instructions)
-
-
-@dataclass(frozen=True)
-class ReadersWiring:
-    lessons_reader: Any
-
-
-def readers(cfg: Any, engine: Any) -> ReadersWiring:
-
-    # `<lessons>` on tag and fire turns: read-only,
-    # bodies of active lessons. `None` while `[lessons] render` is off.
-    lessons_reader: ActiveLessons | None = (
-        ActiveLessons(SqlLessonStore(engine)) if cfg.lessons.render else None
-    )
-    return ReadersWiring(lessons_reader=lessons_reader)
 
 
 @dataclass(frozen=True)

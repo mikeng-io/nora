@@ -52,6 +52,16 @@ def test_retired_memory_config_names_are_refused_naming_the_new_home_or_the_remo
         load(toml_path)
 
 
+def test_lessons_render_is_refused_as_removed(toml_path):
+    import tomli_w
+
+    data = tomllib.loads(toml_path.read_text())
+    data['lessons']['render'] = True
+    toml_path.write_text(tomli_w.dumps(data))
+    with pytest.raises(ConfigError, match=r"\[lessons\] render has been removed"):
+        load(toml_path)
+
+
 def test_memory_extraction_section_is_refused_as_removed(toml_path):
     import tomli_w
 
