@@ -1,3 +1,11 @@
+---
+class: operations
+subject: the public destination boundary for previews, media and portal downloads
+owns: []
+links:
+  - {to: docs/design/security/README.md, rel: uses}
+---
+
 # Public destination boundary for previews, media and portal downloads
 
 External preview/media URLs and the portal's generic downloader may connect only

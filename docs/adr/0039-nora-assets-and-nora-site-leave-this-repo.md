@@ -1,3 +1,9 @@
+---
+class: adr
+subject: Her art and the public site leave this repository
+owns: []
+---
+
 # ADR 0039: Her art and the public site leave this repository
 
 **Status:** accepted

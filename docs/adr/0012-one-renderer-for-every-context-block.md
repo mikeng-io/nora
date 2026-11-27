@@ -1,3 +1,9 @@
+---
+class: adr
+subject: Every context block is built by one renderer, and the transcript stops being lines
+owns: []
+---
+
 # 0012 — Every context block is built by one renderer, and the transcript stops being lines
 
 - **Status:** accepted; clauses 4 and 5 of the Decision superseded by [0013](0013-a-block-says-what-it-is-and-its-type-says-it.md)

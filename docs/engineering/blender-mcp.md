@@ -1,6 +1,12 @@
+---
+class: engineering
+subject: how the Blender MCP server is launched for Mini Nora postproduction
+owns: []
+---
+
 # Blender MCP for Mini Nora postproduction
 
-The project `.mcp.json` and `.codex/config.toml` launch the same pinned stdio
+The project's MCP client configuration files launch the same pinned stdio
 server, separate from Nora's runtime. Requires `uvx` on the client's PATH:
 
 ```sh

@@ -14,7 +14,7 @@
 #
 # Anything added here must be a rule that holds for ANY trigger string.
 
-# --- RE-HOMED 2026-09-17 (docs/design/evaluation Step 4) -------------------------
+# --- RE-HOMED 2026-09-17 (docs/engineering/evaluation Step 4) -------------------------
 #
 # These cases were driven by `evals/run.py`'s `_invoke_agent`, whose own
 # docstring says what it is:

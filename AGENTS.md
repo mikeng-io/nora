@@ -164,4 +164,4 @@ order of the commands and the check after each; a new skill adds both at once.
 
 ## Reading order
 
-`README.md` → `ARCHITECTURE.md` → the area's design bundle → `docs/engineering/code-standards.md` → `CONTRIBUTING.md`, `docs/engineering/conventions.md`; `docs/design/appearance/README.md` before touching how she looks; `docs/operations/observability.md`, `docs/operations/eval-sop.md`, `docs/operations/runbook.md` as needed.
+`README.md` → `docs/design/cognition/README.md` → the area's design bundle → `docs/engineering/code-standards.md` → `CONTRIBUTING.md`, `docs/engineering/conventions.md`; `docs/design/appearance/README.md` before touching how she looks; `docs/operations/observability.md`, `docs/operations/eval-sop.md`, `docs/operations/runbook.md` as needed.

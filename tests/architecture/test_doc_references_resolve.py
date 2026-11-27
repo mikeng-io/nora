@@ -42,8 +42,7 @@ signal already present in this repo's own conventions, not a per-path guess:
     such a record and is never rewritten.
   - A path that is a LITERAL (non-glob) entry in `.gitignore` is a generated
     artifact, not a moved one — `nora/version.json` is built at image time and
-    is `unavailable` by design in a source checkout (ARCHITECTURE.md says so
-    in the same breath it names the path).
+    is `unavailable` by design in a source checkout.
 
 What survives all of that and still does not resolve is pinned in
 `_KNOWN_DANGLING`, exactly like `_ALLOWED` / `_UNRESOLVABLE` elsewhere in this
@@ -101,7 +100,6 @@ _CHECKED_ROOT_FILES = frozenset(
         "AGENTS.md",
         "CLAUDE.md",
         "README.md",
-        "ARCHITECTURE.md",
         "Makefile",
         "pyproject.toml",
         "identity.example.toml",
@@ -296,13 +294,14 @@ _KNOWN_DANGLING: dict[tuple[str, str], str] = {
     # code was before.
     ("docs/operations/trace-redaction.md", "evals/judge.py"): (
         "re-homed into `tests/` 2026-09-18; the reference records where "
-        "it lived (docs/design/evaluation Step 5)"
+        "it lived (docs/engineering/evaluation Step 5)"
     ),
     (
         "docs/adr/0011-the-relevance-gate-stays-off-the-sdk-transport.md",
         "nora/app/eval_support.py",
     ): (
-        "re-homed to `tests/offline_eval_support.py` 2026-09-18 (docs/design/evaluation Step 5); "
+        "re-homed to `tests/offline_eval_support.py` 2026-09-18 "
+        "(docs/engineering/evaluation Step 5); "
         "the "
         "reference records where it lived"
     ),
@@ -313,14 +312,6 @@ _KNOWN_DANGLING: dict[tuple[str, str], str] = {
         "stage-1 TTS+ducking WOULD live. The file was never created (the voice "
         "channel went the sidecar route, docs/design/voice/README.md) — the brief is a "
         "historical record of the proposal, not a link to fix"
-    ),
-    ("docs/design/08-stack-refactor-brief.md", "nora/store/db.py"): (
-        "pre-refactor handoff brief describing the SQLite-era code the brief itself "
-        "proposed replacing; nora/store/ no longer exists post-refactor"
-    ),
-    ("docs/design/08-stack-refactor-brief.md", "nora/store/migrate.py"): (
-        "pre-refactor handoff brief describing the SQLite-era code the brief itself "
-        "proposed replacing; nora/store/ no longer exists post-refactor"
     ),
     ("docs/adr/0020-documents-are-json-specs-the-portal-renders.md",
      "nora/compute/smith/page_shell.py"): (

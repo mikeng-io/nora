@@ -1,3 +1,9 @@
+---
+class: adr
+subject: Self-hosted SigNoz unifies application and LLM observability
+owns: []
+---
+
 # 0034 Self-hosted SigNoz unifies application and LLM observability
 
 - **Status**: accepted (operator, 2026-10-30); backend cutover deployed 2026-10-31,

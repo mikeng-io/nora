@@ -1,3 +1,9 @@
+---
+class: adr
+subject: 'Honcho session binding: deferred, with a deadline'
+owns: []
+---
+
 # 0002 — Honcho session binding: deferred, with a deadline
 
 - **Status:** accepted (as a *deferral*) — the binding itself is **not yet

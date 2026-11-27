@@ -14,6 +14,11 @@ and policy reload every three seconds after validation. Config and secrets requi
 recreation. They are not hot reloaded. See the
 [contract amendment](../adr/0033-private-secrets-and-model-endpoints.md) (DEC-325).
 
+Doctrine and dreamer content bind-mounted from a checkout reloads on file mtime; every other
+application file, including runtime skills, comes from the image. A deployment that mounts that
+content tracks it alongside the image revision. OAuth refresh state and platform registrations
+are persistent data and survive image replacement.
+
 ## Public agent identity
 
 The identity Markdown at `<doctrine.dir>/core/identity.md` owns `display_name` and

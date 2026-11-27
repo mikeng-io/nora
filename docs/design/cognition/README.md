@@ -82,7 +82,7 @@ part is [emergence](emergence.md).
 
 This bundle owns cognition: how Nora holds and works what she knows.
 [Context assembly](../agent/assembly.md) defines how a pass's input is
-assembled, and [evaluation](../evaluation/README.md) defines how she is
+assembled, and [evaluation](../../engineering/evaluation.md) defines how she is
 measured. Both use this bundle's vocabulary.
 
 ## Where it lives in the code

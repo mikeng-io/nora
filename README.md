@@ -36,7 +36,7 @@ experimental and self-hosted: the runtime and every store run on your own
 hardware, and model inference and connected services can be external.
 
 <p align="center">
-  <a href="ARCHITECTURE.md">Architecture</a> ·
+  <a href="docs/design/cognition/README.md">Architecture</a> ·
   <a href="GLOSSARY.md">Glossary</a> ·
   <a href="CONTRIBUTING.md">Contributing</a> ·
   <a href="deploy/README.md">Deployment</a> ·
@@ -108,7 +108,8 @@ Four ideas run through all of it:
 - **Learning changes context, not weights.** Lessons and accounts of people are
   revised from evidence. Doctrine is never rewritten by her.
 
-The [architecture map](ARCHITECTURE.md) is the full runtime and code map. The
+The [cognition design](docs/design/cognition/README.md) is the architecture anchor and the
+[code map](docs/engineering/code-map.md) says where each area lives. The
 memory tiers are specified in the [tier model](docs/design/cognition/loop.md)
 and the [prior-art note](docs/design/cognition/loop.md) records what she
 adopts and refuses from existing memory systems.
@@ -133,7 +134,7 @@ platform accounts and persistent storage.
 ## Start here
 
 - [Glossary](GLOSSARY.md): the words that mean something specific here.
-- [Architecture](ARCHITECTURE.md): runtime boundaries, data and deployment.
+- [Architecture](docs/design/cognition/README.md): how Nora holds and works what she knows; the [code map](docs/engineering/code-map.md) places the code.
 - [Decisions](docs/adr/README.md) and [design index](docs/design/decisions.md):
   rationale, trade-offs and design work, including proposals not yet implemented.
 - [Contributing](CONTRIBUTING.md): development checks and pull requests.

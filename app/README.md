@@ -43,7 +43,7 @@ any the browser sends. `src/server/upstream.test.ts` pins every rule, and
 `e2e/portal.spec.ts` checks the memory rule against the running app.
 
 The downloader connection boundary and its required operator-installed namespace
-permission are documented in [outbound fetches](../docs/security/outbound-fetches.md).
+permission are documented in [outbound fetches](../docs/operations/outbound-fetches.md).
 
 One group of `/api/v1/*` routes does NOT reach Nora: `/api/v1/downloads/*`
 is the portal's own yt-dlp batch downloader (`src/server/downloads/`), a
