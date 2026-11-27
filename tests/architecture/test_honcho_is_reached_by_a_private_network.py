@@ -59,11 +59,11 @@ def test_no_other_service_joins_the_honcho_network() -> None:
 
 def test_the_network_is_external_and_named_as_the_runbook_creates_it() -> None:
     """Owned by neither stack, so taking either down never removes it, and the
-    name is the one `docs/runbook.md` tells the operator to create."""
+    name is the one `docs/operations/runbook.md` tells the operator to create."""
     declared = _compose()["networks"][NETWORK_KEY]
     assert declared["external"] is True
     assert declared["name"] == NETWORK_NAME
-    runbook = (ROOT / "docs" / "runbook.md").read_text(encoding="utf-8")
+    runbook = (ROOT / "docs" / "operations" / "runbook.md").read_text(encoding="utf-8")
     # INTERNAL, or joining it can move nora's default route.
     assert f"docker network create --internal {NETWORK_NAME}" in runbook
     assert f"docker network create {NETWORK_NAME}" not in runbook
@@ -108,7 +108,7 @@ def test_the_rollback_puts_the_config_back_before_it_touches_the_compose_or_the_
     """Nora on an old compose has no `honcho` network, so a config still naming
     `honcho:8000` resolves nothing and every memory call fails. The runbook says
     so, and says the config goes back FIRST."""
-    runbook = (ROOT / "docs" / "runbook.md").read_text(encoding="utf-8")
+    runbook = (ROOT / "docs" / "operations" / "runbook.md").read_text(encoding="utf-8")
     rollback = runbook[runbook.index("**Rollback**, in this order"):]
     config_back = rollback.index('`[honcho] base_url` back to')
     port_back = rollback.index("publish `8000:8000` again")

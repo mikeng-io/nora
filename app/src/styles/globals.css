@@ -1,7 +1,7 @@
 /*
- * The portal's visual system. DESIGN.md governs every value here; the raw
- * tokens are DESIGN.md's frontmatter one for one. Change a value only
- * together with DESIGN.md.
+ * The portal's visual system. docs/design/appearance/README.md governs every value here; the raw
+ * tokens are docs/design/appearance/README.md's frontmatter one for one. Change a value only
+ * together with docs/design/appearance/README.md.
  */
 @import "tailwindcss";
 @import "@fontsource-variable/noto-sans-hk";
@@ -139,7 +139,7 @@
   }
 }
 
-/* Live state is the only thing that loops (DESIGN.md §6): a presence ring
+/* Live state is the only thing that loops (docs/design/appearance/README.md §6): a presence ring
    expanding from a current position, stopped the moment it goes stale. */
 @keyframes live {
   0% {

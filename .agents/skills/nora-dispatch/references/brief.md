@@ -16,7 +16,7 @@ change needs none. The lifecycle and its routes: `nora-work/references/lifecycle
 
 The issue also carries its Linear fields: one **Type** label, one **Area** label
 (the code area the brief covers), a priority, and the project when it is part of
-a split outcome (`docs/maintainers/conventions.md` «Linear execution»). The
+a split outcome (`docs/engineering/conventions.md` «Linear execution»). The
 builder's delegation prompt (skills to read, selectors, lease rules) belongs in
 the delegation message, not the brief.
 
@@ -70,7 +70,7 @@ no BLOCKER.
    revision. A link behind a login it cannot pass is not an input.
 
 A first-round BLOCKER that this pre-flight would have caught is the author's
-miss. Its fix adds or extends a lesson in `docs/maintainers/lessons.md`
+miss. Its fix adds or extends a lesson in `docs/engineering/lessons.md`
 (`nora-land/reference.md` «Resolve»).
 
 ## Review and lock

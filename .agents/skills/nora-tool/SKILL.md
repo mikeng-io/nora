@@ -166,4 +166,4 @@ manually rebuild after merge. When acceptance requires live evidence, follow
 - Runtime quirks (output-compressing hooks, background notices, sandboxed git): `.agents/runtimes/`.
   Read the log file as written above when the pass count matters.
 
-Host exec requires the [installed secret-delivery helper](../../../docs/configuration.md#host-migration-and-installed-files).
+Host exec requires the [installed secret-delivery helper](../../../docs/operations/configuration.md#host-migration-and-installed-files).

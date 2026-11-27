@@ -5,15 +5,15 @@ description: Review a Nora work brief and plan before dispatch, review an agreed
 
 # Nora review
 
-Read [REVIEW.md](../../../REVIEW.md) for the review contract and
-[ORCHESTRATION.md](../../../ORCHESTRATION.md#bounded-independent-review) for tier,
+Read [docs/engineering/review.md](../../../docs/engineering/review.md) for the review contract and
+[docs/engineering/orchestration.md](../../../docs/engineering/orchestration.md#bounded-independent-review) for tier,
 independence, dispositions and convergence. This skill is the procedure.
 A brief review follows [references/brief-review.md](references/brief-review.md)
 instead of steps 2–3; item marking, severity and follow-through are there too.
 A panel of reviewers (tiers, re-check checks, brainstorm packets, synthesis)
 follows [references/council.md](references/council.md).
 
-1. **Identify the review.** Use REVIEW.md's brief: confirm the question, basis,
+1. **Identify the review.** Use docs/engineering/review.md's brief: confirm the question, basis,
    surface, relevant lenses, evidence and exclusions. Read its source requirements;
    record the review type, tier and base/head. Recover the original outcome and
    approved amendments before reading prior findings; retain this basis on
@@ -52,7 +52,7 @@ follows [references/council.md](references/council.md).
    relevant siblings before first reporting a class; a reported class's remedy
    is named once, and new input shapes of it are not new findings. Label
    uncertain premises.
-4. **Return and stop.** Use REVIEW.md's coverage/findings/limits format. Complete
+4. **Return and stop.** Use docs/engineering/review.md's coverage/findings/limits format. Complete
    the assigned coverage rather than stopping at the first finding. For a
    re-check, distinguish unresolved classes from genuinely new repair defects.
    Mark each Done-when item the candidate addresses as met, unmet or unavailable.
@@ -75,7 +75,7 @@ Select lenses from what changed and what it can break, not a fixed panel:
 For architecture/docs, use changed responsibilities and invariants as the basis.
 One reviewer can cover several lenses; select separate specialists only when
 capability or scope warrants it. A title such as "security reviewer" alone is
-not a brief. Keep required risk floors from ORCHESTRATION.md.
+not a brief. Keep required risk floors from docs/engineering/orchestration.md.
 
 Read surrounding code/docs as needed to trace the affected behavior. The focus
 does not suppress a material regression caused by the candidate outside a named

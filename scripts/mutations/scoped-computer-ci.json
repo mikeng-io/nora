@@ -37,7 +37,7 @@
   {
     "name": "`queued` joins the declared status extensions",
     "file": "nora/agent/ports.py",
-    "old": "    \"queued\": \"the call was durably accepted into the scope's FIFO but is \"\n              \"waiting behind the task running now: a `task` id and no result \"\n              \"yet. Not `started` (that work is already running) and not \"\n              \"`unavailable` (nothing failed, and an intent-store failure \"\n              \"answers `unavailable`, never `queued`): the result arrives \"\n              \"later through the delivery path (design/browser-runtime, the \"\n              \"queue lifecycle).\",\n",
+    "old": "    \"queued\": \"the call was durably accepted into the scope's FIFO but is \"\n              \"waiting behind the task running now: a `task` id and no result \"\n              \"yet. Not `started` (that work is already running) and not \"\n              \"`unavailable` (nothing failed, and an intent-store failure \"\n              \"answers `unavailable`, never `queued`): the result arrives \"\n              \"later through the delivery path (docs/design/computer/browser.md, the \"\n              \"queue lifecycle).\",\n",
     "new": "",
     "target": "tests/test_output_contracts.py::test_no_agent_module_returns_a_status_outside_the_vocabulary"
   },

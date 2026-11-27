@@ -9,7 +9,7 @@ comment get one answer. The rest is what the consumer reads back:
 sweep, which turns a row a dead process left `claimed` into `failed` and never
 into a retry.
 
-Database scoped to the MODULE and truncated between tests (docs/code-standards.md).
+Database scoped to the MODULE and truncated between tests (docs/engineering/code-standards.md).
 """
 
 from __future__ import annotations

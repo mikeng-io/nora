@@ -8,7 +8,7 @@ description: Proves a Nora code fix is guarded by reverting it and watching a na
 Regression protection is proved when reverting the exact production line turns
 a named test red, and restoring it turns that test green. This proves the guard,
 not every task acceptance obligation; `make gate` green is not that claim. The
-rule and its history are `docs/maintainers/conventions.md` "Proving a fix: mutation"; the runner is
+rule and its history are `docs/engineering/conventions.md` "Proving a fix: mutation"; the runner is
 `scripts/mutate.py` and the table format is `scripts/mutations/README.md`.
 
 ## Procedure
@@ -108,7 +108,7 @@ rule and its history are `docs/maintainers/conventions.md` "Proving a fix: mutat
   re-pointing its numbers.
 - **Pair every zero-assertion with a positive control.** `== 0` is also true of a
   stage that raised; assert the positive outcome and read back what was written
-  (`docs/maintainers/conventions-rationale.md`, "Pair every zero-assertion with a positive control").
+  (`docs/engineering/conventions-rationale.md`, "Pair every zero-assertion with a positive control").
   Falsify per clause, not per change.
 
 ## After a rename

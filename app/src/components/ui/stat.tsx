@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { cn } from "@/lib/cn";
 
 /** A label above a value; the value in mono with tabular figures when it is
- * a number that changes or gets copied (DESIGN.md §4). */
+ * a number that changes or gets copied (docs/design/appearance/README.md §4). */
 export function Stat({
   label,
   value,

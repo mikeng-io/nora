@@ -414,7 +414,7 @@ def test_owner_admission_requires_bound_scheduling_scope_prerequisites_and_accep
 @pytest.mark.parametrize(
     "paths,exempt",
     [
-        (["docs/guide.md", "design/plan.md"], True),
+        (["docs/guide.md", "docs/design/plan.md"], True),
         (["README.md"], True),
         *[
             ([path], True)

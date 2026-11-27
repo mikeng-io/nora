@@ -7,7 +7,7 @@ import dns from "node:dns/promises";
 // could ask for http://nora:9100/status and read it back from the shelf).
 // Submission/pre-run checks give early feedback. The connection boundary is
 // scripts/public-download.py: public-only proxy plus a network namespace for
-// yt-dlp and all descendants. See docs/security/outbound-fetches.md.
+// yt-dlp and all descendants. See docs/operations/outbound-fetches.md.
 
 // hostname arrives bracketed for IPv6 literals ("[::1]"); strip the brackets
 // before testing so the anchors below apply to either form.

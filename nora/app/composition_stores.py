@@ -173,7 +173,7 @@ class ObservationWiring:
 
 def observation(engine: Any)-> ObservationWiring:
 
-    # The typed platform-observation Record (design/platform-observations 02): persisted
+    # The typed platform-observation Record (docs/design/platform/observations.md 02): persisted
     # whenever a bridge ingests typed source evidence. Cognition OFF still retains the rows
     # — they simply wake no session (the obligation enqueued in the append's transaction is…
     observation_store = SqlObservationStore(engine)
@@ -304,7 +304,7 @@ def readers(cfg: Any, content_checks: Any, engine: Any)-> ReadersWiring:
     lessons_reader: ActiveLessons | None = (
         ActiveLessons(SqlLessonStore(engine)) if cfg.lessons.render else None
     )
-    # THE SWITCH (design/unified-memory/profiles.md): the Profile accounts'
+    # THE SWITCH (docs/design/cognition/graph.md): the Profile accounts'
     # read half — one store, read-only by the Protocol the readers are typed against
     # (`ProfileHeads` has `account_heads` and nothing else), handed to the tag assembler,…
     profile_store_reader = (
@@ -435,7 +435,7 @@ async def managed_identity(
     listeners before the app accepts the backend. An unreachable Kratos or
     Keto is `StartupError`, never a fallback to file grants: falling back
     would silently serve stale file authority as managed truth
-    (`design/managed-identity-access/authorization.md` «Failure»).
+    (`docs/design/people/authority.md` «Failure»).
     """
     _people_wire = importlib.import_module("nora.people").wire
     if cfg.identity.backend == "file":

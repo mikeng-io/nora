@@ -3,7 +3,7 @@
 //
 // SPIKE/VERIFICATION ONLY — production mode (src/service.mjs) never writes
 // audio to disk; recording exists so spike.mjs can prove decrypted PCM is
-// real, per the privacy posture in design/voice-channel/receive.md.
+// real, per the privacy posture in docs/design/voice/README.md.
 
 import fs from 'node:fs';
 import { dirname, resolve } from 'node:path';

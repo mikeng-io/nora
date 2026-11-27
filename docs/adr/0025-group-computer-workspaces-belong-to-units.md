@@ -1,3 +1,9 @@
+---
+class: adr
+subject: Group computer workspaces belong to policy units
+owns: []
+---
+
 # 0025 · Group computer workspaces belong to policy units
 
 - **Status:** accepted (operator decisions in the merged computer-unit-scope contract, 2026-10-21)

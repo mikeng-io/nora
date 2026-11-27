@@ -155,7 +155,7 @@ def _declared_names(tree: ast.Module, rel: str) -> set[str]:
         return names
     raise AssertionError(
         f"{rel} has no `_BLOCKS: tuple[...] = (...)` literal — "
-        "design/context-assembly S1 claims one for every occasion in "
+        "docs/design/agent/assembly.md S1 claims one for every occasion in "
         "_OCCASIONS above."
     )
 

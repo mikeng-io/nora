@@ -1,7 +1,7 @@
 # nora/: the layer rules
 
 Code is grouped by area (`nora/<area>/`), each in three layers that import
-inward only. The area table is ARCHITECTURE.md «Code map»; the procedure for
+inward only. The area table is `docs/engineering/code-map.md`; the procedure for
 adding, moving or splitting code is the `nora-structure` skill.
 
 ## domain/

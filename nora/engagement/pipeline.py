@@ -406,7 +406,7 @@ class EngagementPipeline:
         admission_sink: Callable[[str], Awaitable[None]] | None = None,
         queue_link: dict[str, Any] | None = None,
     ) -> str:
-        """The bridge-work path (design/platform-bridges).
+        """The bridge-work path (docs/design/platform/README.md).
 
         Differences from `run`, all at the durability seams and none in the
         turn itself: the speaking slot is already held by the caller's DB
@@ -423,7 +423,7 @@ class EngagementPipeline:
         call metadata rather than on `EngagementRequest` (the domain type
         stays queue-agnostic). The generation root opens as a SEPARATE
         empty-parent trace linked to that attempt
-        (design/platform-bridges/04-operations.md: not a child of a queue trace).
+        (docs/design/platform/README.md: not a child of a queue trace).
 
         Returns the turn's disposition for the work claim ("rejected",
         "queue_full", or the turn outcome), never None.

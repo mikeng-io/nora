@@ -91,7 +91,7 @@ edited by hand.
 bundle is a directory, so its address never moves. Its `README.md` is the overview and holds the
 bundle's subjects until it reaches the 300-line budget. A subject that outgrows the README moves to
 its own file beside it. Nothing nests deeper than one level. Operations and engineering are
-procedure, so they are plain files (`docs/operations/deploy.md`), with no bundle directories.
+procedure, so they are plain files (`docs/operations/runbook.md`), with no bundle directories.
 
 - A bundle is a code area, named exactly as its package `nora/<area>/`, or a cross-cutting subject
   on the closed list in the bundle map. Adding a cross-cutting subject needs the operator.
@@ -117,15 +117,17 @@ hooks do not run.
 
 ## Checks
 
-`scripts/design_shape.py` becomes the document gate. It fails on:
+`scripts/check_documents.py` judges the documents a change touches: the staged files in the
+pre-commit hook, and a PR's changed files in CI. An untouched file is not judged, and an exact move
+is not new content. It fails on:
 - a missing or invalid frontmatter field;
 - a `subject` or `owns` entry claimed twice;
 - a link to a path that does not exist;
 - a file in the wrong home for its class;
-- a root file not listed above;
+- a new root document not listed above;
 - a numbered or dated file name;
-- a vendor name in an engineering file;
-- a generated file that differs from its regeneration.
+- a bundle file over budget;
+- a vendor name in an engineering file.
 
-The commit-message hook and the PR content check refuse a commit or PR without provenance. Existing
-debt sits in a baseline that only shrinks.
+The commit-msg and pre-push hooks refuse a commit without provenance, and the PR content check
+refuses a PR without «Produced by».

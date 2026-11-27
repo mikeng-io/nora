@@ -1,4 +1,4 @@
-"""Bridge action ownership vocabulary (design/platform-bridges §02-wire).
+"""Bridge action ownership vocabulary (docs/design/platform/README.md §02-wire).
 
 `ActionOwner` is domain — it names WHO may run a durable outbound action,
 and that name travels everywhere: the Deliverer binds a live invocation,

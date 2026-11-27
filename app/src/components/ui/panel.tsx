@@ -1,7 +1,7 @@
 import type { HTMLAttributes, ReactNode } from "react";
 import { cn } from "@/lib/cn";
 
-// A panel is surface on studio with one hairline (DESIGN.md §5, the
+// A panel is surface on studio with one hairline (docs/design/appearance/README.md §5, the
 // Hairline-First Rule). Inside it: rows and dividers, never another card.
 export function Panel({ className, ...props }: HTMLAttributes<HTMLElement>) {
   return (

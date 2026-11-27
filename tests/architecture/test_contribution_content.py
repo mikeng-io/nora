@@ -218,12 +218,12 @@ def test_design_issue_accepts_both_form_fields_and_the_documented_prose_anchor()
     item = {
         "title": "Memory: build the specified recall",
         "labels": [{"name": "design-anchored"}],
-        "body": "**Design:** design/recall.md §2 (recall behavior).\n"
+        "body": "**Design:** docs/design/recall.md §2 (recall behavior).\n"
         + "\n".join(f"## {name}\nA concrete explanation.\n" for name in content.DESIGN),
     }
     assert not content.issue_problems(item)
     item["body"] = item["body"].replace(
-        "**Design:** design/recall.md §2 (recall behavior).",
+        "**Design:** docs/design/recall.md §2 (recall behavior).",
         "### Design anchor\ndesign/recall.md §2\n### What it covers\nRecall behavior.",
     )
     assert not content.issue_problems(item)
@@ -619,7 +619,7 @@ def test_issue_required_sections_reject_embedded_unfilled_prompts(label):
     )
     item["body"] = "\n".join(f"## {name}\nConcrete evidence.\n" for name in headings)
     if label == "design-anchored":
-        item["body"] = "**Design:** design/recall.md §2\n" + item["body"]
+        item["body"] = "**Design:** docs/design/recall.md §2\n" + item["body"]
     assert content.issue_problems(item) == []
     item["body"] += "\n- **TODO**\n"
     assert content.issue_problems(item)

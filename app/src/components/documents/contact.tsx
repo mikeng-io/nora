@@ -8,7 +8,7 @@ import type { Render } from "./types";
 
 // People to reach on the day: one Panel, divided rows. The avatar is a neutral disc, not
 // a PersonAvatar: a document's contact has no person id, and a hue would claim one
-// (DESIGN.md, the Person-Hue Rule). The number is the tap target, 44px on a phone.
+// (docs/design/appearance/README.md, the Person-Hue Rule). The number is the tap target, 44px on a phone.
 export function ContactBlock({ props }: Render<"Contact">) {
   const t = useTranslations("documents.renderer");
   return (

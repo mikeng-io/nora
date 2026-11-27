@@ -17,14 +17,14 @@ import yaml
 from jsonschema import Draft202012Validator
 
 ROOT = Path(__file__).resolve().parents[2]
-DOCUMENT = (ROOT / "ORCHESTRATION.md").read_text(encoding="utf-8")
+DOCUMENT = (ROOT / "docs/engineering/orchestration.md").read_text(encoding="utf-8")
 SCHEMA = json.loads((ROOT / ".agents/orchestration.schema.json").read_text(encoding="utf-8"))
 VALIDATOR = Draft202012Validator(SCHEMA)
 FRONTMATTER = re.match(r"\A---\n(.*?)\n---\n", DOCUMENT, re.DOTALL)
-assert FRONTMATTER, "ORCHESTRATION.md needs policy YAML frontmatter"
+assert FRONTMATTER, "docs/engineering/orchestration.md needs policy YAML frontmatter"
 POLICY = yaml.safe_load(FRONTMATTER.group(1))
 EXAMPLE_BLOCK = re.search(r"```yaml\n(.*?)\n```", DOCUMENT, re.DOTALL)
-assert EXAMPLE_BLOCK, "ORCHESTRATION.md needs synthetic interchange examples"
+assert EXAMPLE_BLOCK, "docs/engineering/orchestration.md needs synthetic interchange examples"
 EXAMPLES = yaml.safe_load(EXAMPLE_BLOCK.group(1))
 
 

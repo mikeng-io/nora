@@ -7,7 +7,7 @@ description: Reads back the evidence that a Nora turn, background pass, deploy o
 
 For database contention, record held election sessions separately from active queries, compare a normal background tick with foreground progress, and inspect executed work on generated history locally. LIMIT and EXPLAIN cost alone do not measure execution. PostgreSQL internal recovery needs logs or backend continuity; postmaster start time and Docker restart count can remain unchanged.
 
-`docs/observability.md` is the map (the three signals, Reading it back, When
+`docs/operations/observability.md` is the map (the three signals, Reading it back, When
 a span is missing). This skill is the procedure and the traps. Before reading
 anything, write down what a positive result would look like; a null from an
 instrument that cannot see the thing is not evidence (`AGENTS.md`, Never list).
@@ -34,7 +34,7 @@ Sentry's error trace ID to that same root; never infer correlation from a
 matching timestamp. Query retained logs across the recreation time, not just
 the current container's stdout. An empty result needs a positive control for
 that service and signal before it can support a conclusion. Backend setup and
-the cutover sequence live in `docs/observability.md`; do not operate a second
+the cutover sequence live in `docs/operations/observability.md`; do not operate a second
 alert stack from this skill.
 
 | question | store | what it cannot tell you |
@@ -106,7 +106,7 @@ Traps, one line each:
   cost more, because uncached input doubled. Price the cached and
   uncached split per turn.
 - Not in Jaeger is not dropped: generations go to Langfuse only, and Jaeger
-  holds the rest (`docs/observability.md`).
+  holds the rest (`docs/operations/observability.md`).
 
 **Replaying recorded turns** (for a doctrine, voice or tool-description arm;
 the scripts are not in the repo, rebuild them): take each
@@ -150,7 +150,7 @@ ssh nora-host 'python3 ~/workspace/nora/scripts/secret_delivery.py --runtime-roo
 ```
 
 - Install the runtime `scripts/secret_delivery.py` as described in
-  [configuration](../../../docs/configuration.md#host-migration-and-installed-files)
+  [configuration](../../../docs/operations/configuration.md#host-migration-and-installed-files)
   before retiring `.env` credentials. Use its `--compose-exec -T db` mode,
   never by grepping `docker ps`: other stacks' databases on the host match.
 - A standing population ("how many duplicates exist") survives restarts; ask
@@ -193,7 +193,7 @@ ssh nora-host 'python3 ~/workspace/nora/scripts/secret_delivery.py --runtime-roo
 
 ## Credential-source amendment
 
-Use [the configuration migration procedure](../../../docs/configuration.md) for
+Use [the configuration migration procedure](../../../docs/operations/configuration.md) for
 secret.toml, installed helper delivery and scoped recreation. `source()` reads
 `.env` too, so the recipes above work unchanged on a legacy `.env`-only
 deployment. Do not print values or copy rotating OAuth state into the

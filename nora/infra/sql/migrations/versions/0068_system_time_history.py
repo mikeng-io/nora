@@ -1,5 +1,5 @@
 """system_time_history -- every store Nora writes is append-only in system
-time, so she can be restored as of any T (design/cognition-loop/data.md «Notebook vocabulary»).
+time, so she can be restored as of any T (docs/design/cognition/loop.md «Notebook vocabulary»).
 
 WHAT THIS ADDS, all additive (no table dropped, no reader changed):
 

@@ -194,12 +194,12 @@ def load_eval_config(candidates: tuple[Path, ...]) -> Config:
         # `config.toml` — so a suite run from one would measure the TEMPLATE
         # while reporting numbers as if they were the deployment's: eval keys
         # such as `judge_samples`, `journey_samples` and the judge model differ
-        # (`docs/eval-sop.md`).
+        # (`docs/operations/eval-sop.md`).
         if candidate.name != "config.toml":
             log.warning(
                 "eval config: %s has no config.toml; measuring %s instead. "
                 "Its model and sample counts are the TEMPLATE's, not the "
-                "deployment's — see docs/eval-sop.md.",
+                "deployment's — see docs/operations/eval-sop.md.",
                 candidate.parent, candidate.name,
             )
         return cfg

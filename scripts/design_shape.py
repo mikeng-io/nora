@@ -1,4 +1,4 @@
-"""Check that every file under design/ has the shape of a design document.
+"""Check that every file under docs/design/ has the shape of a design document.
 
 `tests/architecture/test_design_is_design.py` holds existing violations to
 `tests/architecture/design_shape_baseline.json`, which only shrinks.
@@ -17,7 +17,7 @@ from scripts.log_markers import ROOT
 
 BASELINE = ROOT / "tests" / "architecture" / "design_shape_baseline.json"
 
-MAX_README_LINES = 150
+MAX_README_LINES = 300
 MAX_FILE_LINES = 300
 NOT_DESIGN = {"decision", "decisions", "review", "reviews", "roadmap", "items", "draft", "plan",
               "plans", "migration"}
@@ -59,11 +59,14 @@ def check(path: str, text: str) -> list[str]:
 
 def census() -> dict[str, list[str]]:
     out = subprocess.run(
-        ["git", "ls-files", "--cached", "--others", "--exclude-standard", "design"],  # noqa: S607
+        ["git", "ls-files", "--cached", "--others", "--exclude-standard", "docs/design"],  # noqa: S607
         cwd=ROOT, check=True, capture_output=True, text=True,
     ).stdout.split()
     result = {}
     for path in sorted(out):
+        # The decision index is a decision document, checked by check_documents.
+        if path == "docs/design/decisions.md":
+            continue
         file = ROOT / path
         if not file.is_file():
             continue

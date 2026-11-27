@@ -7,7 +7,7 @@ description: Records Nora decisions, ADRs, GitHub reports/roadmap and Linear exe
 
 Git and GitHub are the log. The ADR is the one decision record kept as history;
 the decision index lists the decisions that hold now; the design bundle states
-the design (`nora-design`). Conventions: `docs/maintainers/conventions.md`
+the design (`nora-design`). Conventions: `docs/engineering/conventions.md`
 («Issues», «Issue → ADR → decision row»), `docs/adr/README.md`. Run from the
 branch's worktree.
 
@@ -32,7 +32,7 @@ branch's worktree.
    outcomes, and GitHub Issues for reports. Keep one work identity; do not create a
    GitHub Issue to make a Linear task eligible for execution.
 3. **Select the destination.** GitHub reports use `.github/ISSUE_TEMPLATE/`
-   and the form conventions. Linear execution follows the [execution convention](../../../docs/maintainers/conventions.md#linear-execution).
+   and the form conventions. Linear execution follows the [execution convention](../../../docs/engineering/conventions.md#linear-execution).
    Use the work brief in `nora-dispatch` and native properties; no second spec/plan.
 4. **Scrub before writing.** No private conversations, identities, credentials
    or production rows in either service. Link permitted source/evidence rather
@@ -53,7 +53,7 @@ back; preserve history and use a cross-link instead of bulk-copying comments.
 
 ## Roadmap planning
 
-Follow [roadmap conventions](../../../docs/maintainers/conventions.md#roadmap).
+Follow [roadmap conventions](../../../docs/engineering/conventions.md#roadmap).
 Read the design and current implementation before changing an outcome. Reuse
 its GitHub Project item; keep only capability intent, success signal, horizon
 and Linear execution links. New outcomes can use Project draft items without
@@ -86,12 +86,13 @@ execution, spending or deployment authority.
 
 ## 3. Writing a decision-index row
 
-1. **Where.** The last table of `design/09-decision-index.md`,
-   `| ID | Statement | Enforcing test |`. A row is for a LANDED decision.
-2. **Statement.** The rule in bold, then the reading that would reopen it
-   («This holds unless ...»). No provenance, dates or history: the commit and
-   the ADR hold those.
-3. **Enforcing test.** Backticked test paths that exist, or `NOT ENFORCED`. A
+1. **Where.** The one table of `docs/design/decisions.md`,
+   `| ID | Rule | Design | Test | ADR |`. A row is for a LANDED decision.
+2. **Rule.** One present-tense sentence of about 200 characters, with no
+   provenance, dates, "amended" or rationale: the commit, the ADR and the design
+   hold those. **Design** links the bundle file that states the rule, **ADR** the
+   record of the decision or `—`. The whole row stays under 300 characters.
+3. **Test.** One backticked test node id or file that exists, or `NOT ENFORCED`. A
    behavioural rule (R-N) registers its test in `RULE_TESTS` in
    `tests/test_acceptance_rules.py`.
 4. **Check:**
@@ -104,8 +105,8 @@ execution, spending or deployment authority.
    ```
    PASS is `RC=0` and a passed count.
 5. **A decision that no longer holds is deleted** from the index, with its
-   test or its `RULE_TESTS` entry. A changed decision is a rewritten row. Its
-   number is never reused (§4 reads history).
+   `RULE_TESTS` entry. A changed decision is a rewritten row. Its number is
+   never reused (§4 reads history).
 
 ## 4. Taking the number, at merge time
 
@@ -137,13 +138,13 @@ conflict, so the number is chosen immediately before merge (`nora-land` §8).
 ## 5. Citing or reversing a decision
 
 1. **Read the row on origin/master**, not a summary or memory:
-   `git grep -nE 'DEC-<n>([^0-9]|$)' origin/master -- design/09-decision-index.md`.
+   `git grep -nE 'DEC-<n>([^0-9]|$)' origin/master -- docs/design/decisions.md`.
    No row means the decision no longer holds; `git log -S 'DEC-<n>'` finds why.
 2. **Reverse only on new evidence** (a measurement, a read-back, a probe).
    State it in one line and write the new reopen condition.
 3. **Rewrite every place that states the old answer**: the row (§3.5), the
    bundle (`nora-design`), the root guides. Grep the withdrawn answer's own
-   words: `git grep -n -i '<old vocabulary>' -- design docs nora *.md .agents`.
+   words: `git grep -n -i '<old vocabulary>' -- docs nora *.md .agents`.
    Check: every hit is rewritten or deleted; none is marked.
 
 ## Tool notes
