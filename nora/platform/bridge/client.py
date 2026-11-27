@@ -383,9 +383,10 @@ def _member_record(m: object) -> bool:
 
 
 class BridgeRoster:
-    """`RosterSource` over the bridge's `POST /v1/reads` op `roster`, which
-    proxies signal-cli `listGroups` for one group. Fail-closed like
-    `SignalRoster`: a group the bridge does not list is `available=False`.
+    """`RosterSource` over the bridge's `POST /v1/reads` op `roster` for one
+    group: signal-cli member records on Signal, a list of every known id form
+    per member on WhatsApp. Fail-closed: an unlisted group or a malformed member is
+    `available=False`.
     """
 
     def __init__(self, platform: str, endpoint: BridgeEndpoint) -> None:
@@ -409,7 +410,13 @@ class BridgeRoster:
         if not isinstance(data, dict):
             return Roster(available=False)
         members = data.get("members")
-        if data.get("available") is not True or not isinstance(members, list) or any(
-                not _member_record(m) for m in members):
+        if data.get("available") is not True or not isinstance(members, list):
+            return Roster(available=False)
+        if self.platform == "whatsapp":
+            if any(not isinstance(m, list) or not m
+                   or any(not isinstance(i, str) or not i for i in m) for m in members):
+                return Roster(available=False)
+            return Roster(available=True, members=tuple(frozenset(m) for m in members))
+        if any(not _member_record(m) for m in members):
             return Roster(available=False)
         return Roster(available=True, members=tuple(ids_of(m) for m in members))

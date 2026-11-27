@@ -10,7 +10,7 @@
  * blindly. `unsupported` means the platform has no such op.
  */
 import { ACTION_OPS, OWNER_KINDS, actionResponse } from './store.js';
-import { isValidTargetJid, isGroupJid, isLidJid, jidUserDigits, buildMediaPayload, timestampMs } from './bridge_helpers.js';
+import { isValidTargetJid, isGroupJid, jidUserDigits, buildMediaPayload, jidDomain, timestampMs } from './bridge_helpers.js';
 import { lidForm, phoneForm } from './wa_jid.js';
 import { readBody, sendJson } from './http_util.js';
 
@@ -335,12 +335,20 @@ export function createV1(deps) {
               return sendJson(res, 200, { available: false, members: [] });
             }
             const meta = await deps.ctx.sock.groupMetadata(jid);
+            const { lidToPhone = {}, phoneToLid = {} } = deps.identityMaps?.() || {};
             const members = [];
             for (const p of meta?.participants || []) {
-              const raw = p.phoneNumber ? `${p.phoneNumber}@s.whatsapp.net` : (p.id || p.lid || '');
-              const digits = jidUserDigits(raw);
-              if (!digits) continue;
-              members.push(isLidJid(raw) ? lidForm(digits) : phoneForm(digits));
+              // Every form the session knows, so a member registered by phone
+              // still resolves when metadata names them by lid alone.
+              // Explicit metadata forms win; the session map only fills gaps.
+              const explicit = (jid, want) => (jid && jidDomain(jid) === want ? jidUserDigits(jid) : null);
+              let phone = (p.phoneNumber && jidUserDigits(p.phoneNumber))
+                || explicit(p.id, 's.whatsapp.net') || null;
+              let lid = (p.lid && jidUserDigits(p.lid)) || explicit(p.id, 'lid') || null;
+              if (!phone && lid) phone = lidToPhone[lid] || null;
+              if (!lid && phone) lid = phoneToLid[phone] || null;
+              const forms = [phone && phoneForm(phone), lid && lidForm(lid)].filter(Boolean);
+              if (forms.length) members.push(forms);
             }
             return sendJson(res, 200, { available: true, members });
           }
