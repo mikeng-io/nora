@@ -26,7 +26,7 @@ async def record(clean_pg_url):
         await engine.dispose()
 
 
-async def _silent_span(record, *, first_at_start=None, outage=False):
+async def _silent_span(record, *, first_at_start=None, outage=None):
     await record.message("signal", _START - _SIX_HOURS, person=record.people[0])
     for platform, _ in record.rooms:
         start = _START if first_at_start == platform else _START - 1_000
@@ -35,9 +35,11 @@ async def _silent_span(record, *, first_at_start=None, outage=False):
         await record.health("presence", record.circle, "poll", "ok", _START - 1_000)
     for step in range(5):
         await record.health("presence", record.circle, "poll", "ok", _START + step * _SIX_HOURS)
-    if outage:
+    if outage == "adapter":
         await record.health("discord", "", "transition", "down", _START + _SIX_HOURS)
         await record.health("discord", "", "transition", "up", _START + 2 * _SIX_HOURS)
+    if outage == "poll":
+        await record.health("presence", record.circle, "poll", "error", _START + _SIX_HOURS + 1_000)
 
 
 async def _run(record):
@@ -64,8 +66,9 @@ async def test_covered_silence_produces_one_absence_anchored_to_the_person(recor
     )
 
 
-async def test_one_unhealthy_row_anywhere_in_the_span_prevents_absence(record):
-    await _silent_span(record, outage=True)
+@pytest.mark.parametrize("outage", ["adapter", "poll"])
+async def test_one_unhealthy_row_anywhere_in_the_span_prevents_absence(record, outage):
+    await _silent_span(record, outage=outage)
     await _run(record)
     assert await _absences(record) == ()
     assert (await record.store.current_build()).through_ms == _END
@@ -85,3 +88,11 @@ async def test_rebuilding_and_revisiting_the_same_span_keeps_the_absence_identit
     rebuilt = await record.runner.rebuild(through_ms=_END)
     await record.runner.run(build_id=rebuilt, through_ms=_END)
     assert await _absences(record) == (before,)
+
+
+async def test_a_rebuild_raises_no_absence_and_the_next_run_does(record):
+    await _silent_span(record)
+    rebuilt = await record.runner.rebuild(through_ms=_END)
+    assert await _absences(record) == ()
+    await record.runner.run(build_id=rebuilt, through_ms=_END)
+    assert len(await _absences(record)) == 1

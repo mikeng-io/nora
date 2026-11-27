@@ -280,7 +280,7 @@ class UnitRollups:
         if scope is None or not scope.circles:
             return False
         rows: list[HealthRow] = await self._store.health_rows(
-            sources=["presence", *platforms] if deviation.kind == "silence" else ["presence"],
+            sources=["presence", *platforms],
             start_ms=deviation.start_ms, through_ms=through_ms,
             graph_unit=deviation.unit,
         )
@@ -291,10 +291,8 @@ class UnitRollups:
             for circle in scope.circles
         ):
             return False
-        if deviation.kind == "silence":
-            return all(
-                adapter_up(rows, platform=p, start_ms=deviation.start_ms,
-                           end_ms=deviation.end_ms, require_preceding=True)
-                for p in platforms
-            )
-        return True
+        return all(
+            adapter_up(rows, platform=p, start_ms=deviation.start_ms,
+                       end_ms=deviation.end_ms, require_preceding=True)
+            for p in platforms
+        )
