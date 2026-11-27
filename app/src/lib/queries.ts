@@ -34,14 +34,12 @@ export const qk = {
   tools: ["tools"] as const,
   roster: ["roster"] as const,
   person: (id: string) => ["person", id] as const,
-  plans: ["plans"] as const,
   documents: (page: number, state: documents.DocumentFilter = "active", search = "") =>
     ["documents", page, state, search] as const,
   document: (id: string) => ["document", id] as const,
   artifacts: (page: number, search = "") => ["artifacts", page, search] as const,
   artifact: (id: string) => ["artifact", id] as const,
   downloads: ["downloads"] as const,
-  plan: (id: string) => ["plan", id] as const,
   presence: ["presence"] as const,
   savedPlaces: ["saved-places"] as const,
   history: (id: string, hours: number) => ["history", id, hours] as const,
@@ -101,20 +99,6 @@ export const usePerson = (id: string) =>
     queryKey: qk.person(id),
     queryFn: ({ signal }) => people.fetchPerson(id, signal),
     staleTime: 5 * M,
-  });
-
-export const usePlans = () =>
-  useQuery({
-    queryKey: qk.plans,
-    queryFn: ({ signal }) => people.fetchPlans(signal),
-    staleTime: 1 * M,
-  });
-
-export const usePlan = (id: string) =>
-  useQuery({
-    queryKey: qk.plan(id),
-    queryFn: ({ signal }) => people.fetchPlan(id, signal),
-    staleTime: 1 * M,
   });
 
 // ------------------------------------------------------------- artifacts

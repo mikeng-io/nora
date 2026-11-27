@@ -3,9 +3,8 @@
 import { usePresenceNow } from "@/hooks/use-presence";
 import dynamic from "next/dynamic";
 import { useMemo } from "react";
-import { useQueries } from "@tanstack/react-query";
 import { useLocale, useTranslations } from "next-intl";
-import { ArrowRight, CalendarDays, ChevronRight, MapPin } from "lucide-react";
+import { ArrowRight, ChevronRight, MapPin } from "lucide-react";
 import { Link } from "@/i18n/routing";
 import { PageFrame } from "@/components/shell/app-shell";
 import { useViewer } from "@/components/shell/viewer";
@@ -21,16 +20,12 @@ import { PlacesPanel } from "@/components/presence/places-panel";
 import { RhythmPanel } from "@/components/presence/rhythm-panel";
 import { RoutesPanel } from "@/components/presence/routes-panel";
 import { MemoryView } from "@/components/nora/memory-view";
-import { PlanDate } from "@/components/plans/plan-date";
 import { isNotFound } from "@/lib/api/client";
-import { fetchPlan } from "@/lib/api/people";
 import type { PresenceEntry } from "@/lib/api/presence";
-import { qk, useDerivedPlaces, useHistory, usePerson, usePlans, useSavedPlaces } from "@/lib/queries";
-import { upcomingPlans } from "@/lib/plans";
-import { formatHours, formatTime } from "@/lib/format";
+import { useDerivedPlaces, useHistory, usePerson, useSavedPlaces } from "@/lib/queries";
+import { formatHours } from "@/lib/format";
 import { hasPosition, isLive, presenceKind as presenceKindOf } from "@/lib/presence";
 import { personStyle } from "@/lib/person";
-import { useNow } from "@/hooks/use-now";
 
 const NoraMap = dynamic(() => import("@/components/map/nora-map").then((m) => m.NoraMap), {
   ssr: false,
@@ -41,7 +36,7 @@ const TABS = ["overview", "places", "rhythm", "routes", "memory"] as const;
 type Tab = (typeof TABS)[number];
 
 // One person, whole: where they are, where they tend to be, when and how
-// they move, what you have planned together, and,
+// they move, and,
 // on your own page only, what Nora remembers about you.
 export function PersonView({ personId }: { personId: string }) {
   const t = useTranslations("people");
@@ -193,7 +188,6 @@ function Overview({
     <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)] lg:gap-6">
       <div className="grid gap-4 lg:gap-6">
         {entry && hasPosition(entry) ? <TodayMap personId={personId} name={name} entry={entry} /> : null}
-        <PlansTogether personId={personId} name={name} self={self} />
       </div>
       <div className="grid gap-4 lg:gap-6">
         {entry ? <PlacesSummary personId={personId} name={name} /> : null}
@@ -285,67 +279,6 @@ function PlacesSummary({ personId, name }: { personId: string; name: string }) {
           </li>
         ))}
       </Rows>
-    </Panel>
-  );
-}
-
-function PlansTogether({ personId, name, self }: { personId: string; name: string; self: boolean }) {
-  const t = useTranslations("people");
-  const locale = useLocale();
-  const now = useNow();
-  const plans = usePlans();
-  const upcoming = useMemo(() => upcomingPlans(plans.data ?? [], now || Date.now()).slice(0, 8), [plans.data, now]);
-  // The list does not carry who answered; the details do. Read them for the
-  // upcoming plans only (a handful), and keep the ones this person is in.
-  const details = useQueries({
-    queries: self
-      ? []
-      : upcoming.map((p) => ({
-          queryKey: qk.plan(p.id),
-          queryFn: ({ signal }: { signal: AbortSignal }) => fetchPlan(p.id, signal),
-          staleTime: 60_000,
-        })),
-  });
-  const together = self
-    ? upcoming
-    : upcoming.filter((p, i) => {
-        const d = details[i]?.data;
-        return d && (d.created_by === personId || d.rsvps.some((r) => r.person_id === personId && r.response !== "no"));
-      });
-  const loading = plans.isPending || (!self && details.some((d) => d.isPending));
-
-  return (
-    <Panel aria-labelledby="together-title">
-      <PanelHeader id="together-title" title={self ? t("yourPlans") : t("together", { name })} />
-      {loading ? (
-        <PanelBody>
-          <Skeleton className="h-14" />
-        </PanelBody>
-      ) : together.length === 0 ? (
-        <PanelBody>
-          <p className="flex items-center gap-2 text-body text-ink-soft">
-            <CalendarDays className="size-4 shrink-0 text-ink-muted" aria-hidden="true" />
-            {self ? t("noPlans") : t("noPlansTogether", { name })}
-          </p>
-        </PanelBody>
-      ) : (
-        <Rows className="border-t border-hairline">
-          {together.map((p) => (
-            <li key={p.id}>
-              <Link href={`/plans/${p.id}`} className="flex items-center gap-4 px-4 py-3 transition-colors hover:bg-hoodie/60 sm:px-5">
-                <PlanDate when={p.when} />
-                <span className="grid min-w-0 flex-1">
-                  <span className="truncate text-[0.9375rem] font-semibold text-ink">{p.title}</span>
-                  <span className="truncate text-meta text-ink-muted">
-                    {[p.when ? formatTime(Date.parse(p.when), locale) : null, p.venue.name ?? p.venue.text].filter(Boolean).join(" · ")}
-                  </span>
-                </span>
-                <ChevronRight className="size-4 text-ink-muted" aria-hidden="true" />
-              </Link>
-            </li>
-          ))}
-        </Rows>
-      )}
     </Panel>
   );
 }

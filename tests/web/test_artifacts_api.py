@@ -31,11 +31,10 @@ from nora.persons import Persons
 from nora.policy import Conversation, Policy
 from nora.testing import FakeComputerExportStore, FakeRecordStore
 from nora.testing.fakes import FakeBlobStore
-from nora.testing.reminders import FakeReminderStore
 from nora.web.api import register_web_routes
 from nora.web.artifacts import download_headers, download_name
 from tests.conftest import build_test_doctrine_store
-from tests.web.test_api import NO_SKILLS_DIR, _fake_events
+from tests.web.test_api import NO_SKILLS_DIR
 
 KEN = PersonRef(person_id="ken", name="Ken")
 MEI = PersonRef(person_id="mei", name="Mei")
@@ -92,10 +91,10 @@ async def world_client(aiohttp_client):
     app = web.Application()
     register_web_routes(
         app, store=FakeRecordStore(),
-        reminders=FakeReminderStore(),
+
         persons=Persons(by_person={"ken": KEN, "mei": MEI, "sam": SAM}, index={}),
         started_at=0.0, presence=None,
-        presence_circles=(), skills_dir=NO_SKILLS_DIR, events=_fake_events(),
+        presence_circles=(), skills_dir=NO_SKILLS_DIR,
         doctrine_store=build_test_doctrine_store(),
         rooms_of=world.rooms_of, blobs=world.blobs, artifacts=world.store,
         room_label=lambda platform, cid: {"r1": "Trip crew"}.get(cid, ""),

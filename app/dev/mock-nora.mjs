@@ -35,7 +35,7 @@
 //                     ±40% jitter so loading states are visible and vary.
 //   MOCK_FAIL      — comma list of route families to answer 503 on:
 //                     status, memory, doctrine, skills, tools, persons,
-//                     presence, events, documents.
+//                     presence, documents.
 //   MOCK_EMPTY     — comma list of the same families to answer with
 //                     genuinely empty data (empty arrays, zero counts)
 //                     instead of their normal generated content.
@@ -587,24 +587,9 @@ const START_TIME = Date.now();
 const UPTIME_BASELINE_SECONDS = 3.2 * 24 * 3600;
 
 function buildStatus(now) {
-  if (isEmptied("status")) {
-    return {
-      uptime_seconds: UPTIME_BASELINE_SECONDS + (now - START_TIME) / 1000,
-      store: { reachable: true },
-      reminders: { count: 0, next_due_at: null, upcoming: [] },
-    };
-  }
-  const offsets = [3 * HOUR_MS, DAY_MS, 2 * DAY_MS + 10 * HOUR_MS, 5 * DAY_MS];
-  const platforms = ["signal", "discord", "whatsapp", "signal"];
-  const upcoming = offsets.map((offsetMs, i) => ({
-    due_at: hkIso(now + offsetMs),
-    platform: platforms[i],
-    conversation_id: `grp_${fakeUuid(`status-conv-${i}`).slice(0, 12)}`,
-  }));
   return {
     uptime_seconds: UPTIME_BASELINE_SECONDS + (now - START_TIME) / 1000,
     store: { reachable: true },
-    reminders: { count: upcoming.length, next_due_at: upcoming[0].due_at, upcoming },
   };
 }
 
@@ -661,102 +646,6 @@ function buildPersonProfile(personId) {
   const ref = ROSTER_BY_ID.get(personId);
   if (!ref) return null;
   return { personId: ref.personId, displayName: ref.displayName };
-}
-
-// ==========================================================================
-// 11. /events, /events/{id} — participant-scoped gatherings.
-// ==========================================================================
-
-const EVENTS = [
-  {
-    id: fakeUuid("evt-hotpot"),
-    title: "Hotpot",
-    whenMs: (now) => nextHkWeekdayAt(now, 0, 19, 0), // next Sunday 19:00 HKT
-    venue: {
-      text: null, name: "Yuen Long Hotpot House", address: "Yuen Long, Hong Kong",
-      rating: 4.3, price_level: "$$",
-      maps_url: "https://www.google.com/maps/search/?api=1&query=Yuen+Long+Hotpot+House",
-    },
-    status: "confirmed", created_by: "miles", createdOffsetDays: 4,
-    participants: ["miles", "ken", "mei", "jo"],
-  },
-  {
-    id: fakeUuid("evt-hike"),
-    title: "Lion Rock hike",
-    whenMs: (now) => nextHkWeekdayAt(now, 6, 9, 0), // next Saturday 09:00 HKT
-    venue: { text: "Lion Rock Country Park trailhead", name: null, address: null, rating: null, price_level: "", maps_url: null },
-    status: "proposed", created_by: "ken", createdOffsetDays: 1,
-    participants: ["ken", "jo", "ada"],
-  },
-  {
-    id: fakeUuid("evt-birthday"),
-    title: "Mei's birthday dinner",
-    whenMs: (now) => now + 9 * DAY_MS,
-    venue: {
-      text: null, name: "Causeway Bay Grill", address: "Causeway Bay, Hong Kong",
-      rating: null, price_level: "$$$",
-      maps_url: "https://www.google.com/maps/search/?api=1&query=Causeway+Bay+Grill",
-    },
-    status: "confirmed", created_by: "mei", createdOffsetDays: 6,
-    participants: ["miles", "mei", "ada", "sam"],
-  },
-  {
-    id: fakeUuid("evt-bbq"),
-    title: "Beach BBQ",
-    whenMs: (now) => now - 2 * DAY_MS,
-    venue: {
-      text: null, name: "Fung Ha Wan BBQ site", address: "Sai Kung, Hong Kong",
-      rating: 3.9, price_level: "$$", maps_url: "https://www.google.com/maps/search/?api=1&query=Fung+Ha+Wan+BBQ+site",
-    },
-    status: "cancelled", created_by: "jo", createdOffsetDays: 10,
-    participants: ["miles", "ken", "jo"],
-  },
-  {
-    id: fakeUuid("evt-movie"),
-    title: "Movie night",
-    whenMs: (now) => now - 10 * DAY_MS,
-    venue: {
-      text: null, name: "MCL Cinema", address: "Telford Plaza, Kowloon Bay, Hong Kong",
-      rating: 4.0, price_level: "$$", maps_url: "https://www.google.com/maps/search/?api=1&query=MCL+Cinema+Telford+Plaza",
-    },
-    status: "confirmed", created_by: "ken", createdOffsetDays: 16,
-    participants: ["miles", "ken", "mei"],
-  },
-  {
-    id: fakeUuid("evt-boardgames"),
-    title: "Board game night",
-    whenMs: (now) => now - 20 * DAY_MS,
-    venue: { text: null, name: "Ada's place", address: "Kwun Tong, Hong Kong", rating: null, price_level: "", maps_url: null },
-    status: "confirmed", created_by: "ada", createdOffsetDays: 24,
-    participants: ["jo", "ada", "miles"],
-  },
-];
-
-function gatheringDict(event, now) {
-  return {
-    id: event.id,
-    title: event.title,
-    when: hkIso(event.whenMs(now)),
-    venue: event.venue,
-    status: event.status,
-    created_by: event.created_by,
-    created_at: hkIso(event.whenMs(now) - event.createdOffsetDays * DAY_MS),
-  };
-}
-
-function buildEventsList(now, personId) {
-  if (isEmptied("events")) return [];
-  return EVENTS.filter((e) => e.participants.includes(personId)).map((e) => gatheringDict(e, now));
-}
-
-function buildEventDetail(now, personId, id) {
-  const event = EVENTS.find((e) => e.id === id);
-  if (!event || !event.participants.includes(personId)) return null;
-  const rsvpResponses = ["yes", "yes", "maybe", "no"];
-  const rsvps = event.participants
-    .filter((p) => p !== event.created_by)
-    .map((p, i) => ({ person_id: p, response: rsvpResponses[i % rsvpResponses.length] }));
-  return { ...gatheringDict(event, now), rsvps };
 }
 
 // ==========================================================================
@@ -1082,32 +971,6 @@ get("/app/v1/persons", () => {
 get("/app/v1/persons/:personId", (params) => {
   if (isFailing("persons")) return { status: 503, body: ERR_UNAVAILABLE };
   const body = buildPersonProfile(params.personId);
-  if (body === null) return { status: 404, body: ERR_NOT_FOUND };
-  return { status: 200, body };
-});
-
-// -------------------------------------------------------------- events
-
-get("/app/v1/events", (params, sp, now) => {
-  if (isFailing("events")) return { status: 503, body: ERR_UNAVAILABLE };
-  const personId = sp.get("personId");
-  if (!personId || !ROSTER_BY_ID.has(personId)) {
-    return { status: 400, body: { error: "personId required" } };
-  }
-  return { status: 200, body: buildEventsList(now, personId) };
-});
-
-get("/app/v1/events/:id", (params, sp, now) => {
-  if (isFailing("events")) return { status: 503, body: ERR_UNAVAILABLE };
-  const personId = sp.get("personId");
-  if (!personId || !ROSTER_BY_ID.has(personId)) {
-    return { status: 400, body: { error: "personId required" } };
-  }
-  // Like nora/web/api.py events_detail: an id that is not a UUID is a 400.
-  if (!/^(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[0-9a-f]{32})$/i.test(params.id)) {
-    return { status: 400, body: { status: "refused", note: "bad id" } };
-  }
-  const body = buildEventDetail(now, personId, params.id);
   if (body === null) return { status: 404, body: ERR_NOT_FOUND };
   return { status: 200, body };
 });

@@ -1,6 +1,6 @@
 """Registers GET /app/v1/status, GET /app/v1/memory, GET /app/v1/doctrine, the
 GET /app/v1/presence*, the read-only
-GET /app/v1/events(/{id}) pair, the documents routes and the Artifacts routes
+the documents routes and the Artifacts routes
 (`nora.web.artifacts`) onto an existing aiohttp Application — same
 process/container as Nora.
 
@@ -22,12 +22,10 @@ from aiohttp import web
 
 from nora.agent.egress import scan_reply
 from nora.agent.whereis import Circle, PresenceReader
-from nora.app.gatherings import GatheringService
 from nora.doctrine.loader import DoctrineStore
 from nora.domain.computer_exports import ComputerExportStore
 from nora.domain.documents import DOCUMENT_QUERY_MAX, DocumentStore, RoomKey, is_handle
 from nora.domain.ports import BlobStore, RecordStore
-from nora.domain.reminders import ReminderStore
 from nora.domain.rollup import NoRollupBuildError
 from nora.infra.sql.mobility import SqlMobilityStore
 from nora.persons import Persons
@@ -42,7 +40,6 @@ from nora.web.documents import (
     build_documents_payload,
     change_document_state,
 )
-from nora.web.gatherings import build_gathering_payload, build_gatherings_payload
 from nora.web.memory import SubjectClaims, build_memory_payload
 from nora.web.persons import build_person_profile_payload, build_persons_roster_payload
 from nora.web.presence import (
@@ -192,14 +189,13 @@ def _corridor_payload(corridor: dict[str, Any]) -> dict[str, Any]:
 
 def register_web_routes(
     app: web.Application, *, store: RecordStore,
-    reminders: ReminderStore, persons: Persons, started_at: float,
+    persons: Persons, started_at: float,
     presence: PresenceReader | None, presence_circles: tuple[Circle, ...],
-    skills_dir: Path, events: GatheringService, doctrine_store: DoctrineStore,
+    skills_dir: Path, doctrine_store: DoctrineStore,
     mobility: SqlMobilityStore | None = None,
     workspaces_of: Callable[[str], tuple[str, ...]] | None = None,
     documents: DocumentStore | None = None,
     rooms_of: Callable[[str], frozenset[RoomKey]] | None = None,
-    room_event_shown: Callable[[Any, str, str, str], bool] | None = None,
     blobs: BlobStore | None = None,
     room_label: Callable[[str, str], str] | None = None,
     artifacts: ComputerExportStore | None = None,
@@ -215,23 +211,20 @@ def register_web_routes(
     app["web_profile_scopes_of"] = profile_scopes_of
     app["web_documents"] = documents
     app["web_rooms_of"] = rooms_of
-    app["web_room_event_shown"] = room_event_shown
     app["web_room_label"] = room_label
     app["web_blobs"] = blobs
-    app["web_reminders"] = reminders
     app["web_persons"] = persons
     app["web_started_at"] = started_at
     app["web_presence"] = presence
     app["web_presence_circles"] = presence_circles
     app["web_mobility"] = mobility
     app["web_skills_dir"] = skills_dir
-    app["web_events"] = events
     app["web_doctrine_store"] = doctrine_store
 
     async def status(request: web.Request) -> web.Response:
         a = _ctx(request)
         body = await build_status_payload(
-            store=a["web_store"], reminders=a["web_reminders"],
+            store=a["web_store"],
             started_at=a["web_started_at"],
         )
         return web.json_response(body)
@@ -417,51 +410,6 @@ def register_web_routes(
         body = build_doctrine_payload(doctrine_store=_ctx(request)["web_doctrine_store"])
         return web.json_response(body)
 
-    async def events_list(request: web.Request) -> web.Response:
-        # `personId` is required — the SAME convention `/app/v1/memory`
-        # already enforces (its own `person_id` param, resolved server-side by
-        # the Next.js proxy from the session, never client-supplied) — and it
-        # must resolve to a person this deployment actually knows, mirroring
-        # `build_memory_payload`'s `persons.by_person.get(person_id)` check.
-        # No `conversation_id` query param: the scope is the viewer's own,
-        # events they created or RSVP'd to plus every event in a room that
-        # names them (`web_rooms_of`), so there is nothing left for a param to
-        # filter or leak.
-        person_id = request.query.get("personId")
-        if not person_id or _ctx(request)["web_persons"].by_person.get(person_id) is None:
-            return web.json_response(
-                {"status": "refused", "note": "a valid personId is required"},
-                status=400,
-            )
-        body = await build_gatherings_payload(
-            events=_ctx(request)["web_events"], person_id=person_id,
-            rooms_of=_ctx(request)["web_rooms_of"], shown=_ctx(request)["web_room_event_shown"],
-        )
-        return web.json_response(body)
-
-    async def events_detail(request: web.Request) -> web.Response:
-        # Same personId-required minimum and scope as `events_list` above:
-        # `build_gathering_payload` returns `None` (→ 404, never a distinct
-        # "forbidden") unless `person_id` created this event, has an RSVP on
-        # it, or is in the room it is held in.
-        person_id = request.query.get("personId")
-        if not person_id or _ctx(request)["web_persons"].by_person.get(person_id) is None:
-            return web.json_response(
-                {"status": "refused", "note": "a valid personId is required"},
-                status=400,
-            )
-        try:
-            event_id = UUID(request.match_info["id"])
-        except ValueError:
-            return web.json_response({"status": "refused", "note": "bad id"}, status=400)
-        body = await build_gathering_payload(
-            events=_ctx(request)["web_events"], event_id=event_id, person_id=person_id,
-            rooms_of=_ctx(request)["web_rooms_of"], shown=_ctx(request)["web_room_event_shown"],
-        )
-        if body is None:
-            return web.json_response({"status": "not_found"}, status=404)
-        return web.json_response(body)
-
     def _documents_unavailable() -> web.Response:
         return web.json_response(
             {"status": "unavailable", "note": "documents are not available"}, status=503,
@@ -631,8 +579,6 @@ def register_web_routes(
         "/app/v1/presence/analytics/routes", _needs_a_build(presence_analytics_routes),
     )
     app.router.add_get("/app/v1/presence/{person_id}/history", presence_history)
-    app.router.add_get("/app/v1/events", events_list)
-    app.router.add_get("/app/v1/events/{id}", events_detail)
     app.router.add_get("/app/v1/documents", documents_list)
     app.router.add_get("/app/v1/documents/{id}", documents_detail)
     app.router.add_get("/app/v1/documents/{id}/media/{sha}", documents_media)

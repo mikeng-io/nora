@@ -17,10 +17,9 @@ from nora.domain.documents import RevisionIn
 from nora.persons import Persons
 from nora.testing import FakeRecordStore
 from nora.testing.fakes import FakeBlobStore
-from nora.testing.reminders import FakeReminderStore
 from nora.web.api import register_web_routes
 from tests.conftest import build_test_doctrine_store
-from tests.web.test_api import NO_SKILLS_DIR, _fake_events
+from tests.web.test_api import NO_SKILLS_DIR
 from tests.web.test_documents_api import JO, KEN, MEI, PNG, SAM, _World
 
 OLD_PICTURE = "c" * 64  # replaced by PNG's real sha in the fixture
@@ -82,13 +81,13 @@ async def history_client(aiohttp_client):
     register_web_routes(
         app,
         store=FakeRecordStore(),
-        reminders=FakeReminderStore(),
+
         persons=Persons(by_person={"ken": KEN, "mei": MEI, "jo": JO, "sam": SAM}, index={}),
         started_at=0.0,
         presence=None,
         presence_circles=(),
         skills_dir=NO_SKILLS_DIR,
-        events=_fake_events(),
+
         doctrine_store=build_test_doctrine_store(),
         documents=world.store,
         rooms_of=world.rooms_of,

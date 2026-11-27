@@ -10,7 +10,7 @@ import {
   ToolsSchema,
 } from "../src/lib/api/nora";
 import { DocumentDetailSchema, DocumentsPageSchema } from "../src/lib/api/documents";
-import { PersonProfileSchema, PlanDetailSchema, PlansSchema, RosterSchema } from "../src/lib/api/people";
+import { PersonProfileSchema, RosterSchema } from "../src/lib/api/people";
 import {
   DerivedPlacesSchema,
   HistorySchema,
@@ -231,59 +231,11 @@ describe("documents", () => {
   });
 });
 
-// ---------------------------------------------------------------- events
-
-describe("events", () => {
-  it("GET /events with no personId is a fail-closed 400", () => {
-    const { status, body } = call("/app/v1/events");
-    expect(status).toBe(400);
-    expect(body).toEqual({ error: "personId required" });
-  });
-
-  it("GET /events?personId=<unknown> is also a 400", () => {
-    const { status, body } = call("/app/v1/events", { personId: "nobody" });
-    expect(status).toBe(400);
-    expect(body).toEqual({ error: "personId required" });
-  });
-
-  it("GET /events?personId=miles matches PlansSchema and is scoped to miles's events", () => {
-    const data = expectOk("/app/v1/events", { personId: "miles" }, PlansSchema);
-    expect(data.length).toBeGreaterThan(0);
-    expect(data.some((e) => e.title === "Hotpot")).toBe(true);
-  });
-
-  it("viewer scoping: sam sees strictly fewer events than miles", () => {
-    const miles = expectOk("/app/v1/events", { personId: "miles" }, PlansSchema);
-    const sam = expectOk("/app/v1/events", { personId: "sam" }, PlansSchema);
-    expect(sam.length).toBeLessThan(miles.length);
-    expect(sam.some((e) => e.title.includes("birthday"))).toBe(true);
-  });
-
-  it("GET /events/{id}?personId=<participant> matches PlanDetailSchema", () => {
-    const list = expectOk("/app/v1/events", { personId: "miles" }, PlansSchema);
-    const detail = expectOk(`/app/v1/events/${list[0].id}`, { personId: "miles" }, PlanDetailSchema);
-    expect(detail.id).toBe(list[0].id);
-    expect(Array.isArray(detail.rsvps)).toBe(true);
-  });
-
-  it("GET /events/{id}?personId=<non-participant> is a 404, not the detail", () => {
-    // "Mei's birthday dinner" participants are miles/mei/ada/sam — ken is not one.
-    const list = expectOk("/app/v1/events", { personId: "mei" }, PlansSchema);
-    const birthday = list.find((e) => e.title.includes("birthday"))!;
-    const { status, body } = call(`/app/v1/events/${birthday.id}`, { personId: "ken" });
-    expect(status).toBe(404);
-    expect(body).toEqual({ error: "not found" });
-  });
-
-  it("GET /events/<unknown uuid>?personId=miles is a 404", () => {
-    const { status } = call("/app/v1/events/00000000-0000-4000-8000-000000000000", { personId: "miles" });
-    expect(status).toBe(404);
-  });
-
-  it("GET /events/<not a uuid> is a 400, as the real backend answers", () => {
-    const { status } = call("/app/v1/events/not-a-real-id", { personId: "miles" });
-    expect(status).toBe(400);
-  });
+it("the retired event routes return 404", () => {
+  expect(call("/app/v1/events", { personId: "miles" }).status).toBe(404);
+  expect(call("/app/v1/events/00000000-0000-4000-8000-000000000000", {
+    personId: "miles",
+  }).status).toBe(404);
 });
 
 // ---------------------------------------------------------------- presence
@@ -361,16 +313,6 @@ describe("MOCK_FAIL and MOCK_EMPTY", () => {
     expect(presence).toEqual([]);
     const tools = expectOk("/app/v1/tools", {}, ToolsSchema);
     expect(tools).toEqual([]);
-    // "status" was not in MOCK_EMPTY, so it stays fully populated.
-    const status = expectOk("/app/v1/status", {}, StatusSchema);
-    expect(status.reminders.count).toBeGreaterThan(0);
-  });
-
-  it("MOCK_EMPTY=status empties the reminders block", () => {
-    process.env.MOCK_EMPTY = "status";
-    const status = expectOk("/app/v1/status", {}, StatusSchema);
-    expect(status.reminders.count).toBe(0);
-    expect(status.reminders.upcoming).toEqual([]);
-    expect(status.reminders.next_due_at).toBeNull();
+    expect(expectOk("/app/v1/status", {}, StatusSchema).store.reachable).toBe(true);
   });
 });

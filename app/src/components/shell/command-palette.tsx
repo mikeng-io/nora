@@ -12,10 +12,9 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { useLocale, useTranslations } from "next-intl";
+import { useTranslations } from "next-intl";
 import {
   BookOpenText,
-  CalendarDays,
   CornerDownLeft,
   Languages,
   LogOut,
@@ -26,17 +25,16 @@ import {
 } from "lucide-react";
 import { useRouter } from "@/i18n/routing";
 import { PersonAvatar } from "@/components/ui/avatar";
-import { useDoctrine, usePlans, useRoster, useSkills, useTools } from "@/lib/queries";
+import { useDoctrine, useRoster, useSkills, useTools } from "@/lib/queries";
 import { useTheme } from "@/lib/theme";
-import { formatWeekdayDate } from "@/lib/format";
 import { paletteScore } from "@/lib/palette";
 import { MAIN_NAV, NORA_NAV } from "./nav";
 import { NavIcon } from "./nav-icon";
 import { LANGS, useLanguageSwitch, useSignOut } from "./account";
 
-// One search for the whole portal: pages, people, plans, her
+// One search for the whole portal: pages, people, her
 // doctrine and her tools. ⌘K or / opens it anywhere; "g" then a letter
-// jumps straight to a page (g t today, g m map, g p people, g l plans,
+// jumps straight to a page (g t today, g m map, g p people,
 // g n Nora).
 const Ctx = createContext<{ open: () => void }>({ open: () => {} });
 export const useCommandPalette = () => useContext(Ctx);
@@ -45,7 +43,6 @@ const JUMPS: Record<string, string> = {
   t: "/today",
   m: "/map",
   p: "/people",
-  l: "/plans",
   n: "/nora",
 };
 
@@ -111,10 +108,8 @@ const groupClass =
 function Palette({ close }: { close: () => void }) {
   const t = useTranslations("search");
   const tNav = useTranslations("nav");
-  const locale = useLocale();
   const router = useRouter();
   const roster = useRoster();
-  const plans = usePlans();
   const doctrine = useDoctrine();
   const tools = useTools();
   const skills = useSkills();
@@ -192,28 +187,6 @@ function Palette({ close }: { close: () => void }) {
               >
                 <PersonAvatar id={p.personId} name={p.displayName} size={22} />
                 {p.displayName}
-              </Command.Item>
-            ))}
-          </Command.Group>
-        ) : null}
-
-        {plans.data?.length ? (
-          <Command.Group heading={t("plans")} className={groupClass}>
-            {plans.data.map((p) => (
-              <Command.Item
-                key={p.id}
-                value={`plan ${p.title} ${p.id}`}
-                keywords={[p.venue.name ?? "", p.venue.text ?? ""]}
-                onSelect={() => go(`/plans/${p.id}`)}
-                className={itemClass}
-              >
-                <CalendarDays aria-hidden="true" />
-                <span className="min-w-0 flex-1 truncate">{p.title}</span>
-                {p.when ? (
-                  <span className="shrink-0 text-meta text-ink-muted">
-                    {formatWeekdayDate(Date.parse(p.when), locale)}
-                  </span>
-                ) : null}
               </Command.Item>
             ))}
           </Command.Group>

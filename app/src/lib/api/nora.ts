@@ -5,18 +5,10 @@ import { apiGet } from "./client";
 // her tools and skills. Each schema mirrors its builder in nora/web/*.py
 // exactly; hand-written zod rather than codegen (design spec §3.3).
 
-// nora/web/status.py::build_status_payload. `upcoming` never carries a
-// reminder's text or who asked: those are the requester's own words.
+// nora/web/status.py::build_status_payload.
 export const StatusSchema = z.object({
   uptime_seconds: z.number(),
   store: z.object({ reachable: z.boolean() }),
-  reminders: z.object({
-    count: z.number(),
-    next_due_at: z.string().nullable(),
-    upcoming: z.array(
-      z.object({ due_at: z.string(), platform: z.string(), conversation_id: z.string() }),
-    ),
-  }),
 });
 export type Status = z.infer<typeof StatusSchema>;
 

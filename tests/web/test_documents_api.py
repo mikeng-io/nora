@@ -20,10 +20,9 @@ from nora.persons import Persons
 from nora.policy import Conversation, Policy
 from nora.testing import FakeDocumentStore, FakeRecordStore
 from nora.testing.fakes import FakeBlobStore
-from nora.testing.reminders import FakeReminderStore
 from nora.web.api import register_web_routes
 from tests.conftest import build_test_doctrine_store
-from tests.web.test_api import NO_SKILLS_DIR, _fake_events
+from tests.web.test_api import NO_SKILLS_DIR
 
 KEN = PersonRef(person_id="ken", name="Ken")
 MEI = PersonRef(person_id="mei", name="Mei")
@@ -91,13 +90,13 @@ async def world_client(aiohttp_client):
     register_web_routes(
         app,
         store=FakeRecordStore(),
-        reminders=FakeReminderStore(),
+
         persons=Persons(by_person={"ken": KEN, "mei": MEI, "jo": JO, "sam": SAM}, index={}),
         started_at=0.0,
         presence=None,
         presence_circles=(),
         skills_dir=NO_SKILLS_DIR,
-        events=_fake_events(),
+
         doctrine_store=build_test_doctrine_store(),
         documents=world.store,
         rooms_of=world.rooms_of,
@@ -221,13 +220,13 @@ async def test_a_deployment_without_documents_answers_503_not_an_empty_list(aioh
     register_web_routes(
         app,
         store=FakeRecordStore(),
-        reminders=FakeReminderStore(),
+
         persons=Persons(by_person={"ken": KEN}, index={}),
         started_at=0.0,
         presence=None,
         presence_circles=(),
         skills_dir=NO_SKILLS_DIR,
-        events=_fake_events(),
+
         doctrine_store=build_test_doctrine_store(),
     )
     client = await aiohttp_client(app)
@@ -284,13 +283,13 @@ async def _media_app(aiohttp_client, world: _MediaWorld, *, blobs: Any = "world"
     register_web_routes(
         app,
         store=FakeRecordStore(),
-        reminders=FakeReminderStore(),
+
         persons=Persons(by_person={"ken": KEN, "mei": MEI, "jo": JO, "sam": SAM}, index={}),
         started_at=0.0,
         presence=None,
         presence_circles=(),
         skills_dir=NO_SKILLS_DIR,
-        events=_fake_events(),
+
         doctrine_store=build_test_doctrine_store(),
         documents=world.store,
         rooms_of=world.rooms_of,

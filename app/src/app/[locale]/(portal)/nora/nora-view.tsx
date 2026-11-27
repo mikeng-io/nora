@@ -5,7 +5,6 @@ import type { ReactNode } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import {
   ArrowRight,
-  BellRing,
   BookOpenText,
   CircleAlert,
   CircleCheck,
@@ -21,24 +20,14 @@ import { PageFrame } from "@/components/shell/app-shell";
 import { useNoraState } from "@/components/shell/nora-presence";
 import { useRegisterTitle } from "@/components/shell/page-title";
 import { Wordmark } from "@/components/ui/avatar";
-import { Badge } from "@/components/ui/badge";
-import { Panel, PanelHeader, Rows } from "@/components/ui/panel";
+import { Panel, PanelHeader } from "@/components/ui/panel";
 import { Skeleton } from "@/components/ui/skeleton";
 import { UnavailableState } from "@/components/ui/states";
 import { useDoctrine, useSkills, useStatus, useTools } from "@/lib/queries";
-import { formatDuration, formatRelative, formatTime, formatWeekdayDate } from "@/lib/format";
+import { formatDuration } from "@/lib/format";
 import { cn } from "@/lib/cn";
-import { useNow } from "@/hooks/use-now";
 
-const PLATFORM: Record<string, string> = {
-  signal: "Signal",
-  whatsapp: "WhatsApp",
-  discord: "Discord",
-  instagram: "Instagram",
-};
-
-// Nora's own page: who she is, whether she is up, what she is holding for
-// the rooms, and the three ways into her (what she remembers about you, how
+// Nora's own page: who she is, whether she is up, and the three ways into her (what she remembers about you, how
 // she behaves, what she can do). Her portrait follows the lighting, as on
 // the site: the studio portrait by day, its late-night twin by night.
 export function NoraView() {
@@ -101,10 +90,7 @@ export function NoraView() {
         </div>
       </section>
 
-      <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] lg:gap-6">
-        <Reminders />
-        <WaysIn />
-      </div>
+      <WaysIn />
     </PageFrame>
   );
 }
@@ -159,73 +145,6 @@ function HealthItem({ label, ok, value }: { label: string; ok: boolean; value: s
         <span>{value}</span>
       </dd>
     </div>
-  );
-}
-
-// ------------------------------------------------------------- reminders
-
-function Reminders() {
-  const t = useTranslations("noraPage");
-  const locale = useLocale();
-  const now = useNow();
-  const status = useStatus();
-  const r = status.data?.reminders;
-
-  return (
-    <Panel id="reminders" aria-labelledby="reminders-title" className="scroll-mt-24">
-      <PanelHeader
-        id="reminders-title"
-        title={t("reminders")}
-        description={
-          r
-            ? r.count === 0
-              ? t("remindersNone")
-              : t("remindersCount", { count: r.count })
-            : undefined
-        }
-      />
-      {status.isPending ? (
-        <div className="grid gap-2 px-4 pb-4 sm:px-5">
-          <Skeleton className="h-12" />
-          <Skeleton className="h-12" />
-        </div>
-      ) : !r ? (
-        <UnavailableState compact onRetry={() => status.refetch()} />
-      ) : r.upcoming.length === 0 ? (
-        <p className="flex items-center gap-2 px-4 pb-5 text-body text-ink-soft sm:px-5">
-          <BellRing className="size-4 text-ink-muted" aria-hidden="true" />
-          {t("remindersEmpty")}
-        </p>
-      ) : (
-        <>
-          <Rows className="border-t border-hairline">
-            {r.upcoming.map((u, i) => {
-              const at = Date.parse(u.due_at);
-              return (
-                <li key={`${u.due_at}-${i}`} className="flex items-center gap-3 px-4 py-3 sm:px-5">
-                  <span className="grid size-9 shrink-0 place-items-center rounded-control bg-hoodie text-ink-soft">
-                    <BellRing className="size-4" aria-hidden="true" />
-                  </span>
-                  <span className="grid min-w-0 flex-1 gap-0.5">
-                    <span className="text-[0.9375rem] font-semibold text-ink">
-                      {formatWeekdayDate(at, locale)} · <span className="font-mono tnum">{formatTime(at, locale)}</span>
-                    </span>
-                    <span className="text-meta text-ink-muted">{now ? formatRelative(at, locale, now) : " "}</span>
-                  </span>
-                  <Badge tone="outline">{PLATFORM[u.platform] ?? u.platform}</Badge>
-                </li>
-              );
-            })}
-          </Rows>
-          {r.count > r.upcoming.length ? (
-            <p className="border-t border-hairline px-4 py-3 text-meta text-ink-muted sm:px-5">
-              {t("remindersMore", { count: r.count - r.upcoming.length })}
-            </p>
-          ) : null}
-        </>
-      )}
-      <p className="border-t border-hairline px-4 py-3 text-label text-ink-muted sm:px-5">{t("remindersPrivacy")}</p>
-    </Panel>
   );
 }
 

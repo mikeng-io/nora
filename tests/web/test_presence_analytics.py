@@ -3,12 +3,9 @@ from pathlib import Path
 from aiohttp import web
 
 from nora.agent.whereis import Circle
-from nora.app.gatherings import GatheringService
 from nora.domain.models import PersonRef
 from nora.persons import Persons
 from nora.testing import FakeRecordStore
-from nora.testing.gatherings import FakeGatheringStore
-from nora.testing.reminders import FakeReminderStore
 from nora.web.api import register_web_routes
 from tests.conftest import build_test_doctrine_store
 
@@ -17,8 +14,6 @@ DAISY = PersonRef(person_id="daisy", name="Daisy")
 CIRCLE = Circle(circle_id="c1", person_ids=frozenset({"miles"}), people=(MILES,))
 
 
-def _events() -> GatheringService:
-    return GatheringService(store=FakeGatheringStore())
 
 
 class FakeAnalyticsStore:
@@ -88,13 +83,13 @@ def _app(*, presence: object | None, mobility: FakeAnalyticsStore) -> web.Applic
     register_web_routes(
         app,
         store=FakeRecordStore(),
-        reminders=FakeReminderStore(),
+
         persons=Persons(by_person={"miles": MILES, "daisy": DAISY}, index={}),
         started_at=0.0,
         presence=presence,
         presence_circles=(CIRCLE,),
         skills_dir=Path("/nonexistent-skills"),
-        events=_events(),
+
         doctrine_store=build_test_doctrine_store(),
         mobility=mobility,
     )

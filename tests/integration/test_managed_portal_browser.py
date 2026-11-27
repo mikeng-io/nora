@@ -57,7 +57,6 @@ from nora.platform.signal.consent import SignalLinkDelivery
 from nora.policy import load_policy
 from nora.testing import FakeRecordStore
 from nora.testing.fakes import FakeAdapter
-from nora.testing.reminders import FakeReminderStore
 from nora.web.api import register_web_routes
 from nora.web.holder_links import register_holder_routes
 from nora.web.managed_viewer import register_managed_viewer
@@ -89,7 +88,7 @@ from tests.integration.test_managed_identity_journey import (
 from tests.integration.test_managed_identity_journey import (
     POLICY_TOML as _POLICY_BASE,
 )
-from tests.web.test_api import NO_SKILLS_DIR, _fake_events
+from tests.web.test_api import NO_SKILLS_DIR
 
 SIG_A = Identifier("signal", "phone", "+85290000101")
 WA_B = Identifier("whatsapp", "phone", "+85290000103")
@@ -448,10 +447,10 @@ async def portal_world(pg_module_url, ory, aiohttp_client, tmp_path):
             app.middlewares.append(record)
             register_web_routes(
                 app, store=FakeRecordStore(),
-                reminders=FakeReminderStore(),
+
                 persons=Persons(by_person={}, index={}),
                 started_at=0.0, presence=None, presence_circles=(),
-                skills_dir=NO_SKILLS_DIR, events=_fake_events(),
+                skills_dir=NO_SKILLS_DIR,
                 doctrine_store=doctrine, documents=documents,
                 rooms_of=lambda pid: rooms_named(policy, pid))
             verifier = AuthenticationVerifier([GATEWAY, PORTAL])

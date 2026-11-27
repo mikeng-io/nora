@@ -13,11 +13,8 @@ describe("resolveUpstream", () => {
     expect(ok(["status"])).toBe("/app/v1/status");
   });
 
-  it("scopes memory and events to the session's person, ignoring the browser's", () => {
-    const id = "9c48dbf1-7c25-4467-84b3-ac9d8d61a584";
+  it("scopes memory to the session's person", () => {
     expect(ok(["memory"], "personId=ken")).toBe("/app/v1/memory?personId=miles");
-    expect(ok(["events"], "personId=ken", "jo")).toBe("/app/v1/events?personId=jo");
-    expect(ok(["events", id], "personId=ken", "jo")).toBe(`/app/v1/events/${id}?personId=jo`);
   });
 
   it("scopes documents to the session's person and forwards only page, pageSize and state", () => {
@@ -61,13 +58,6 @@ describe("resolveUpstream", () => {
     expect(ok(["persons"], "q=anything")).toBe("/app/v1/persons");
   });
 
-  it("answers a plan id that cannot be one as not found, before asking Nora", () => {
-    // Nora answers a non-UUID id with 400, which the portal would show as
-    // "couldn't check"; there is nothing to check.
-    expect(resolveUpstream(["events", "not-a-real-plan"], q(), "miles")).toEqual({ ok: false, status: 404 });
-    expect(resolveUpstream(["events", "9c48dbf17c25446784b3ac9d8d61a584"], q(), "miles").ok).toBe(true);
-  });
-
   it("forwards only the query parameters a route names", () => {
     expect(ok(["presence", "ken", "history"], "hours=24&personId=x&evil=1", "jo")).toBe(
       "/app/v1/presence/ken/history?hours=24&personId=jo",
@@ -84,6 +74,8 @@ describe("resolveUpstream", () => {
     for (const segments of [
       [],
       ["health"],
+      ["events"],
+      ["events", "9c48dbf17c25446784b3ac9d8d61a584"],
       ["memory", "ken"],
       ["presence", "ken"],
       ["games", "servers"],
@@ -111,8 +103,6 @@ describe("resolveUpstream", () => {
     const scoped = ROUTES.filter((r) => r.scope === "self").map((r) => r.pattern.join("/"));
     expect(scoped).toEqual([
       "memory",
-      "events",
-      "events/:id",
       "documents",
       "documents/:id",
       "documents/:id/revisions",
