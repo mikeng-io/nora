@@ -35,6 +35,23 @@ def test_an_empty_registry_is_live_with_no_scopes_and_a_record_counts_as_one(tmp
     assert registry.status() == {"state": "live", "scopes": 1, "detail": ""}
 
 
+def test_an_unreadable_registry_is_degraded_with_its_own_cause_and_never_raises(
+    tmp_path, monkeypatch,
+):
+    """A directory Nora cannot traverse is neither live nor "missing": startup must log the
+    real cause and carry on, not abort. The permission error is injected at the filesystem
+    boundary because a test running as root cannot be denied by mode bits."""
+    def denied(path):
+        raise PermissionError(13, "Permission denied")
+
+    monkeypatch.setattr("nora.domain.computer_vms.os.scandir", denied)
+
+    status = FileScopeEndpoints(tmp_path).status()
+
+    assert status["state"] == "degraded"
+    assert "unreadable" in str(status["detail"]) and "Permission denied" in str(status["detail"])
+
+
 def _health_app(**kw):
     metrics = Metrics()
     return build_health_app(
