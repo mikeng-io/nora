@@ -84,6 +84,7 @@
 | entity | an anchor row for a person, room, unit, Nora, game, place or topic, computed when code resolves it and inferred when its identity is judged |  | [design/cognition/graph.md](design/cognition/graph.md) |
 | entry points | every way something outside Nora can reach her, and who can use it |  | [operations/exposure.md](operations/exposure.md) |
 | episode emission |  |  | [design/presence/README.md](design/presence/README.md) |
+| execution tier |  |  | [engineering/orchestration.md](engineering/orchestration.md) |
 | exposure | which already-built blocks reach the model, decided after retrieval |  | [design/agent/assembly.md](design/agent/assembly.md) |
 | fails closed | a guard or step that cannot decide blocks the whole delivery or leaves its input pending, and an unavailable read is unknown, never absence |  | [design/cognition/README.md](design/cognition/README.md) |
 | file adapter | the one component per provider that recognises its links and reads its files |  | [design/computer/external-files.md](design/computer/external-files.md) |
@@ -134,6 +135,7 @@
 | one identity |  |  | [design/people/identity.md](design/people/identity.md) |
 | OODAS | the stage model both loops run: observe, orient, decide, act, study |  | [design/cognition/loop.md](design/cognition/loop.md) |
 | operation outcomes |  |  | [design/people/authority.md](design/people/authority.md) |
+| orchestrator |  |  | [engineering/orchestration.md](engineering/orchestration.md) |
 | Ory pinned surface |  |  | [operations/ory.md](operations/ory.md) |
 | paper and thread | the visual system's North Star: ivory paper, indigo ink and a copper thread running through both, the colours of her clothes |  | [design/appearance/README.md](design/appearance/README.md) |
 | pass | one run of a loop's stages, started by one trigger that supplies its input |  | [design/cognition/loop.md](design/cognition/loop.md) |
@@ -170,6 +172,7 @@
 | reminder | the scheduled delivery of an intention to its person or room, put to Nora as a request when it comes due and never a stored message replayed |  | [design/agenda/README.md](design/agenda/README.md) |
 | resolve within scope | a lookup resolves only among what its scope may see, so a row outside it reads exactly as one that does not exist, and is never resolved then filtered |  | [design/cognition/boundaries.md](design/cognition/boundaries.md) |
 | resolved quote | quoted text shown to the model is the stored parent's text, or nothing |  | [design/conversation/README.md](design/conversation/README.md) |
+| review tier |  |  | [engineering/orchestration.md](engineering/orchestration.md) |
 | revision | an append-only snapshot of a document that names the base it read |  | [design/documents/lifecycle.md](design/documents/lifecycle.md) |
 | room | one conversation on one platform within a unit, with its own transcript and culture, keyed on platform and primary conversation id |  | [design/people/rooms.md](design/people/rooms.md) |
 | room addressing verification |  |  | [engineering/room-addressing-verification.md](engineering/room-addressing-verification.md) |

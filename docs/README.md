@@ -147,10 +147,10 @@
 | engineering | [engineering/lessons.md](engineering/lessons.md) | the lessons from merged work that become code standards when seen three times |
 | engineering | [engineering/managed-identity-export.md](engineering/managed-identity-export.md) | how managed identity is exported between installations |
 | engineering | [engineering/managed-identity-handoff.md](engineering/managed-identity-handoff.md) | how managed identity is handed over to a new operator |
+| engineering | [engineering/orchestration.md](engineering/orchestration.md) | how the agents that build Nora split, do and check work |
 | engineering | [engineering/releases.md](engineering/releases.md) | how a release is cut and published, and the records of the manual scheme |
 | engineering | [engineering/review.md](engineering/review.md) | how a change is reviewed against its scope and acceptance |
 | engineering | [engineering/room-addressing-verification.md](engineering/room-addressing-verification.md) | how room addressing is measured: the routing corpus, tool selection and the unit tests |
 | engineering | [engineering/security-triage.md](engineering/security-triage.md) | security scan scope, the code behind each trust boundary and how findings are tagged |
 | engineering | [engineering/test-selection.md](engineering/test-selection.md) | which tests run automatically on a change and which run on demand |
 | engineering | [engineering/worker-verification.md](engineering/worker-verification.md) | how the worker is measured against the native computer tools, and the order it ships in |
-|  | [engineering/orchestration.md](engineering/orchestration.md) |  |
