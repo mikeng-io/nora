@@ -506,7 +506,6 @@ min_interval_seconds = 5
 account = "generated-signal-account"
 base_url = "http://signal-bridge.generated:18090"
 [dreamer]
-enabled = true
 model = "nora-dreamer"
 reasoning_effort = "low"
 [relevance_gate]
