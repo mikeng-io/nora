@@ -201,7 +201,7 @@ class Culture:
     """One scope's culture: a key, and a pointer at the current account.
 
     **`key` is a `primary_id`.** Not `(platform, conversation_id)` — the rule is
-    `GLOSSARY.md`'s and it follows from which scheduler hands the key. A Dreamer
+    `docs/glossary.md`'s and it follows from which scheduler hands the key. A Dreamer
     adaptor is handed `scopes()`, so it keys the conversation; the ingest and tag
     paths get the message that arrived, so they key the thread. A store keyed
     differently from its loop matches zero rows on the watermark query, and then

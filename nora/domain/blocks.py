@@ -18,7 +18,7 @@ A renderer that could switch either off could reintroduce those. They are uncond
 here. What varies — a handle, a clock, brackets, a suffix, a reply mark — is
 presentation, and getting it wrong costs legibility rather than attribution.
 
-**Vocabulary is GLOSSARY.md's, deliberately.** `block`, `block source`, `row
+**Vocabulary is docs/glossary.md's, deliberately.** `block`, `block source`, `row
 style`, `placement`, and never `injection`/`injector` — that word already means
 the attack (R-14), the test-seam policy, and `TranscriptInjection`, which is a
 whole runtime's assembler rather than one block.

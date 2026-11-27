@@ -59,7 +59,7 @@ pending release.
 
 Missing release App setup fails closed. Only its repository-scoped installation
 token is used; no personal token, admin bypass or fallback to `GITHUB_TOKEN`.
-See [App setup](../../../docs/engineering/github.md#automatic-releases).
+See [App setup](../../../docs/operations/github.md#automatic-releases).
 A metadata merge triggers publication and no next bump by itself. If publication
 fails, rerun that workflow: publication comes first, and manifest/tag mismatch
 blocks planning a duplicate version until the existing release is published.

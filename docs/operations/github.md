@@ -1,3 +1,9 @@
+---
+class: operations
+subject: "how the GitHub repository, its Actions, security features and review bots are run"
+owns: []
+---
+
 # GitHub maintenance
 
 Nora uses GitHub Free features for a public repository: standard Ubuntu-hosted

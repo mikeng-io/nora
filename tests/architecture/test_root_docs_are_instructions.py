@@ -38,7 +38,6 @@ def test_the_guides_are_found() -> None:
     assert {
         "AGENTS.md",
         "docs/engineering/orchestration.md",
-        "GLOSSARY.md",
         ".agents/skills/nora-land/SKILL.md",
     } <= names
 
@@ -78,7 +77,7 @@ def test_guide_carries_no_history(path: Path) -> None:
 # can only be consolidated, never extended.
 BUDGET = {
     "AGENTS.md": 250, "CLAUDE.md": 19, "CODE_OF_CONDUCT.md": 85,
-    "CONTRIBUTING.md": 198, "GLOSSARY.md": 692, "README.md": 247, "SECURITY.md": 25,
+    "CONTRIBUTING.md": 198, "README.md": 247, "SECURITY.md": 25,
     "docs/engineering/orchestration.md": 293, "docs/engineering/review.md": 57,
 }
 ROOT_GUIDES = [p for p in GUIDES if p.parent == ROOT or p.relative_to(ROOT).as_posix() in MOVED]

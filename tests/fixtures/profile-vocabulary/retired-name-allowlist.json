@@ -7,13 +7,6 @@
    "persona": 22
   }
  },
- "GLOSSARY.md": {
-  "reason": "Retired-term note and historical decision references.",
-  "matches": {
-   "Persona": 2,
-   "persona": 3
-  }
- },
  "docs/operations/trace-redaction.md": {
   "reason": "Historical design provenance; only the requested standing-ledger call sites change.",
   "matches": {

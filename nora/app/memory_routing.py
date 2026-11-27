@@ -14,7 +14,7 @@ Three files each hold one part, and this is the one place they meet:
   table puts every unit in.
 
 A Nora workspace and a Honcho workspace are different things with different
-names (GLOSSARY.md): the first is the operator's grouping of units, the
+names (docs/glossary.md): the first is the operator's grouping of units, the
 second is the Honcho tenant whose peers are that grouping's people. This
 module is what keeps them from being confused — `nora.infra.honcho` only ever
 sees Honcho ids, and the policy never names one.

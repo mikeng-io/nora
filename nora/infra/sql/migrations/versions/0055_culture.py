@@ -27,7 +27,7 @@ constraint. `note_revision` is the precedent and the reason it works is that
 provenance sits AROUND the prose rather than decomposing it.
 
 `culture.key` IS A `primary_id`, NOT `(platform, conversation_id)`. The rule is
-`GLOSSARY.md`'s (PR #230) and it follows from which scheduler hands the key:
+`docs/glossary.md`'s (PR #230) and it follows from which scheduler hands the key:
 the ingest and tag paths get the message that arrived, so `messages`,
 `standing` and `decision_log` key the thread; a Dreamer adaptor is handed
 `scopes()`, so it keys the conversation. This is worth a paragraph because

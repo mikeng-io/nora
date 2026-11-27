@@ -46,7 +46,7 @@ NON_RUNTIME_FILES = frozenset(
         "SECURITY.md",
         "docs/design/security/README.md",
         "CODE_OF_CONDUCT.md",
-        "GLOSSARY.md",
+        "docs/glossary.md",
         "THIRD_PARTY_NOTICES.md",
         ".gitignore",
         ".editorconfig",

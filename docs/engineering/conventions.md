@@ -1,7 +1,8 @@
 ---
 class: engineering
 subject: "the repository conventions for branches, commits, PRs and merges"
-owns: []
+owns:
+  - "injection: a word the code never uses for context assembly; a block is assembled, never injected"
 ---
 
 # Maintainer conventions
