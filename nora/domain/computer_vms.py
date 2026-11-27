@@ -99,15 +99,19 @@ class FileScopeEndpoints:
         try:
             with os.scandir(self._dir) as entries:
                 scopes = sum(1 for e in entries if e.name.endswith(".json"))
+            # Listing names needs only read permission; opening a record needs search too.
+            if not os.access(self._dir, os.X_OK):
+                raise PermissionError(13, "Permission denied")
         except (FileNotFoundError, NotADirectoryError):
             return {
                 "state": "degraded", "scopes": 0,
                 "detail": f"registry directory {self._dir} is missing: the host mount is absent",
             }
-        except OSError as exc:
+        except (OSError, ValueError) as exc:
+            reason = getattr(exc, "strerror", None) or exc
             return {
                 "state": "degraded", "scopes": 0,
-                "detail": f"registry directory {self._dir} is unreadable: {exc.strerror or exc}",
+                "detail": f"registry directory {str(self._dir)!r} is unreadable: {reason}",
             }
         return {"state": "live", "scopes": scopes, "detail": ""}
 

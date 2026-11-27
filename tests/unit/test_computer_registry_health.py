@@ -52,6 +52,24 @@ def test_an_unreadable_registry_is_degraded_with_its_own_cause_and_never_raises(
     assert "unreadable" in str(status["detail"]) and "Permission denied" in str(status["detail"])
 
 
+def test_a_listable_but_unsearchable_registry_is_not_live(tmp_path, monkeypatch):
+    """Names can be listed with read permission alone, but a record cannot be opened without
+    search permission, so every scope would still fail. Mode bits cannot deny a test running as
+    root, so the access check is injected."""
+    (tmp_path / f"{SCOPE}.json").write_text("{}")
+    monkeypatch.setattr("nora.domain.computer_vms.os.access", lambda *a, **k: False)
+
+    status = FileScopeEndpoints(tmp_path).status()
+
+    assert status["state"] == "degraded" and "unreadable" in str(status["detail"])
+
+
+def test_a_registry_path_that_is_not_a_valid_path_is_degraded_and_never_raises():
+    status = FileScopeEndpoints("scope\x00endpoints").status()
+
+    assert status["state"] == "degraded" and "unreadable" in str(status["detail"])
+
+
 def _health_app(**kw):
     metrics = Metrics()
     return build_health_app(
