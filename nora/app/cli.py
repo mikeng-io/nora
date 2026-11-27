@@ -716,8 +716,11 @@ async def cmd_lessons_tensions(args: argparse.Namespace) -> int:
 
 async def cmd_lessons_show(args: argparse.Namespace) -> int:
     """`nora lessons show ID`, READ ONLY: one graph lesson."""
+    cfg = _config(args)
     try:
-        return await graph_lessons_cli.show_lesson(_database_url(_config(args)), args.lesson_id)
+        return await graph_lessons_cli.show_lesson(
+            _database_url(cfg), _policy(cfg), args.lesson_id,
+        )
     except graph_lessons_cli.GraphLessonError as exc:
         raise CliError(str(exc)) from exc
 
