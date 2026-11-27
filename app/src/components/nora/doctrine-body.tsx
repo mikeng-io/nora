@@ -5,7 +5,7 @@ import { cn } from "@/lib/cn";
 // Renders a doctrine or skill body for reading: her own words, set at a
 // comfortable measure. Much of her doctrine is written Cantonese, so each
 // block is tagged with the language it is mostly in; zh-Hant text then gets
-// its CJK face and a looser line (DESIGN.md §4), English keeps its own.
+// its CJK face and a looser line (docs/design/appearance/README.md §4), English keeps its own.
 
 const CJK_CHAR = /[㐀-鿿豈-﫿]/g;
 

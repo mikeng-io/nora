@@ -1,6 +1,6 @@
 """`AdapterRegistry` — builds every enabled platform from one table, resolves
 each one's own identity, and owns each platform's liveness
-(design/platform-bridges/platform-liveness.md).
+(docs/design/platform/README.md).
 
 **One platform's failure stays on that platform.** R-12
 (`nora.engagement.stages.admission`) checks membership in a resolved
@@ -256,7 +256,7 @@ class PlatformEntry:
     builder that turns that section into an adapter. Everything else —
     startup, the identity wait, degrade, recovery, promotion, the inbound
     gates, the state gauge, `/health` — is the registry's, once, for every
-    row (design/platform-bridges/platform-liveness.md)."""
+    row (docs/design/platform/README.md)."""
 
     name: str
     build: Builder

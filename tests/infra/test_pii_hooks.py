@@ -39,6 +39,7 @@ SY = Synth(4242)
 NAME = "Quorvel Tamriswix"  # invented; in the test denylist only
 PHONE = SY.phone("81")
 UUID = SY.uuid()
+PROV = "Environment: test\nAgent: test\nModel: test"
 
 
 class Repo:
@@ -62,9 +63,8 @@ class Repo:
 
     def commit(self, msg: str, *paths: str, env: dict | None = None, no_verify: bool = False):
         self.git("add", *(paths or ["-A"]))
-        # A body, so a `feat:`/`fix:` message satisfies the commit-body rule and these
-        # tests keep judging the identifier scanner alone.
-        body = "A body that states the reason, so the body rule passes."
+        # A body and provenance, so these tests judge the identifier scanner alone.
+        body = "A body that states the reason, so the body rule passes.\n\n" + PROV
         args = ["commit", "-q", "-m", msg, "-m", body] + (["--no-verify"] if no_verify else [])
         return self.git(*args, env=env)
 
@@ -165,7 +165,7 @@ def test_pre_commit_reads_staged_content_not_the_worktree(repo, staged_private):
     assert repo.git("add", "payload.py").returncode == 0
     repo.write("payload.py", clean if staged_private else private)
     before = repo.head()
-    out = repo.git("commit", "-q", "-m", "test: staged content")
+    out = repo.git("commit", "-q", "-m", "test: staged content", "-m", PROV)
     if staged_private:
         assert out.returncode != 0 and "denylist:text" in out.stderr
         assert repo.head() == before
@@ -382,7 +382,7 @@ def test_a_merge_does_not_re_judge_what_a_parent_already_had(repo):
     repo.git("checkout", "-q", "main")
     repo.write("nora/b.py", "y = 2\n")
     assert repo.commit("feat: b").returncode == 0
-    out = repo.git("merge", "--no-ff", "-q", "side", "-m", "merge: side into main")
+    out = repo.git("merge", "--no-ff", "-q", "side", "-m", "merge: side into main", "-m", PROV)
     assert out.returncode == 0, out.stderr
     assert repo.push_scan().returncode == 0
 
@@ -491,7 +491,7 @@ def test_amend_cannot_let_a_declaration_exempt_its_own_payload(repo):
     assert repo.commit("chore: declare").returncode == 0
     repo.write("secret.txt", f'P = "{other}"\n')
     repo.git("add", "secret.txt")
-    out = repo.git("commit", "-q", "--amend", "-m", "chore: declare")
+    out = repo.git("commit", "-q", "--amend", "-m", "chore: declare", "-m", PROV)
     assert out.returncode != 0 and "secret.txt" in out.stderr
 
 
@@ -542,7 +542,7 @@ def _declare(repo, line):
     allow = (repo.path / ".githooks/pii-allowlist.txt").read_text()
     repo.write(".githooks/pii-allowlist.txt", allow + line + "\n")
     repo.git("add", ".githooks/pii-allowlist.txt")
-    repo.git("commit", "-q", "--no-verify", "-m", "chore: declare")
+    repo.git("commit", "-q", "--no-verify", "-m", "chore: declare", "-m", PROV)
     assert repo.git("push", "-q", "--no-verify", "origin", "main").returncode == 0
 
 
@@ -564,7 +564,7 @@ def test_a_declaration_matching_too_many_files_is_an_error(repo):
     for i in range(201):
         repo.write(f"media/big/f{i}.bin", f"{i}\n")
     repo.git("add", "-A")
-    repo.git("commit", "-q", "--no-verify", "-m", "chore: many")
+    repo.git("commit", "-q", "--no-verify", "-m", "chore: many", "-m", PROV)
     _declare(repo, "binary media/big/* -- many")
     repo.write("x.txt", "x\n")
     out = repo.commit("chore: x")
@@ -590,7 +590,7 @@ def test_no_local_file_clears_a_finding(repo):
         json.dumps({"tree": tree, "model": "sonnet", "verdicts": verdicts}) + "\n"
     )
     (gitdir / "nora-pii-acks").write_text("".join(f"{i}\t\n" for i in ids))
-    assert repo.git("commit", "-q", "-m", "chore: c").returncode != 0
+    assert repo.git("commit", "-q", "-m", "chore: c", "-m", PROV).returncode != 0
     assert repo.commit("chore: c", no_verify=True).returncode == 0
     assert repo.push_scan().returncode == 1
 
@@ -655,7 +655,7 @@ def test_pre_commit_does_not_trust_a_forged_tracking_ref_for_declarations(repo):
     allow = (repo.path / ".githooks/pii-allowlist.txt").read_text()
     repo.write(".githooks/pii-allowlist.txt", allow + f"value {other} -- forged\n")
     repo.git("add", "-A")
-    repo.git("commit", "-q", "--no-verify", "-m", "chore: declare")
+    repo.git("commit", "-q", "--no-verify", "-m", "chore: declare", "-m", PROV)
     repo.git("update-ref", "refs/remotes/origin/main", "HEAD")  # never pushed
     repo.write("p.txt", f'P = "{other}"\n')
     out = repo.commit("test: p")
@@ -834,9 +834,9 @@ def test_a_symlinked_scanner_is_refused(repo, tmp_path, what):
         (repo.path / "scripts").symlink_to(fake)
     repo.write("rows.txt", f"{NAME}\n")
     repo.git("add", "rows.txt")
-    out = repo.git("commit", "-q", "-m", "test: rows")
+    out = repo.git("commit", "-q", "-m", "test: rows", "-m", PROV)
     assert out.returncode != 0 and "pre-commit:" in out.stderr and "symlink" in out.stderr
-    assert repo.git("commit", "-q", "--no-verify", "-m", "test: rows").returncode == 0
+    assert repo.git("commit", "-q", "--no-verify", "-m", "test: rows", "-m", PROV).returncode == 0
     rc, out = _push(repo, "origin", "main")
     assert rc != 0 and "pre-push:" in out and "symlink" in out
 

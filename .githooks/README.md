@@ -44,7 +44,7 @@ them). Two things worth knowing before you trust it:
   source).
 
 The rule these enforce lives in `CONTRIBUTING.md` §Commit messages and
-`docs/maintainers/conventions.md` §Merge strategy. The checker is the typing aid; the doc is the contract. To change
+`docs/engineering/conventions.md` §Merge strategy. The checker is the typing aid; the doc is the contract. To change
 either, change both in one commit.
 
 ## Identifiers (#283)

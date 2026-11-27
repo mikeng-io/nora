@@ -393,20 +393,20 @@ async def test_an_enabled_instagram_gets_its_own_roster_even_while_degraded(cfg)
     `unavailable`, `where_is` cannot establish the room and refuses, and every outbound
     @-mention resolves to nobody and goes out as plain text with no ping.
 
-    The adapter here IS degraded: the bridge base_url refuses instantly, so
-    `resolve_identity()` fails and M0 registers it anyway. That is the point: an Instagram
+    The adapter here IS degraded (the base_url refuses), and that is the point: a
     checkpoint clears without a restart, so a roster withheld on the startup state would
-    stay withheld for the life of the process, with the room-scoped tools silently
-    unavailable long after the session came back. The READ is what fails closed: a
-    checkpointed bridge answers 409 and the roster is `available=False` for exactly as
-    long as that is true.
+    stay withheld for the process's life. The READ fails closed instead. WhatsApp, the
+    other bridge with its own roster read, is wired the same way.
     """
+    from nora.platform.bridge.client import BridgeRoster
     from nora.platform.instagram.roster import InstagramRoster
 
     deps = await build_dependencies(override_config(cfg, {
         "platforms.instagram.enabled": True,
         "platforms.instagram.base_url": "http://127.0.0.1:1",
+        "platforms.whatsapp.enabled": True, "platforms.whatsapp.base_url": "http://127.0.0.1:1",
     }))
+    assert isinstance(deps.engagement._rosters.get("whatsapp"), BridgeRoster)
 
     assert "instagram" in deps.registry
     assert deps.registry.get("instagram").degraded, "the fixture cannot reach a bridge"
@@ -567,7 +567,7 @@ async def test_the_participation_trigger_is_wired_to_the_real_fire_path(cfg):
     )) is None, (
         "[participation] enabled alone builds NOTHING: the trigger "
         "is the gate's, and a turn with no gate in front of it is the cost "
-        "design/ambient-loop/01-stages-and-seams.md exists to stop paying"
+        "docs/design/cognition/loop.md exists to stop paying"
     )
 
     # `shadow_channel` is set because the shipped default is `shadow = true`

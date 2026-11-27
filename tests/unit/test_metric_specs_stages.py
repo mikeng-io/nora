@@ -4,7 +4,7 @@
 NAMES. Nothing covered label VALUES, and for a fail-soft block they are the
 whole instrument: the block is lost and the turn is not, so absence is the only
 symptom and `nora_errors_total` is the only tell. A declaration nothing
-increments is the mirror lie `docs/code-standards.md` already names ("a declared
+increments is the mirror lie `docs/engineering/code-standards.md` already names ("a declared
 metric with no call site is a lie").
 """
 

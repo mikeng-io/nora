@@ -1,4 +1,5 @@
 import contextlib
+import logging
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -26,6 +27,8 @@ from nora.infra.computer.probe import ComputerdProbe
 from nora.infra.sql.computer_events import SqlComputerEventStore
 from nora.infra.sql.computer_exports import SqlComputerExportStore
 from nora.infra.sql.computer_sessions import SqlComputerSessionStore
+
+log = logging.getLogger("nora.computer.wire")
 
 """Compose this area's tool adapters from shared dependencies."""
 
@@ -205,10 +208,16 @@ def _scoped_computer_runtime(
     from nora.infra.sql.computer_tasks import SqlComputerTaskStore
 
     effects = memory.EffectRecorder(memory.wire.act_envelope(engine))
+    endpoints = FileScopeEndpoints(scoped_cfg.registry)
+    registry = endpoints.status()
+    if registry["state"] != "live":
+        # Not fatal: the rest of Nora serves, and every scope reads as unavailable. Loud,
+        # because otherwise it is indistinguishable from "no VM provisioned yet".
+        log.error("scoped computer unusable: %s", registry["detail"])
     return ScopedRuntimeWiring(
         browser_tabs=SqlBrowserTabStore(engine),
         computer=ScopedComputerdRuntime(
-            endpoints=FileScopeEndpoints(scoped_cfg.registry),
+            endpoints=endpoints,
             token=computer_token,
             timeout_seconds=cfg.computer.request_timeout_seconds,
             max_output_chars=cfg.computer.max_output_chars,

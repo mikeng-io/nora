@@ -352,7 +352,7 @@ comparison; it is not proof the previous version is still running after failure.
 ## Private secret source
 
 Install sibling `secret_delivery.py` together with `komodo_deploy.py` before
-promoting this release. Follow the [migration and functional readback](../../docs/configuration.md);
+promoting this release. Follow the [migration and functional readback](../../docs/operations/configuration.md);
 the installed wrapper is outside the fetched clone. Its existing control directory
 (normally `/etc/komodo/nora-deploy`) must be writable and shared at the same path
 on the host and in Periphery. The wrapper writes private `compose.env` and

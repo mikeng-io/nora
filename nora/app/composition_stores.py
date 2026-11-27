@@ -172,7 +172,7 @@ class ObservationWiring:
 
 def observation(engine: Any)-> ObservationWiring:
 
-    # The typed platform-observation Record (design/platform-observations 02): persisted
+    # The typed platform-observation Record (docs/design/platform/observations.md 02): persisted
     # whenever a bridge ingests typed source evidence. Cognition OFF still retains the rows
     # — they simply wake no session (the obligation enqueued in the append's transaction is…
     observation_store = SqlObservationStore(
@@ -366,7 +366,7 @@ async def managed_identity(
     listeners before the app accepts the backend. An unreachable Kratos or
     Keto is `StartupError`, never a fallback to file grants: falling back
     would silently serve stale file authority as managed truth
-    (`design/managed-identity-access/authorization.md` «Failure»).
+    (`docs/design/people/authority.md` «Failure»).
     """
     _people_wire = importlib.import_module("nora.people").wire
     if cfg.identity.backend == "file":

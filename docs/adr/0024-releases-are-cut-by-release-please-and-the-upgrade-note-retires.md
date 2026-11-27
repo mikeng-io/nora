@@ -1,3 +1,9 @@
+---
+class: adr
+subject: Releases are cut by release-please from Conventional Commits; the upgrade note and release fragments retire
+owns: []
+---
+
 # 0024 · Releases are cut by release-please from Conventional Commits; the upgrade note and release fragments retire
 
 - **Status:** proposed (2026-10-16), on operator direction: "refactor the current nora release to

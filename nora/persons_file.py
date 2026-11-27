@@ -54,14 +54,14 @@ def _check_account(platform: str, account: dict[str, str | int]) -> None:
         if kind == DISPLAY_NAME_KIND:
             raise ValueError(
                 f"{platform}.{DISPLAY_NAME_KIND} is never matchable "
-                "(design/10-identity-and-policy-schema.md §1.3) — display names "
+                "(docs/design/people/identity.md) — display names "
                 "are user-controlled and spoofable; they are shown to the "
                 "operator, never used to resolve a sender to a person"
             )
         if kind not in allowed:
             raise ValueError(
                 f"{platform}.{kind!r} is not a valid id kind "
-                f"(design/10-identity-and-policy-schema.md); expected one of {sorted(allowed)}"
+                f"(docs/design/people/identity.md); expected one of {sorted(allowed)}"
             )
         matchable += 1
     if not matchable:
@@ -98,8 +98,8 @@ class _PersonEntry(BaseModel):
     # inferred — an operator states a merge happened; the analytics rollup
     # (nora.analytics) never guesses one from timing/proximity alone.
     former_person_ids: list[str] = Field(default_factory=list)
-    # The social stream's per-person off switch (design/cognition-loop/
-    # design/cognition-loop/observation.md). `false` stops the poller probing or reading any of
+    # The social stream's per-person off switch (docs/design/cognition/loop.md
+    # docs/design/cognition/loop.md). `false` stops the poller probing or reading any of
     # this person's accounts on any network. On by default: a member is
     # anyone listed in a room, and this is how one is taken back out.
     social: bool = True
@@ -144,10 +144,10 @@ class _PersonEntry(BaseModel):
         if value is not None:
             raise ValueError(
                 "the old `[persons.<id>.platforms]` shorthand (one id per "
-                "platform) is no longer supported (design/10-identity-and-policy-schema.md) — "
+                "platform) is no longer supported (docs/design/people/identity.md) — "
                 "use one typed table per platform instead, e.g. "
                 '`[persons.<id>.signal]` with `phone = "…"` / `uuid = "…"` '
-                "keys; see design/10-preview-identity.toml for the target "
+                "keys; see docs/operations/identity-preview.toml for the target "
                 "shape. (`username` is accepted but never matched on — it "
                 "cannot be a block's only id.)"
             )
@@ -176,7 +176,7 @@ class _PersonEntry(BaseModel):
                     "Discord), and they all resolve to the same person_id and "
                     "share one person (A2). List that account's id "
                     "forms inside the block; see "
-                    "design/10-preview-identity.toml."
+                    "docs/operations/identity-preview.toml."
                 )
         return data
 

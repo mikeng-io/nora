@@ -1,4 +1,4 @@
-"""The REAL composition path under `mode = "bridge"` (design/platform-bridges).
+"""The REAL composition path under `mode = "bridge"` (docs/design/platform/README.md).
 
 `build_dependencies` is the one place config becomes collaborators — these
 tests drive it (and `App.run`'s own spawns/routes) rather than constructing

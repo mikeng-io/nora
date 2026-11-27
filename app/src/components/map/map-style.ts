@@ -3,7 +3,7 @@ import type { StyleSpecification, ExpressionSpecification } from "maplibre-gl";
 // Nora's basemap, drawn from OpenFreeMap's vector tiles (OpenMapTiles
 // schema; free, no key) in her own palette: a warm-grey map in the studio
 // lighting and a dark warm-grey one late at night, never the provider's
-// default blue-black (DESIGN.md §7, Map). Streets are quiet so that the
+// default blue-black (docs/design/appearance/README.md §7, Map). Streets are quiet so that the
 // people on it, in their own hues, are the loudest thing on the page.
 // Values continue the design tokens rather than repeat them: the canvas is
 // studio, the streets are surface, the casings are hairline and seam.

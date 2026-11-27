@@ -5,7 +5,7 @@ What is proven here is the *declared content* of the artifacts: the Kratos
 person schema is a valid draft-07 JSON Schema with the shape Kratos requires
 (`properties.traits`, closed, credentialless), generated instances validate
 and refuse correctly, the OPL source declares the model
-`design/managed-identity-access/authorization.md` describes, and the
+`docs/design/people/authority.md` describes, and the
 development configs pin the v26.2.0 keys so later setup does not invent
 their shape.
 

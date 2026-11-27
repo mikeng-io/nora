@@ -201,7 +201,7 @@ async def run(
                 # the way re-reading the store could, so a voice note that
                 # was JUST written always reaches the transcriber.
                 blob, plaintext = taken
-                # NO SPAN HERE, by decision (`docs/observability.md`, "what
+                # NO SPAN HERE, by decision (`docs/operations/observability.md`, "what
                 # counts as a generation"). The STT service is a local ASR on
                 # Nora's own private network, not an LLM, and Langfuse is an
                 # LLM-observability tool (R-76). Its outcome ships on

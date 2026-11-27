@@ -462,9 +462,9 @@ class SqlRecordStore:
                         conn, message, self._self_ids(message.platform)),
                 ))
             row_id = int((await conn.execute(stmt)).scalar_one())
-            # `tx_hook(conn, row_id)` runs INSIDE this transaction — the
-            # platform-bridge seam that makes source mapping + message +
-            # projection one atomic commit (design/platform-bridges/03-ownership-and-recovery.md).
+            # `tx_hook(conn, row_id)` runs INSIDE this transaction: source mapping,
+            # message and projection commit atomically
+            # (docs/design/platform/README.md).
             if tx_hook is not None:
                 await tx_hook(conn, row_id)
         return row_id

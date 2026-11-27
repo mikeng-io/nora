@@ -1,7 +1,7 @@
 """The social stream's Record: `social_item`, `social_poll`, `social_item_state`
 (`0107_social_stream`), `social_perception` (`0108_social_perception`) and the
 `blob_tombstone` a story frame's deleted bytes leave (`0109_blob_tombstone`),
-design/cognition-loop/observation.md
+docs/design/cognition/loop.md
 
 Shaped like `nora.infra.sql.otp`: the engine comes through `__init__` and each
 verb is one transaction. Every table is APPEND-ONLY, so there is no UPDATE and

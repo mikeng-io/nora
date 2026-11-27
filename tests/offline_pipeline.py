@@ -123,7 +123,7 @@ def build_offline_pipeline(
     from nora.agent.shared_state import shared_reader
 
     harness_policy = room_allowlist()
-    # The one `standing` view (design/notebook-memory-types/20-standing.md):
+    # The one `standing` view (docs/design/cognition/graph.md):
     # a reader over the same store doubles a caller passes in — `None` only
     # when none were given, exactly like `notes` here.
     shared = (
@@ -167,7 +167,7 @@ def build_offline_pipeline(
         subagents=None,
         # `<recalled>`, the pre-fetch — `None`: no memory index here; the live
         # eval subject builds the real search through composition.
-        # The typed platform-observation Record (design/platform-observations
+        # The typed platform-observation Record (docs/design/platform/observations.md
         # 04/05): the transcript window's source events and the standing
         # slot's folded object heads. `None` renders neither — the honest
         # shape an eval without the store is graded against. A case that
@@ -254,7 +254,7 @@ def build_offline_pipeline(
             ambient=AmbientEngagement(EngagementGraph(access)),
             tag_trace_store=None,
             persons=persons, access=access, records=audit,
-            # The shared-state reader (design/notebook-memory-types/20-standing.md):
+            # The shared-state reader (docs/design/cognition/graph.md):
             # `None` in the harness, the assembler's reason above — which
             # also means an eval's proactive occasion never withholds on an
             # `unavailable` view it never had.

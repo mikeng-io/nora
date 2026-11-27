@@ -1,3 +1,9 @@
+---
+class: adr
+subject: 'Skills: when a domain earns one, and how a skill is written'
+owns: []
+---
+
 # 0016 · Skills: when a domain earns one, and how a skill is written
 
 - **Status:** proposed (2026-09-24)

@@ -106,7 +106,7 @@ class SignalPlatformConfig(BaseModel):
     account: str
     # "direct" (default): base_url is signal-cli's JSON-RPC/HTTP daemon.
     # "bridge": base_url is the standalone signal-bridge's action API —
-    # inbound then arrives over Redis Streams, not SSE (design/platform-bridges).
+    # inbound then arrives over Redis Streams, not SSE (docs/design/platform/).
     mode: Literal["direct", "bridge"] = "direct"
     # The stream's account leg: an explicit opaque key, NOT derived from the
     # registered number — it must equal signal-bridge's NORA_BRIDGE_ACCOUNT_KEY
@@ -195,7 +195,7 @@ class InstagramPlatformConfig(BaseModel):
 
 
 class BridgesConfig(BaseModel):
-    """The durable inbound handoff's shared settings (design/platform-bridges).
+    """The durable inbound handoff's shared settings (docs/design/platform/).
     `redis_url_env` names the env var carrying the Redis URL — the URL holds a
     password, so it is a secret ref like every `*_env` here, never a value in
     config.toml. Any platform with `mode = "bridge"` requires it.
@@ -1468,7 +1468,7 @@ class LinkedInSocialConfig(BaseModel):
 
 
 class SocialPollConfig(BaseModel):
-    """The social stream's poller (design/cognition-loop/observation.md):
+    """The social stream's poller (docs/design/cognition/loop.md):
     each member's Instagram account is probed, and a story or a list of
     posts and reels is read only when the probe says it changed. Every value is
     a starting value, sized after a week of `social_poll` rows.
@@ -1725,7 +1725,7 @@ class SidecarEntry(SpeechEntryConfigBase):
                 f"sidecars entry guild {value!r} must be a bare Discord guild "
                 "id, not \"<guild_id>/<channel_id>\" — an entry maps a GUILD "
                 "to the audio-controller that owns its voice connection "
-                "(design/voice-channel/audio). Where a guild's SPEECH is "
+                "(docs/design/voice/). Where a guild's SPEECH is "
                 "recorded is policy.toml's `voice = true`, not here."
             )
         return value
@@ -1929,7 +1929,7 @@ class SpeechTtsConfig(BaseModel):
                 raise ValueError(
                     f"[speech.tts] sidecars lists guild {entry.guild!r} twice — "
                     "one guild has exactly one audio-controller "
-                    "(design/voice-channel/audio)"
+                    "(docs/design/voice/)"
                 )
             seen.add(entry.guild)
         return self
@@ -2156,7 +2156,7 @@ class ComputerContextConfig(BaseModel):
 
 
 class ComputerScopedConfig(BaseModel):
-    """The scoped computer (design/browser-runtime): one sbx
+    """The scoped computer (docs/design/computer/): one sbx
     microVM per computer scope instead of one shared VM.
 
     Ships INERT (`enabled = false`): off, nothing here is built and the
@@ -3530,8 +3530,8 @@ class McpMountConfig(BaseModel):
 
 class ToolsConfig(BaseModel):
     """The `[tools.mcp.<name>]` mount points. A second server is
-    a second `mcp` dict entry — no schema change, matching the ARCHITECTURE
-    doc's documented target ("add an MCP server -> no Python")."""
+    a second `mcp` dict entry — no schema change, matching the documented
+    target ("add an MCP server -> no Python")."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -3674,7 +3674,7 @@ class Config(BaseModel):
     agent: AgentConfig = AgentConfig()
     content_checks: ContentChecksConfig = ContentChecksConfig()
     platforms: PlatformsConfig
-    # `[bridges]`: the durable inbound handoff (design/platform-bridges).
+    # `[bridges]`: the durable inbound handoff (docs/design/platform/).
     # Platforms with `mode = "bridge"` read `redis_url_env`.
     bridges: BridgesConfig = Field(default_factory=BridgesConfig)
     llm: LLMConfig
@@ -4147,7 +4147,7 @@ def load(path: Path, *, require_secrets: bool = True) -> Config:
     """Validate settings; runtime loading also resolves required credentials.
 
     Schema-only callers pass require_secrets=False. Credential-source and restart
-    semantics are documented in docs/configuration.md.
+    semantics are documented in docs/operations/configuration.md.
     """
     path = Path(path).expanduser().resolve()
     if not path.exists():

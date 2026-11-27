@@ -5,7 +5,7 @@ description: Places Nora code by area and layer (ADR 0037). Finds the area that 
 
 # nora-structure
 
-The map is ARCHITECTURE.md «Code map»; the layer rules are `nora/AGENTS.md`;
+The map is `docs/engineering/code-map.md`; the layer rules are `nora/AGENTS.md`;
 the reasons are ADR 0037. This skill is the order and the check after each step.
 
 ## 1. Find the area

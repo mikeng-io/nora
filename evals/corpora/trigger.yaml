@@ -6,7 +6,7 @@
 # against the token does not block a match the way an ASCII letter/digit/underscore
 # would).
 
-# --- RE-HOMED 2026-09-17 (design/evaluation Step 4) -------------------------
+# --- RE-HOMED 2026-09-17 (docs/engineering/evaluation Step 4) -------------------------
 #
 # These cases were driven by `evals/run.py`'s `_invoke_agent`, whose own
 # docstring says what it is:

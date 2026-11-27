@@ -1,3 +1,9 @@
+---
+class: adr
+subject: Agent skills carry the procedures; AGENTS.md carries the rules
+owns: []
+---
+
 # 0017 · Agent skills carry the procedures; AGENTS.md carries the rules
 
 - **Status:** accepted (operator, 2026-09-24)

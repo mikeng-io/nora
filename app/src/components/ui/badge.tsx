@@ -6,7 +6,7 @@ type Tone = "neutral" | "success" | "caution" | "danger" | "denim" | "nora" | "o
 const tones: Record<Tone, string> = {
   neutral: "bg-hoodie text-ink-soft",
   outline: "border border-hairline bg-surface text-ink-soft",
-  // A state is never colour alone (DESIGN.md §3): these carry a word, and
+  // A state is never colour alone (docs/design/appearance/README.md §3): these carry a word, and
   // the caller adds an icon where the badge stands by itself.
   success: "bg-hoodie text-success",
   caution: "bg-hoodie text-caution",

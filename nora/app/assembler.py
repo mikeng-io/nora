@@ -92,7 +92,7 @@ def build_assembler(
         notes=notes, policy=policy,
         memos=memos,
 
-        # The unit's shared cognitive state (design/notebook-memory-types/20-standing.md):
+        # The unit's shared cognitive state (docs/design/cognition/graph.md):
         # ONE reader bound at the composition root; `None` renders no block.
         shared=shared,
         # The media join: the transcript's `[image a3f2c1]`

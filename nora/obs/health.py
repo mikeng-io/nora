@@ -57,19 +57,28 @@ async def _account(registry, adapter) -> str | None:
         return None
 
 
+def _computer_block(computer_health) -> dict:
+    """The scoped computer registry's state, reported, never counted toward `healthy`."""
+    if computer_health is None:
+        return {}
+    try:
+        return {"computer": computer_health()}
+    except Exception:                          # noqa: BLE001 — a health check never raises
+        return {"computer": {"state": "unavailable"}}
+
+
 def build_health_app(
     *, adapter, store, doctrine_store, metrics, started_at: float,
     llm_state: LLMState,
     adapters=None,
     registry=None,
     identity_file: str | Path | None = None, policy_file: str | Path | None = None,
-    config_reload=None,
+    config_reload=None, computer_health=None,
 ) -> web.Application:
     app = web.Application()
     # Application-HTTP coverage (ADR 0034): request spans for the portal/API
     # routes; the /health + /metrics polls are excluded inside the helper.
     from nora.obs.tracing import instrument_aiohttp_app
-
     instrument_aiohttp_app(app)
     app["adapter"] = adapter
     # Every platform's adapter, keyed by name, beside `adapter`, which is the
@@ -90,6 +99,7 @@ def build_health_app(
     app["config_reload"] = config_reload
     app["started_at"] = started_at
     app["llm_state"] = llm_state
+    app["computer_health"] = computer_health
     # The bind-mounted, load-once config files — for the staleness canary below.
     app["config_files"] = {
         name: path for name, path in
@@ -174,6 +184,7 @@ def build_health_app(
             "doctrine_sha256": doctrine_sha256,
             "strands_version": _strands_version(),
         }
+        body.update(_computer_block(a["computer_health"]))
         # Staleness canary: identity.toml/policy.toml are bind-mounted and
         # loaded ONCE at startup, and an atomic edit changes the inode so a
         # restart keeps serving the OLD file; a recreate is needed.

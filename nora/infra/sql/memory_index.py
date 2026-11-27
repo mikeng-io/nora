@@ -16,7 +16,7 @@ address or coordinates), a district's or a city's its name. A failure's
 `last_error` is the exception's CLASS only: a driver error's message carries
 the statement's parameters, which here are message bodies.
 
-**Place containment** (design/unified-memory/graph.md «Named places»,
+**Place containment** (docs/design/cognition/graph.md «Named places»,
 build step 3a). A place lies in a district and a district in a city:
 `located_in` edges, from the areas a geocoder's structured address
 components name (`nora.domain.ports.PlaceArea`, stored beside the place: an
@@ -74,7 +74,7 @@ its person alone. Both copy the row's presence lineage, which a reader must
 pass as `rollup_read.visible_rows` does (R-31, DEC-222): the scope
 alone never discloses a place.
 
-**What a social item is** (design/cognition-loop/observation.md, the operator's
+**What a social item is** (docs/design/cognition/loop.md, the operator's
 rulings). One `social` node per `social_item`, keyed `network:item_id`, and
 one `social_media` node per medium of it, `(item, sha256)` in `media_ref`'s
 order, `attached_to` the item: a carousel is several. Both are their
@@ -1060,7 +1060,7 @@ async def _place_in(
     geocoder gave (a public name, the only text a hub carries besides a
     venue's), and returns the edge to it for the caller, which owns it. The
     district's own edge to its city is `_district_cities`'. No area, no edge
-    (design/unified-memory/graph.md)."""
+    (docs/design/cognition/graph.md)."""
     if district:
         target = _area_id("district", district)
         await _area_hub(conn, target, district)
@@ -1148,7 +1148,7 @@ async def _project_character(conn: AsyncConnection, source_id: str) -> None:
     await _entry_edges(conn, "character", source_id, edges)
 
 
-# --- Profile (design/unified-memory/profiles.md) -----------------------------------
+# --- Profile (docs/design/cognition/graph.md) -----------------------------------
 
 #: A profile line's episode citation, `response:<send id>`: the send's Record
 #: id, so the message's node. And its social citation, `social:<network>:<id>`.

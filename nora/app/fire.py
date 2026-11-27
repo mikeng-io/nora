@@ -116,7 +116,7 @@ log = logging.getLogger("nora.app.fire")
 
 # The `audience` label every `nora_silent_failures_total` this path raises
 # carries — including the five inside `Deliverer`, which is why `deliver.build`
-# takes it. A8 (`docs/runbook.md`) filters on `audience="tag"`, so a fire-turn
+# takes it. A8 (`docs/operations/runbook.md`) filters on `audience="tag"`, so a fire-turn
 # failure recorded without this would be charged to a budget whose
 # denominator counts only tags.
 AUDIENCE = audience_names.HEARTBEAT
@@ -481,8 +481,8 @@ class FirePath:
         # holds. `None` while `[documents]` is off.
         documents: DocumentsContextReader | None = None,
         tag_trace_store: Any = None,
-        # The unit's shared cognitive state reader (design/notebook-memory-
-        # types/20-standing.md): bound at the composition root
+        # The unit's shared cognitive state reader (docs/design/cognition/context.md):
+        # bound at the composition root
         # over the canonical stores, `None` in every harness that wires none.
         # A PROACTIVE occasion withholds on an `unavailable` view — a claimed
         # due row is not proof the act is still needed, and an unread premise

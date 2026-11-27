@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Nora engineering orchestration contract",
-  "description": "Interchange shapes only; references and live acceptance require read-back. Vocabularies are canonical here; tier capabilities/evidence belong to ORCHESTRATION.md frontmatter.",
+  "description": "Interchange shapes only; references and live acceptance require read-back. Vocabularies are canonical here; tier capabilities/evidence belong to .agents/orchestration.policy.yaml.",
   "oneOf": [
     {"$ref": "#/$defs/policy"},
     {"$ref": "#/$defs/task"},

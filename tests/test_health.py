@@ -297,7 +297,7 @@ async def test_health_has_no_legacy_index_block(aiohttp_client):
 async def test_health_reports_each_platform_state(aiohttp_client, store):
     """`platforms.<name>.state` is the registry's liveness state, and
     `account` is the REGISTERED identity — no `/v1/self` round trip per poll
-    (design/platform-bridges/platform-liveness.md «Visibility»)."""
+    (docs/design/platform/README.md «Visibility»)."""
     from nora.doctrine.loader import DoctrineStore
     from nora.domain.ports import PlatformIdentity
     from nora.platform.registry import AdapterRegistry

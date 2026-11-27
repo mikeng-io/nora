@@ -154,13 +154,22 @@ class App:
             started_at=started_at, llm_state=deps.llm_state,
             identity_file=self.cfg.identity_file, policy_file=self.cfg.policy_file,
             config_reload=deps.config_reload.status,
+            computer_health=self._computer_health(),
         )
+
+    def _computer_health(self):
+        scoped = self.cfg.computer.scoped
+        if not (self.cfg.computer.enabled and scoped.enabled):
+            return None
+        from nora.domain.computer_vms import FileScopeEndpoints
+
+        return FileScopeEndpoints(scoped.registry).status
 
     def start_platform_recovery(self, *, sleep=asyncio.sleep):
         """Spawn the background re-resolution of every platform degraded at
         startup (`AdapterRegistry.recover_forever`) — the one spawn `run`
         makes, so a promoted platform needs no restart
-        (design/platform-bridges/platform-liveness.md)."""
+        (docs/design/platform/README.md)."""
         return self.deps.background.spawn(
             self.deps.registry.recover_forever(sleep=sleep))
 

@@ -10,7 +10,7 @@ the next, and a single tick cannot show any of them.
 The clock starts at the real time because a poller that has just started
 seeds its schedule from `social_poll.recorded_at`, the database's own clock.
 
-Database scoped to the MODULE and truncated between tests (docs/code-standards.md).
+Database scoped to the MODULE and truncated between tests (docs/engineering/code-standards.md).
 """
 
 from __future__ import annotations

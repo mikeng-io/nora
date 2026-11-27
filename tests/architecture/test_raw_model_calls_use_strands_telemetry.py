@@ -92,7 +92,7 @@ def test_start_and_end_raw_model_span_actually_emit_strands_telemetry(
     monkeypatch,
 ) -> None:
     """The POSITIVE CONTROL for the test above, and it is not optional
-    (docs/code-standards.md: pair every zero-assertion with one; assert something only a
+    (docs/engineering/code-standards.md: pair every zero-assertion with one; assert something only a
     run that RAN produces).
 
     Calls `start_raw_model_span`/`end_raw_model_span` directly against a

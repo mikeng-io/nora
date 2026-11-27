@@ -355,6 +355,9 @@ def policies(
                 base_url=cfg.platforms.signal.base_url, account=cfg.platforms.signal.account
             )
         )
+    if "whatsapp" in registry:
+        rosters["whatsapp"] = BridgeRoster("whatsapp", BridgeEndpoint(
+            cfg.platforms.whatsapp.base_url, cfg.credentials.get(cfg.bridges.token_env, "")))
     if "discord" in registry:
         if discord_control is not None:
             # Bridge mode: the roster read crosses the bridge's `/v1/reads`

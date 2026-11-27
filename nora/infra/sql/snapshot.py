@@ -102,10 +102,10 @@ WHAT IT CANNOT FREEZE, stated rather than left to be discovered:
 THE TWO KEYS THIS FUNCTION CANNOT DERIVE, and will not guess. A room's culture
 key and its notes' unit both come from `policy.toml`, not from the database:
 the culture tier is Dreamer-written so it keys the conversation's `primary_id`
-(`GLOSSARY.md`'s table, DEC-181), and the note tier keys the social `unit`
+(`docs/glossary.md`'s table, DEC-181), and the note tier keys the social `unit`
 DEC-105 assigns the room. Neither is a function of `(platform,
 conversation_id)` — they are equal to it today only by accident of data, which
-`GLOSSARY.md` says in as many words — so both are REQUIRED arguments. A default
+`docs/glossary.md` says in as many words — so both are REQUIRED arguments. A default
 would be the exact failure the culture tier's own migration warns about: a key
 that matches zero rows returns an empty culture and an empty notebook, raises
 nothing, and reads identically to a room that genuinely had neither.

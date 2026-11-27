@@ -5,12 +5,12 @@ description: Write a bounded Nora work brief and plan, pass them through the pro
 
 # Dispatch and execution
 
-Policy: [ORCHESTRATION.md](../../../ORCHESTRATION.md). Use the relevant step;
+Policy: [docs/engineering/orchestration.md](../../../docs/engineering/orchestration.md). Use the relevant step;
 resume from current evidence rather than restarting the whole procedure.
 
 ## 1. Read or refine the work
 
-For new Linear work, use the [execution convention](../../../docs/maintainers/conventions.md#linear-execution).
+For new Linear work, use the [execution convention](../../../docs/engineering/conventions.md#linear-execution).
 Read the current description, its project's Intent and unresolved blockers. Capture
 only what the next actor needs; follow design and evidence links on demand.
 
@@ -123,7 +123,7 @@ rerun settled checks unless the change affects their basis.
 - For repeated blockers in the same seam, revisit the intent and real flow
   before another repair. Preserve review limits; scope changes need authority.
 
-Before review, supply [REVIEW.md](../../../REVIEW.md#scope-and-inputs)'s short brief,
+Before review, supply [docs/engineering/review.md](../../../docs/engineering/review.md#scope-and-inputs)'s short brief,
 including risk lenses and exclusions. `nora-review` performs the review at the
 applicable tier. Integrate and measure where required, then use `nora-land`. Before claiming an eval, paid run or deploy
 ready, use its authorized zero-cost rehearsal of the actual path, not a proxy.

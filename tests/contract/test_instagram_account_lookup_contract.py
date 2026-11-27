@@ -3,7 +3,7 @@
 `SocialRouter` resolves a typed handle, or the username in a pasted link, through this
 port, and every router test that drives it through `FakeInstagramAccountLookup` is
 evidence about production only if the fake answers the way `InstagramSocialClient` does
-over the real bridge contract. This file is what says it does (docs/code-standards.md: a
+over the real bridge contract. This file is what says it does (docs/engineering/code-standards.md: a
 fake is bound to its production implementation by a shared contract suite).
 
 The production arm talks to a fake instagram-bridge that behaves like the real

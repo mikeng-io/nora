@@ -1,7 +1,7 @@
 import { cn } from "@/lib/cn";
 
 // A static hoodie-coloured block sized to what it stands in for, no shimmer
-// (DESIGN.md §7, the No-Ambience Rule). The content cross-fades in over it.
+// (docs/design/appearance/README.md §7, the No-Ambience Rule). The content cross-fades in over it.
 export function Skeleton({ className }: { className?: string }) {
   return <span aria-hidden="true" className={cn("block rounded-control bg-hoodie", className)} />;
 }

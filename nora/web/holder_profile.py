@@ -1,5 +1,5 @@
 """The holder's own profile surface — `POST /app/v1/holder/profile`
-(`design/managed-identity-access/management.md`).
+(`docs/design/people/authority.md`).
 
 One route, one effect: the authenticated holder renames their own
 canonical person. The body carries ONLY the intended display name and the

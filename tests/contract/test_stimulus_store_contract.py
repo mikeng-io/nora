@@ -13,7 +13,7 @@ over stay pending without ever being enumerated: reading the backlog under
 an advanced mark is bounded by `limit`, not by the backlog's size.
 
 The database is built ONCE for this module and truncated between tests
-(docs/code-standards.md, «A contract suite scopes its database to the MODULE»).
+(docs/engineering/code-standards.md, «A contract suite scopes its database to the MODULE»).
 """
 
 from __future__ import annotations

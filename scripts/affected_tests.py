@@ -159,7 +159,7 @@ _ALWAYS_ALL_PATHS = frozenset({
 _ALWAYS_ALL_PREFIXES = (".github/workflows/", ".githooks/")
 
 # Whole-directory docs trees: a data file under them is looked up in the scan.
-_DOCS_TREE_PREFIXES = ("docs/", "design/")
+_DOCS_TREE_PREFIXES = ("docs/",)
 _DATA_EXTENSIONS = frozenset({".md", ".txt", ".json", ".toml", ".yaml", ".yml"})
 
 # tests/architecture/test_doc_references_resolve.py scans every tracked `.md`

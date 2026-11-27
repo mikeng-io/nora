@@ -707,7 +707,7 @@ def _execute(args: argparse.Namespace, names: list[str], only: frozenset[str] | 
                     "An eval subject composes the DEPLOYMENT's config, never "
                     "config.example.toml — the example ships with almost everything "
                     "off, and running against it measures a different Nora "
-                    "(design/evaluation/subject.md). Run this where the "
+                    "(docs/engineering/evaluation-subject.md). Run this where the "
                     "deployment lives, or point --deployment-config at its "
                     "config.toml.",
                     file=sys.stderr,

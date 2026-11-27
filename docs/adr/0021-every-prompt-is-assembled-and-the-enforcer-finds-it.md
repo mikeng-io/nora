@@ -1,3 +1,9 @@
+---
+class: adr
+subject: Every model prompt is assembled through context assembly, and a test finds the occasions
+owns: []
+---
+
 # 0021 · Every model prompt is assembled through context assembly, and a test finds the occasions
 
 - **Status:** proposed (2026-10-02); the operator's rule of 2026-10-01 is built and live as DEC-273

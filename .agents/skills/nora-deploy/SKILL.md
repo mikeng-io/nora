@@ -17,7 +17,7 @@ rebuild or recreation is reserved for an explicit operator request, host config
 changes or failure recovery; the procedures below do not expand task scope.
 
 Examples: SSH alias `nora-host`, checkout `~/workspace/nora`; substitute installed paths.
-Background: `AGENTS.md`, `docs/maintainers/conventions-rationale.md`, `docs/runbook.md` (§3/3b).
+Background: `AGENTS.md`, `docs/engineering/conventions-rationale.md`, `docs/operations/runbook.md` (§3/3b).
 
 - Run multi-line work as `ssh nora-host bash -s <<'EOF' ... EOF`, never a long
   `ssh nora-host '...'` (Host notes).
@@ -120,7 +120,7 @@ in-process within three seconds — read each consumer's `nora_config_reloads_to
 last good file; restore/fix the copy. `restart_required` refuses the whole file:
 write the scoped reload request and use native Stack recreation for policy
 `[units]` or identity `[workspaces]` binding edits.
-See [the publication contract and restart-only boundary](../../../design/policy-reload/README.md).
+See [the publication contract and restart-only boundary](../../../docs/design/people/authority.md).
 On failure restore the backup under the lock, then use native Stack recovery
 and repeat receipt, image, health and process-config readback.
 
@@ -141,7 +141,7 @@ tested database restore. Never use legacy local retag/recreate commands here.
 
 ## Credential-source amendment
 
-Use [the configuration migration procedure](../../../docs/configuration.md) for
+Use [the configuration migration procedure](../../../docs/operations/configuration.md) for
 secret.toml, installed helper delivery and scoped recreation. Older .env-only
 examples above remain legacy compatibility instructions. Do not print values or
 copy rotating OAuth state into the bootstrap source.
