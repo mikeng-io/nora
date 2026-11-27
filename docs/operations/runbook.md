@@ -526,13 +526,15 @@ relevant when `[platforms.whatsapp] enabled = true`.
 **Pairing (first run, and after any session invalidation):** the QR carries a
 session secret, so the pairing container runs with its log driver off (a
 Compose one-off would send the QR to the container log, and from there to any
-log collector).
+log collector). Run from the runtime root; the `whatsapp-bridge` service must
+already exist, unpaired or not, because its image is the one used.
 
 ```bash
+umask 077
 IMG=$(docker inspect --format '{{.Config.Image}}' whatsapp-bridge)
-mkdir -p state/whatsapp-new
-docker run --rm -it --log-driver none -v "$PWD/state/whatsapp-new:/app/session" \
-  "$IMG" node bridge.js --pair
+mkdir state/whatsapp-new          # fresh and private: never reuse a directory
+docker run --rm -it --log-driver none --user "$(id -u):$(id -g)" \
+  -v "$PWD/state/whatsapp-new:/app/session" "$IMG" node bridge.js --pair
 ```
 
 It draws a QR, a fresh one about every 20 s. On the bot number's phone:
@@ -540,12 +542,24 @@ Settings → Linked Devices → Link a device, then scan it. The phone-number
 pairing code is not offered. Pairing serves no HTTP, so it runs beside the live
 bridge, into an empty directory so it cannot mix with an invalidated session.
 
-First run: move `state/whatsapp-new` to `state/whatsapp`. A re-pair: copy
-`state/whatsapp` aside as a backup, replace every file in it except
-`lid-mapping-*` with the new directory's files, then restart the service
-([Komodo recovery](../../deploy/komodo/README.md#failure-and-recovery)) so it
-loads the new session. Losing `./state/whatsapp` loses the pairing, not history
-(the audit DB is the record).
+Then install the new session at the mount root, with the bridge stopped:
+
+```bash
+docker stop whatsapp-bridge
+[ -n "$(ls -A state/whatsapp)" ] && cp -a state/whatsapp state/whatsapp-backup   # a re-pair
+find state/whatsapp -maxdepth 1 -type f ! -name 'lid-mapping-*' -delete
+cp -a state/whatsapp-new/. state/whatsapp/
+rm -rf state/whatsapp-new
+chmod 700 state/whatsapp
+docker start whatsapp-bridge
+```
+
+The session files must end up owned by the service's user
+(`docker exec whatsapp-bridge id -u`); on a host where the operator is another
+user, `chown` them. Confirm the bridge's `/health` reports `paired: true`, keep
+the backup private (it holds the old credentials) and delete it once the new
+session has run for a day. Losing `./state/whatsapp` loses the pairing, not
+history (the audit DB is the record).
 
 **Admitting a WhatsApp room:** get the group JID (`...@g.us`) from the audit
 DB or the bridge's logs, add a `[[conversations]]` entry with
