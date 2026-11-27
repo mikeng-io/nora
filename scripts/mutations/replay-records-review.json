@@ -15,7 +15,7 @@
   },
   {
     "name": "FIX 2 complete REVIEW is nonfatal",
-    "file": "scripts/memory_graph_spike.py",
+    "file": "evals/memory_graph_spike.py",
     "old": "                out.append({\"PASS\": \"supported\", \"FAIL\": \"unsupported\", \"REVIEW\": \"ERROR\"}[verdict])",
     "new": "                if verdict == \"REVIEW\":\n                    record(\"judge_error\", cause=\"judge_incomplete\")\n                out.append({\"PASS\": \"supported\", \"FAIL\": \"unsupported\", \"REVIEW\": \"ERROR\"}[verdict])",
     "target": "tests/integration/test_eval_observability.py::test_review_judge_verdict_keeps_run_complete"

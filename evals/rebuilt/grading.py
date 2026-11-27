@@ -132,7 +132,7 @@ class Judge:
     def _with_effects(self, prompt: str) -> str:
         if self.lifecycle is None:
             return prompt
-        from scripts.memory_graph_spike import prompt as evidence_prompt
+        from evals.memory_graph_spike import prompt as evidence_prompt
 
         return prompt + "\n" + evidence_prompt({
             "evidence_role": "post_execution_effects",

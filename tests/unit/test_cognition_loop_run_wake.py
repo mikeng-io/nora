@@ -75,8 +75,8 @@ def _runner_subject(inspection=None, outcome=None):
 def _wake_seam(monkeypatch, tmp_path, subject):
     from types import SimpleNamespace
 
+    from evals.cognition_loop import run as run_mod
     from nora.domain.stimuli import Stimulus, UnitView
-    from scripts.cognition_loop import run as run_mod
 
     async def _composed(*a, **k):
         return subject
@@ -204,8 +204,8 @@ async def test_after_state_failure_preserves_captured_trajectory(
 async def test_an_unavailable_read_preflight_cannot_pass_inspection(monkeypatch, tmp_path):
     from types import SimpleNamespace
 
+    from evals.cognition_loop import reads
     from nora.subject.eval_evidence import EvidenceError
-    from scripts.cognition_loop import reads
 
     subject = _runner_subject(inspection={"items": []})
     run_mod = _wake_seam(monkeypatch, tmp_path, subject)
@@ -230,7 +230,7 @@ async def test_a_compose_failure_names_compose(monkeypatch, tmp_path):
     import json
     from types import SimpleNamespace
 
-    from scripts.cognition_loop import run as run_mod
+    from evals.cognition_loop import run as run_mod
 
     async def _boom(*a, **k):
         raise ValueError("agenda room is outside the unit")
@@ -375,7 +375,7 @@ async def test_a_live_wake_threads_the_earlier_wakes_and_clock_to_the_judge(
     import json
     from types import SimpleNamespace
 
-    from scripts.cognition_loop.verdicts import ExpectationVerdict
+    from evals.cognition_loop.verdicts import ExpectationVerdict
 
     subject = _runner_subject(outcome=SimpleNamespace(status="ok"))
     run_mod = _wake_seam(monkeypatch, tmp_path, subject)
@@ -436,8 +436,8 @@ async def test_the_run_hands_each_wake_only_the_earlier_wakes_evidence(
     from contextlib import contextmanager
     from types import SimpleNamespace
 
-    from scripts.cognition_loop import run as run_mod
-    from scripts.cognition_loop.verdicts import Rollup
+    from evals.cognition_loop import run as run_mod
+    from evals.cognition_loop.verdicts import Rollup
 
     class _Sandbox:
         async def __aenter__(self):
@@ -552,7 +552,7 @@ async def test_a_live_wake_that_never_settled_spends_no_judge_call(
     positive control in the same run."""
     from types import SimpleNamespace
 
-    from scripts.cognition_loop.verdicts import ExpectationVerdict
+    from evals.cognition_loop.verdicts import ExpectationVerdict
 
     run_mod = _wake_seam(monkeypatch, tmp_path,
                          _runner_subject(outcome=SimpleNamespace(status="ok")))

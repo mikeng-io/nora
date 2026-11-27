@@ -36,21 +36,21 @@
   },
   {
     "name": "judges refuse missing lifecycle evidence before dispatch",
-    "file": "scripts/cognition_loop/judges.py",
+    "file": "evals/cognition_loop/judges.py",
     "old": "        return [\"trajectory_unavailable\"]\n    if not observed_effects(trajectory.get(\"effects\")):\n        causes.append(\"effects_unobserved\")\n",
     "new": "        return [\"trajectory_unavailable\"]\n    if False and not observed_effects(trajectory.get(\"effects\")):\n        causes.append(\"effects_unobserved\")\n",
     "target": "tests/unit/test_cognition_loop_judge_digest.py::test_missing_lifecycle_evidence_stops_before_either_judge_call"
   },
   {
     "name": "both judges receive the canonical effects",
-    "file": "scripts/cognition_loop/judges.py",
+    "file": "evals/cognition_loop/judges.py",
     "old": "        \"effects\": trajectory.get(\"effects\") or {",
     "new": "        \"discarded_effects\": trajectory.get(\"effects\") or {",
     "target": "tests/integration/subject/test_canonical_effects.py::test_versions_survive_creation_retirement_withdrawal_and_deletion"
   },
   {
     "name": "HTML renders the same canonical effects",
-    "file": "scripts/cognition_loop/html.py",
+    "file": "evals/cognition_loop/html.py",
     "old": "_block(\"effects\", trajectory.get(\"effects\") or {",
     "new": "_block(\"effects\", None or {",
     "target": "tests/integration/subject/test_canonical_effects.py::test_versions_survive_creation_retirement_withdrawal_and_deletion"
@@ -64,14 +64,14 @@
   },
   {
     "name": "completion requests remain inside the trajectory",
-    "file": "scripts/cognition_loop/trajectory.py",
+    "file": "evals/cognition_loop/trajectory.py",
     "old": "        if event.get(\"name\") == \"nora.session.settled\":",
     "new": "        if event.get(\"name\") == \"nora.session.terminal\":",
     "target": "tests/integration/subject/test_recorded_wake_runtime.py"
   },
   {
     "name": "completion model output cannot replace the main response",
-    "file": "scripts/cognition_loop/trajectory.py",
+    "file": "evals/cognition_loop/trajectory.py",
     "old": "terminal_response(events[:terminal_index + 1])",
     "new": "terminal_response(events)",
     "target": "tests/integration/subject/test_recorded_wake_runtime.py"

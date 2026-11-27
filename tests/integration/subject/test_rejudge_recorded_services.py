@@ -12,11 +12,11 @@ from pathlib import Path
 import pytest
 from aiohttp import web
 
+from evals.cognition_loop import rejudge as module
+from evals.cognition_loop.accounting import manifest
+from evals.cognition_loop.cases import Expectation, generated_case, write_case
 from nora.subject.environment import IsolatedServices
 from nora.subject.eval_evidence import read_events
-from scripts.cognition_loop import rejudge as module
-from scripts.cognition_loop.accounting import manifest
-from scripts.cognition_loop.cases import Expectation, generated_case, write_case
 from tests.integration.subject.evidence_fixtures import judge_trajectory
 
 MODELS = ("generated-a", "generated-b")
@@ -323,8 +323,8 @@ async def test_rejudge_prerequisite_gap_spends_no_judge_on_the_affected(
 def behavior_run(tmp_path, example_config_path, monkeypatch):
     """A frozen version-2 run: two produced turns, one behavior claim on
     the second, sound artifacts a rejudge can stand on."""
+    from evals.cognition_loop.cases import generated_behavior_case
     from nora.subject import sandbox
-    from scripts.cognition_loop.cases import generated_behavior_case
 
     monkeypatch.setenv("OMNIROUTE_API_KEY", "generated-only")
     monkeypatch.setattr(sandbox, "EVAL_HOST_LOCK", tmp_path / "eval.lock")

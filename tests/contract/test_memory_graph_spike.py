@@ -4,9 +4,9 @@ from dataclasses import replace
 
 import sqlalchemy as sa
 
+from evals.memory_graph_spike import scope_edges, sql_answer
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.memory_graph import SqlMemoryGraph
-from scripts.memory_graph_spike import scope_edges, sql_answer
 from tests.contract.test_memory_graph_contract import PERSON, REL, load
 from tests.contract.test_memory_graph_contract import _graph_db as _graph_db
 
@@ -39,7 +39,7 @@ async def test_age_container_comparison_when_explicitly_available(_graph_db, tmp
 
     import pytest
 
-    from scripts.memory_graph_spike import age_comparison
+    from evals.memory_graph_spike import age_comparison
 
     url = os.environ.get("NORA_SPIKE_AGE_TEST_URL")
     if not url:

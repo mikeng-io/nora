@@ -5,13 +5,13 @@ from dataclasses import asdict, replace
 
 import pytest
 
-from scripts.cognition_loop.accounting import manifest, reconcile, write_report
-from scripts.cognition_loop.cases import (
+from evals.cognition_loop.accounting import manifest, reconcile, write_report
+from evals.cognition_loop.cases import (
     Case,
     DeclaredTurn,
     generated_case,
 )
-from scripts.cognition_loop.html import render
+from evals.cognition_loop.html import render
 from tests.unit.test_journey_inputs import (
     SENT,
     _fields,
@@ -437,7 +437,7 @@ def _frozen_turn(**overrides):
 
 
 def test_a_frozen_turn_proves_its_own_identity():
-    from scripts.cognition_loop.accounting import frozen_turn_identity
+    from evals.cognition_loop.accounting import frozen_turn_identity
     frozen = _frozen_turn()
     assert frozen_turn_identity(
         frozen, unit="generated-unit", turn=1,
@@ -450,7 +450,7 @@ def test_a_frozen_turn_proves_its_own_identity():
     ("no_session_key", "unknown"), ("no_trajectory", "unknown"),
 ])
 def test_a_foreign_or_unproven_turn_artifact_is_named(damage, expect):
-    from scripts.cognition_loop.accounting import frozen_turn_identity
+    from evals.cognition_loop.accounting import frozen_turn_identity
     frozen = _frozen_turn()
     if damage == "turn":
         frozen["turn"] = 9

@@ -10,11 +10,11 @@ from __future__ import annotations
 
 from typing import Any
 
+from evals.cognition_loop.cases import BEHAVIOR_KIND, STATE_KINDS, Expectation
+from evals.cognition_loop.verdicts import Rollup
 from nora.subject.circle import create_sql_engine
 from nora.subject.effects import wake_census
 from nora.subject.journey import declared_envelope
-from scripts.cognition_loop.cases import BEHAVIOR_KIND, STATE_KINDS, Expectation
-from scripts.cognition_loop.verdicts import Rollup
 
 
 def _expectations(plan: dict[str, Any], version: int) -> list[Expectation]:

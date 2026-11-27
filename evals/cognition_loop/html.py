@@ -2,7 +2,7 @@
 
 Reads only the run's frozen files — `report.json`, each
 `wake-<i>-<recorded id>.json`, and `run_budget.json` when the budget
-was armed — so `python -m scripts.cognition_loop.html <output dir>`
+was armed — so `python -m evals.cognition_loop.html <output dir>`
 re-renders it with no database and no network. Every value is escaped;
 a gap renders as "not recorded", never a blank.
 """
@@ -668,7 +668,7 @@ def render(output: Path) -> Path:
 def main(argv: list[str] | None = None) -> int:
     args = sys.argv[1:] if argv is None else argv
     if len(args) != 1:
-        print("usage: python -m scripts.cognition_loop.html <output dir>",
+        print("usage: python -m evals.cognition_loop.html <output dir>",
               file=sys.stderr)
         return 2
     target = render(Path(args[0]))

@@ -31,6 +31,20 @@ from typing import Any, cast
 
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from evals.cognition_loop import state as state_mod
+from evals.cognition_loop.availability import availability
+from evals.cognition_loop.judges import (
+    judge_expectation,
+    judge_history_entry,
+    observation_gap,
+)
+from evals.cognition_loop.trajectory import (
+    bound_turn_events,
+    turn_events,
+    wake_trajectory,
+)
+from evals.cognition_loop.verdicts import ERROR, ExpectationVerdict
+from evals.memory_graph_spike import freeze
 from nora.subject.effects import (
     frozen_reads,
     read_effects,
@@ -41,20 +55,6 @@ from nora.subject.journey import (
     declared_source,
     message_from_dict,
 )
-from scripts.cognition_loop import state as state_mod
-from scripts.cognition_loop.availability import availability
-from scripts.cognition_loop.judges import (
-    judge_expectation,
-    judge_history_entry,
-    observation_gap,
-)
-from scripts.cognition_loop.trajectory import (
-    bound_turn_events,
-    turn_events,
-    wake_trajectory,
-)
-from scripts.cognition_loop.verdicts import ERROR, ExpectationVerdict
-from scripts.memory_graph_spike import freeze
 
 
 def _now_ms() -> int:
@@ -227,7 +227,7 @@ def _freeze_turn(output: Path, ctx: dict[str, Any],
                  expectations: list[dict[str, Any]], state_after: Any, *,
                  unit: str, step_error: tuple[str, str] | None) -> dict[str, Any]:
     """One turn's private observation file and its report row."""
-    from scripts.cognition_loop.run import _wake_status
+    from evals.cognition_loop.run import _wake_status
 
     index = ctx["index"]
     declared = _declared_input(ctx)

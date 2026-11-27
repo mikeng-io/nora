@@ -224,7 +224,7 @@ def test_generated_subject_answers_every_production_declaration(tmp_path, evalua
     offline = {
         "nora/language/confirmation_render.py",
         "nora/subject/context_selector_render.py",
-        "scripts/memory_graph_spike.py",
+        "evals/memory_graph_spike.py",
     }
     modules = _modules()
     declared = {path for path, tree in modules.items() if declares_blocks(tree)}

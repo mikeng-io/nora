@@ -2,9 +2,9 @@
 
 import sqlalchemy as sa
 
+from evals import memory_graph_spike as spike
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.schema import METADATA
-from scripts import memory_graph_spike as spike
 from tests.integration.test_snapshot_holds_what_was_held import APPEND, REVISE, ROWS
 
 

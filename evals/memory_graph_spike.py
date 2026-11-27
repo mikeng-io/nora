@@ -19,6 +19,13 @@ import sqlalchemy as sa
 from jsonschema import ValidationError, validate
 from sqlalchemy.engine import make_url
 
+from evals.memory_graph_facts import (
+    _FIXED_COVERAGE_OUTPUT,  # noqa: F401  (tests read it through this module)
+    _FIXED_SUPPORT_OUTPUT,  # noqa: F401
+    miss_in_new_sources,  # noqa: F401  (tests import it through this module)
+    parse_fact_output,
+    recorded_fact_sessions,  # noqa: F401
+)
 from evals.rebuilt.judge import criterion_verdict, parse_json_response
 from nora.agent.structured import ask_text, build_structured_model
 from nora.config import load  # noqa: F401  (judge_controls reaches it through this module)
@@ -45,13 +52,6 @@ from nora.subject.sandbox_index import (
     check_served_model,
     index_sandbox,
 )
-from scripts.memory_graph_facts import (
-    _FIXED_COVERAGE_OUTPUT,  # noqa: F401  (tests read it through this module)
-    _FIXED_SUPPORT_OUTPUT,  # noqa: F401
-    miss_in_new_sources,  # noqa: F401  (tests import it through this module)
-    parse_fact_output,
-    recorded_fact_sessions,  # noqa: F401
-    )
 
 _BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (("cited_sources", 10, "turn"),)
 _ROW = {n: (o, k) for n, o, k in _BLOCKS}
@@ -742,23 +742,3 @@ def evidence_file(directory: Path) -> Path:
     if len(paths) != 1:
         raise ValueError("source_record_missing_or_ambiguous")
     return paths[0]
-
-
-
-
-
-
-def main() -> int:
-    """The graph-only replay scorer and its frozen-evidence entries are
-    retired: `python -m scripts.cognition_loop` is the evaluator. The
-    helpers below stay for the tests that still import them."""
-    raise SystemExit(
-        "the graph-only replay scorer is retired; "
-        "use `python -m scripts.cognition_loop`"
-    )
-
-
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

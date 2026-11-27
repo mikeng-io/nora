@@ -9,7 +9,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 from typing import Any
 
-from scripts.cognition_loop.trajectory import loop_counts, prefetch_refs
+from evals.cognition_loop.trajectory import loop_counts, prefetch_refs
 
 _AGENDA = (
     "you wake to an agenda\n"

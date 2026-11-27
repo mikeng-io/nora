@@ -1,14 +1,14 @@
 [
   {
     "name": "both judges require current and earlier instruction custody",
-    "file": "scripts/cognition_loop/judges.py",
+    "file": "evals/cognition_loop/judges.py",
     "old": "    if subject_instructions(trajectory)[\"status\"] != \"observed\":\n        causes.append(\"subject_instructions_unobserved\")\n",
     "new": "    if False and subject_instructions(trajectory)[\"status\"] != \"observed\":\n        causes.append(\"subject_instructions_unobserved\")\n",
     "target": "tests/unit/test_evaluation_instruction_custody.py::test_missing_instruction_custody_stops_before_both_judges"
   },
   {
     "name": "judge receives actual transmitted instruction roles",
-    "file": "scripts/cognition_loop/judges.py",
+    "file": "evals/cognition_loop/judges.py",
     "old": "\"subject_instructions\": subject_instructions(trajectory),",
     "new": "\"subject_instructions\": {\"status\": \"observed\", \"messages\": []},",
     "target": "tests/integration/subject/test_recorded_wake_runtime.py::test_real_recorded_wake_settles_and_both_judges_receive_terminal_evidence"

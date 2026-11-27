@@ -4,13 +4,13 @@ from dataclasses import replace
 
 import sqlalchemy as sa
 
+from evals.cognition_loop.state import diff, snapshot
 from nora.domain.entries import EntryContent
 from nora.infra.sql.cognitive_graph_schema import EDGE, ENTITY
 from nora.infra.sql.cognitive_graph_store import SqlCognitiveGraph
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.entries import SqlEntryStore
 from nora.infra.sql.schema import STIMULUS
-from scripts.cognition_loop.state import diff, snapshot
 
 CONTENT = EntryContent(
     (("topic", "generated-racing"),),

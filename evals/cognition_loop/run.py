@@ -19,6 +19,29 @@ from typing import Any, cast
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
+from evals.cognition_loop import state as state_mod
+from evals.cognition_loop.advance import advance_record, bump_sequences
+from evals.cognition_loop.availability import availability
+from evals.cognition_loop.egress import assert_no_egress
+from evals.cognition_loop.judges import (
+    evidence_gap,
+    judge_expectation,
+    judge_history_entry,
+)
+from evals.cognition_loop.trajectory import (
+    loop_counts,
+    session_events,
+    wake_trajectory,
+)
+from evals.cognition_loop.verdicts import (
+    ERROR,
+    WAKE_ERRED,
+    ExpectationVerdict,
+    Rollup,
+    rollup,
+)
+from evals.cognition_loop.wakes import record_eval_wake
+from evals.memory_graph_spike import freeze, index_replay_sandbox
 from nora.domain.stimuli import Stimulus, UnitView, WakeReason
 from nora.infra.sql.cognition_replay import recorded_wake
 from nora.infra.sql.schema import (
@@ -38,29 +61,6 @@ from nora.subject.effects import (
 )
 from nora.subject.eval_evidence import read_events
 from nora.subject.recorded_services import RecordedServices
-from scripts.cognition_loop import state as state_mod
-from scripts.cognition_loop.advance import advance_record, bump_sequences
-from scripts.cognition_loop.availability import availability
-from scripts.cognition_loop.egress import assert_no_egress
-from scripts.cognition_loop.judges import (
-    evidence_gap,
-    judge_expectation,
-    judge_history_entry,
-)
-from scripts.cognition_loop.trajectory import (
-    loop_counts,
-    session_events,
-    wake_trajectory,
-)
-from scripts.cognition_loop.verdicts import (
-    ERROR,
-    WAKE_ERRED,
-    ExpectationVerdict,
-    Rollup,
-    rollup,
-)
-from scripts.cognition_loop.wakes import record_eval_wake
-from scripts.memory_graph_spike import freeze, index_replay_sandbox
 
 
 def _dt(ms: int) -> datetime:
@@ -380,7 +380,7 @@ async def _run_wake(
                     unit=case.unit, view=view, at_ms=at_ms,
                     recorded_meta=recorded_meta)
                 if judges is None and inspection is not None:
-                    from scripts.cognition_loop.reads import preflight_reads
+                    from evals.cognition_loop.reads import preflight_reads
 
                     inspection["read_probes"] = await preflight_reads(
                         runner, case, index, inspection, at_ms)

@@ -156,8 +156,20 @@ EVALS_DIR = ROOT / "evals"
 EVALS_ALLOWED_NORA_PACKAGES = {"app", "testing", "subject", "domain"}
 
 
+#: The recorded-wake harness reads the stores it measures and the deployment's
+#: config; it is the one part of `evals/` that reaches below `nora.app`
+#: (pyproject.toml's `ignore_imports` names the same modules).
+_HARNESS = (EVALS_DIR / "cognition_loop", EVALS_DIR / "memory_graph_spike.py",
+            EVALS_DIR / "memory_graph_facts.py")
+
+
 def _evals_files():
     return [p for p in EVALS_DIR.rglob("*.py") if "__pycache__" not in p.parts]
+
+
+def _evals_runner_files():
+    return [p for p in _evals_files()
+            if not any(p == h or h in p.parents for h in _HARNESS)]
 
 
 def test_evals_only_imports_nora_app_and_nora_testing():
@@ -171,7 +183,7 @@ def test_evals_only_imports_nora_app_and_nora_testing():
     check is the one of the two that also survives a brand new nora subpackage
     being added later, with no edit needed here."""
     offenders = []
-    for path in _evals_files():
+    for path in _evals_runner_files():
         for mod in _imported_dotted_modules(path):
             if mod != "nora" and not mod.startswith("nora."):
                 continue

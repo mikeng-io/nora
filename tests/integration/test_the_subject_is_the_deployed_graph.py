@@ -20,6 +20,7 @@ import pytest
 import redis.asyncio as redis
 from aiohttp import web
 
+from evals.cognition_loop.egress import assert_no_egress
 from nora.app.composition import Dependencies
 from nora.app.wake_poller import WakePoller
 from nora.domain.actions import ActionOwner
@@ -30,7 +31,6 @@ from nora.subject.environment import IsolatedServices
 from nora.subject.eval_evidence import EvidenceError
 from nora.subject.obtain import build_config, default_policy
 from nora.testing.signal_daemon import FakeSignalDaemon
-from scripts.cognition_loop.egress import assert_no_egress
 
 
 def _bridge_app(received: list[dict]) -> web.Application:

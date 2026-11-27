@@ -1886,7 +1886,7 @@
   "comment_blocks": 1,
   "internal_docstrings": 4
  },
- "scripts/memory_graph_spike.py": {
+ "evals/memory_graph_spike.py": {
   "functions": {
    "age_comparison": 158
   }

@@ -1,4 +1,4 @@
-"""`python -m scripts.cognition_loop.rejudge` — judge a finished run again.
+"""`python -m evals.cognition_loop.rejudge` — judge a finished run again.
 
 Each invocation creates a private version under `rejudgements/`, retaining
 the source report and frozen wakes unchanged. Only the two judges run;
@@ -23,28 +23,28 @@ from typing import Any
 from opentelemetry import trace
 
 from evals.backbone import _prefill_capture
-from evals.services import load_services
-from nora.config import load
-from nora.subject.eval_evidence import EvidenceError, RunEvidence, read_events, validate_events
-from nora.subject.sandbox import eval_host_lock
-from scripts.cognition_loop.accounting import (
+from evals.cognition_loop.accounting import (
     frozen_turn_identity,
     frozen_wake_identity,
     manifest,
     reconcile,
 )
-from scripts.cognition_loop.accounting import write_report as _write_report
-from scripts.cognition_loop.cases import load_case
-from scripts.cognition_loop.html import render
-from scripts.cognition_loop.judges import (
+from evals.cognition_loop.accounting import write_report as _write_report
+from evals.cognition_loop.cases import load_case
+from evals.cognition_loop.html import render
+from evals.cognition_loop.judges import (
     JUDGE_TOKENS_PER_CALL,
     evidence_gap,
     judge_expectation,
     observation_gap,
 )
-from scripts.cognition_loop.state import Entry, KindDiff, StateDiff, UnitState
-from scripts.cognition_loop.verdicts import ERROR, WAKE_ERRED, ExpectationVerdict, rollup
-from scripts.memory_graph_spike import Judges, measured_run_budget
+from evals.cognition_loop.state import Entry, KindDiff, StateDiff, UnitState
+from evals.cognition_loop.verdicts import ERROR, WAKE_ERRED, ExpectationVerdict, rollup
+from evals.memory_graph_spike import Judges, measured_run_budget
+from evals.services import load_services
+from nora.config import load
+from nora.subject.eval_evidence import EvidenceError, RunEvidence, read_events, validate_events
+from nora.subject.sandbox import eval_host_lock
 
 _STATUSES = ("created", "revised", "retired", "unchanged")
 
@@ -323,7 +323,7 @@ async def rejudge(output: Path, case_path: Path, config: Path,
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="scripts.cognition_loop.rejudge")
+    parser = argparse.ArgumentParser(prog="evals.cognition_loop.rejudge")
     parser.add_argument("output", type=Path)
     parser.add_argument("--case", type=Path, required=True)
     parser.add_argument("--config", type=Path, required=True)

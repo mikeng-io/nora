@@ -8,8 +8,8 @@ wake is diffed across every owned store and judged fail-closed by two
 independent judges.
 """
 
-from scripts.cognition_loop.cases import Case, Expectation, load_case
-from scripts.cognition_loop.verdicts import (
+from evals.cognition_loop.cases import Case, Expectation, load_case
+from evals.cognition_loop.verdicts import (
     ERROR,
     FAIL,
     PASS,

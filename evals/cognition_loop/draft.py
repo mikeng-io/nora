@@ -1,4 +1,4 @@
-"""`python -m scripts.cognition_loop.draft` — draft a case's positive checks.
+"""`python -m evals.cognition_loop.draft` — draft a case's positive checks.
 
 The production model (the deployment's own Cognition model, which already
 reads every message) reads what Nora was shown at each recorded wake of a
@@ -20,9 +20,9 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
+from evals.cognition_loop.cases import STATE_KINDS, Expectation, load_case, write_case
+from evals.memory_graph_spike import Judges
 from nora.config import load
-from scripts.cognition_loop.cases import STATE_KINDS, Expectation, load_case, write_case
-from scripts.memory_graph_spike import Judges
 
 INSTRUCTION = (
     "You are drafting test expectations for an agent that keeps a group's "
@@ -79,7 +79,7 @@ async def draft(output: Path, case_path: Path, config: Path, model: str) -> dict
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="scripts.cognition_loop.draft")
+    parser = argparse.ArgumentParser(prog="evals.cognition_loop.draft")
     parser.add_argument("output", type=Path, help="a finished run's directory")
     parser.add_argument("--case", type=Path, required=True)
     parser.add_argument("--config", type=Path, required=True)

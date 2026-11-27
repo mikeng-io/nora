@@ -8,10 +8,10 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
+from evals.cognition_loop.cases import Case, DeclaredTurn
 from evals.measurement import PROTOCOL, Measurement
 from evals.outcome import UNKNOWN, axis
 from nora.subject.eval_evidence import EvidenceError
-from scripts.cognition_loop.cases import Case, DeclaredTurn
 
 
 def manifest(cases: list[Case]) -> list[dict[str, Any]]:

@@ -7,8 +7,8 @@ import pytest
 from opentelemetry import trace
 from opentelemetry.proto.collector.trace.v1.trace_service_pb2 import ExportTraceServiceRequest
 
+from evals import memory_graph_spike as spike
 from nora.subject.eval_evidence import read_events
-from scripts import memory_graph_spike as spike
 
 
 @pytest.fixture

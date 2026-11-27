@@ -206,7 +206,7 @@ console exporters) are refused before model execution. No ambient exporter is
 re-enabled. Credentials use the existing resolver and never become trace content.
 No configuration switch, host installation or historical import is implied.
 
-The Cognition-loop evaluator (`python -m scripts.cognition_loop`)
+The Cognition-loop evaluator (`python -m evals.cognition_loop`)
 uses the same configured export.
 It resolves the sink before opening private evidence or executing its body,
 and prints the trace reference on stderr while retaining the JSON report on

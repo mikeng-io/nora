@@ -63,7 +63,7 @@ COMPOSERS = frozenset(
         "nora.language.topic_render:render_topics",
         "nora.skills.loader:SkillStore.render_available",
         "nora.testing.context_blocks:compose_fixture",
-        "scripts.memory_graph_spike:prompt",
+        "evals.memory_graph_spike:prompt",
     }
 )
 

@@ -12,10 +12,10 @@ from openai import AsyncOpenAI
 from strands_evals import Case
 
 from evals import grading_contract as binding
+from evals import memory_graph_facts
+from evals import memory_graph_spike as spike
 from evals.rebuilt.grading import Judge, criteria_for
 from nora.subject.eval_evidence import EvidenceError
-from scripts import memory_graph_facts
-from scripts import memory_graph_spike as spike
 
 
 def write_contract(tmp_path, *, entrypoint="replay", cases=None, selection=None,
@@ -329,7 +329,7 @@ async def test_actual_memory_judges_bind_frozen_units_and_keep_diagnostics_unsco
     original = structured.build_structured_model
     monkeypatch.setattr(spike, "build_structured_model", lambda **kwargs: original(
         **kwargs, http_client=httpx.AsyncClient(transport=httpx.MockTransport(respond))))
-    from scripts import memory_graph_facts
+    from evals import memory_graph_facts
     monkeypatch.setattr(
         memory_graph_facts, "_FACT_SUPPORT_INSTRUCTION", "CHANGED_CANDIDATE_SUPPORT")
     monkeypatch.setattr(

@@ -12,6 +12,10 @@ import sqlalchemy as sa
 from aiohttp import web
 from opentelemetry import trace
 
+from evals.cognition_loop.accounting import manifest, write_report
+from evals.cognition_loop.cases import Case, Expectation
+from evals.cognition_loop.run import _run_wake
+from evals.memory_graph_spike import Judges, measured_run_budget
 from nora.domain.models import NormalizedMessage
 from nora.domain.stimuli import NewStimulus
 from nora.infra.sql.audit import SqlRecordStore
@@ -23,10 +27,6 @@ from nora.subject.eval_evidence import RunEvidence, read_events, validate_events
 from nora.subject.obtain import SubjectSpec, build_config, default_policy
 from nora.subject.sandbox import eval_host_lock
 from nora.testing.causal_protocol import completion
-from scripts.cognition_loop.accounting import manifest, write_report
-from scripts.cognition_loop.cases import Case, Expectation
-from scripts.cognition_loop.run import _run_wake
-from scripts.memory_graph_spike import Judges, measured_run_budget
 from tests.integration.subject.test_replay_service_scope import NOW
 
 MODELS = ["generated-a", "generated-b"]

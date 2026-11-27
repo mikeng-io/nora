@@ -43,14 +43,14 @@
   },
   {
     "name": "a frozen turn's declared input is compared, not text-matched",
-    "file": "scripts/cognition_loop/accounting.py",
+    "file": "evals/cognition_loop/accounting.py",
     "old": "        frozen_source = (isinstance(declared, dict)\n                         and declared.get(\"source\") is not None)\n        if isinstance(recorded_input, dict):\n            if (not isinstance(declared, dict)\n                    or not _input_same(declared, recorded_input)):\n                foreign.append(\"declared_input\")\n        elif frozen_source:\n            foreign.append(\"declared_input\")",
     "new": "        pass",
     "target": "tests/unit/test_journey_inputs.py::test_frozen_turn_identity_rejects_a_foreign_declared_input"
   },
   {
     "name": "an unbound declared source cannot reach a judge",
-    "file": "scripts/cognition_loop/judges.py",
+    "file": "evals/cognition_loop/judges.py",
     "old": "    elif \"source\" in declared:",
     "new": "    elif False:",
     "target": "tests/unit/test_journey_inputs.py::test_turn_gap_rejects_an_unbound_declared_source"
@@ -71,14 +71,14 @@
   },
   {
     "name": "a frozen declared envelope answers to the original declaration",
-    "file": "scripts/cognition_loop/accounting.py",
+    "file": "evals/cognition_loop/accounting.py",
     "old": "            elif not original.same_envelope(envelope):\n                foreign.append(\"declared_envelope\")",
     "new": "            elif not original.same_envelope(envelope):\n                pass",
     "target": "tests/unit/test_cognition_loop_accounting.py::test_a_declared_turns_identity_fails_against_the_declaration"
   },
   {
     "name": "a shared foreign projection is caught by the declaration",
-    "file": "scripts/cognition_loop/accounting.py",
+    "file": "evals/cognition_loop/accounting.py",
     "old": "            elif not _input_same(declared, expected_input):\n                foreign.append(\"declared_input\")\n            if not isinstance(recorded_input, dict):\n                missing.append(\"recorded_input\")\n            elif not _input_same(recorded_input, expected_input):\n                foreign.append(\"recorded_input\")",
     "new": "            elif not _input_same(declared, recorded_input):\n                foreign.append(\"declared_input\")\n            if not isinstance(recorded_input, dict):\n                missing.append(\"recorded_input\")\n            elif not _input_same(recorded_input, declared):\n                foreign.append(\"recorded_input\")",
     "target": "tests/unit/test_journey_inputs.py::test_a_declared_turn_rejects_a_projection_the_envelope_disproves"
@@ -92,21 +92,21 @@
   },
   {
     "name": "rejudge forwards a valid declared anchor in its wire shape",
-    "file": "scripts/cognition_loop/rejudge.py",
+    "file": "evals/cognition_loop/rejudge.py",
     "old": "                declared_input=(anchor if isinstance(anchor, str)\n                                else asdict(anchor)),",
     "new": "                declared_input=anchor,",
     "target": "tests/unit/test_cognition_loop_rejudge.py::test_a_declared_turn_is_judged_against_the_original_declaration"
   },
   {
     "name": "a declared case turn keeps its envelope, not its string",
-    "file": "scripts/cognition_loop/cases.py",
+    "file": "evals/cognition_loop/cases.py",
     "old": "                return DeclaredTurn(**raw_turn)",
     "new": "                return str(raw_turn)",
     "target": "tests/unit/test_cognition_loop_eval.py::test_a_declared_turn_round_trips_its_envelope"
   },
   {
     "name": "a version-2 turn is generated text or a declared envelope",
-    "file": "scripts/cognition_loop/cases.py",
+    "file": "evals/cognition_loop/cases.py",
     "old": "            for turn in self.turns:\n                if not isinstance(turn, (str, DeclaredTurn)):\n                    raise EvidenceError(\n                        \"a version-2 turn is generated text or a declared \"\n                        \"envelope\")",
     "new": "            for turn in self.turns:\n                pass",
     "target": "tests/unit/test_cognition_loop_eval.py::test_a_version2_case_turn_is_typed"

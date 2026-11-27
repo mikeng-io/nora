@@ -24,12 +24,10 @@ whether the model takes the right path.
 | 12 | someone keeps returning to racing, and names one game | `interested_in` → topic racing, weight grows with evidence; `likes` → that game | a profile line "likes racing" | eval; the weight count is a test |
 | 13 | in a group room: "what does B like?" | answered from what B shared in this room | likes shared only elsewhere | test (scope); eval for the wording |
 
-**Eval cases replay recorded wakes from the eval snapshot.**
-Each names `metadata.wake: <cognition_wake id>` and a `room_*` alias.
-The sandbox is restored as of that wake's time and the session receives the
-wake's own stimulus batch through live agenda assembly, never a summary sentence.
-A missing wake is ERROR. Unanchored scenarios remain parked until a recorded
-wake demonstrates the scenario; no fake model input is substituted.
+**Eval cases are parked until a graph wake replays them.** The scenario cases
+wait for an anchor on the deploy host; the six recorded-wake cases (r01-r06)
+graded the legacy session's reading of a recorded batch and wait for a graph
+wake entry that replays a recorded wake. No fake model input is substituted.
 
 **Each case runs more than once** (a single run decides nothing; the
 relevance-gate measurement), scored fail-closed: an empty or wrong path is

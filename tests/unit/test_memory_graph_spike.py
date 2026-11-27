@@ -8,14 +8,14 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from evals import memory_graph_spike as spike
 from nora.agent.comprehend_tools import egress_reason
 from nora.app.composition_readers import search_provider
-from scripts import memory_graph_spike as spike
 
 
 @pytest.fixture(autouse=True)
 def private_unit_export(monkeypatch):
-    from scripts import memory_graph_spike
+    from evals import memory_graph_spike
     monkeypatch.setattr(memory_graph_spike, "evaluation_export_for", lambda _: None)
 
 

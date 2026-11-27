@@ -1,42 +1,42 @@
 [
   {
     "name": "missing cases cannot shrink the expected manifest",
-    "file": "scripts/cognition_loop/accounting.py",
+    "file": "evals/cognition_loop/accounting.py",
     "old": "    expected = report.get(\"expected_cases\")",
     "new": "    expected = [c for c in report.get(\"expected_cases\", []) if any(row.get(\"case\") == c[\"name\"] for row in report.get(\"cases\") or [])]",
     "target": "tests/unit/test_cognition_loop_accounting.py::test_expected_denominators_do_not_shrink_with_missing_evidence[case]"
   },
   {
     "name": "every expected criterion retains a report row",
-    "file": "scripts/cognition_loop/accounting.py",
+    "file": "evals/cognition_loop/accounting.py",
     "old": "                actual = wake.get(\"expectations\") or []\n                if _judgments(actual) != Counter(_criterion(e) for e in criteria):",
     "new": "                actual = wake.get(\"expectations\") or []\n                if False:",
     "target": "tests/unit/test_cognition_loop_accounting.py::test_expected_denominators_do_not_shrink_with_missing_evidence[criterion]"
   },
   {
     "name": "each criterion retains both judge answers",
-    "file": "scripts/cognition_loop/accounting.py",
+    "file": "evals/cognition_loop/accounting.py",
     "old": "                actual = wake.get(\"expectations\") or []\n                if _judgments(actual) != Counter(_criterion(e) for e in criteria):\n                    errors.append(\"criterion denominator mismatch: \" + name)\n                if any(len(e.get(\"answers\") or []) != 2 for e in actual):",
     "new": "                actual = wake.get(\"expectations\") or []\n                if _judgments(actual) != Counter(_criterion(e) for e in criteria):\n                    errors.append(\"criterion denominator mismatch: \" + name)\n                if False:",
     "target": "tests/unit/test_cognition_loop_accounting.py::test_expected_denominators_do_not_shrink_with_missing_evidence[answer]"
   },
   {
     "name": "frozen judgments and report rows must agree",
-    "file": "scripts/cognition_loop/accounting.py",
+    "file": "evals/cognition_loop/accounting.py",
     "old": "                actual = wake.get(\"expectations\") or []\n                if _judgments(actual) != Counter(_criterion(e) for e in criteria):\n                    errors.append(\"criterion denominator mismatch: \" + name)\n                if any(len(e.get(\"answers\") or []) != 2 for e in actual):\n                    errors.append(\"judge answer denominator mismatch: \" + name)\n                if json.dumps(frozen.get(\"expectations\", []), sort_keys=True, allow_nan=False) != (\n                        json.dumps(actual, sort_keys=True, allow_nan=False)):",
     "new": "                actual = wake.get(\"expectations\") or []\n                if _judgments(actual) != Counter(_criterion(e) for e in criteria):\n                    errors.append(\"criterion denominator mismatch: \" + name)\n                if any(len(e.get(\"answers\") or []) != 2 for e in actual):\n                    errors.append(\"judge answer denominator mismatch: \" + name)\n                if False:",
     "target": "tests/unit/test_cognition_loop_accounting.py::test_expected_denominators_do_not_shrink_with_missing_evidence[frozen]"
   },
   {
     "name": "coverage errors invalidate the saved status",
-    "file": "scripts/cognition_loop/accounting.py",
+    "file": "evals/cognition_loop/accounting.py",
     "old": "    if report[\"coverage\"][\"status\"] != \"PASS\" \\\n            or report[\"outcome\"].get(\"cause\") == \"outcome projection failed\" \\\n            or report[\"outcome\"][\"execution\"][\"status\"] != \"PASS\" \\\n            or report[\"outcome\"][\"validity\"][\"status\"] != \"PASS\":",
     "new": "    if False:",
     "target": "tests/unit/test_cognition_loop_accounting.py::test_json_and_html_use_the_same_failed_coverage"
   },
   {
     "name": "rejudge cannot silently replace the original case criteria",
-    "file": "scripts/cognition_loop/rejudge.py",
+    "file": "evals/cognition_loop/rejudge.py",
     "old": "    if planned != manifest([case]):",
     "new": "    if False:",
     "target": "tests/unit/test_cognition_loop_rejudge.py::test_preflight_reconciles_rows_and_json_without_changing_originals[case_manifest]"

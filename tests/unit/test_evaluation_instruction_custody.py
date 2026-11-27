@@ -5,10 +5,10 @@ from copy import deepcopy
 
 import pytest
 
+from evals.cognition_loop.cases import Expectation
+from evals.cognition_loop.judges import judge_expectation
+from evals.cognition_loop.state import StateDiff, UnitState
 from nora.subject.request_evidence import subject_instructions
-from scripts.cognition_loop.cases import Expectation
-from scripts.cognition_loop.judges import judge_expectation
-from scripts.cognition_loop.state import StateDiff, UnitState
 from tests.integration.subject.evidence_fixtures import judge_trajectory
 
 

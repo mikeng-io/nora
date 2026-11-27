@@ -1,28 +1,28 @@
 [
   {
     "name": "defaulted fields leave each state_after body",
-    "file": "scripts/cognition_loop/judges.py",
+    "file": "evals/cognition_loop/judges.py",
     "old": "        i: {k: v for k, v in b.items() if k not in defaults}\n        for i, b in named.items()\n",
     "new": "        i: b for i, b in named.items()\n",
     "target": "tests/unit/test_cognition_loop_judge_digest.py::test_fields_every_state_after_entry_repeats_ride_once_under_defaults"
   },
   {
     "name": "shared means byte-identical, type included",
-    "file": "scripts/cognition_loop/judges.py",
+    "file": "evals/cognition_loop/judges.py",
     "old": "        if k in shared and len(\n            {json.dumps(b[k], ensure_ascii=False, default=str)\n             for b in bodies}) == 1\n",
     "new": "        if k in shared and all(b[k] == bodies[0][k] for b in bodies)\n",
     "target": "tests/unit/test_cognition_loop_judge_digest.py::test_defaults_preserve_absent_against_null_and_bool_against_int"
   },
   {
     "name": "defaults are computed after lineage naming",
-    "file": "scripts/cognition_loop/judges.py",
+    "file": "evals/cognition_loop/judges.py",
     "old": "    named = {i: _named(e, keys) for i, e in entries.items()}\n",
     "new": "    named = dict(entries)\n",
     "target": "tests/unit/test_cognition_loop_judge_digest.py::test_a_lineage_every_entry_shares_is_named_once_then_hoisted"
   },
   {
     "name": "one entry keeps its own fields",
-    "file": "scripts/cognition_loop/judges.py",
+    "file": "evals/cognition_loop/judges.py",
     "old": "    if len(bodies) < 2 or not all(isinstance(b, dict) for b in bodies):\n",
     "new": "    if not all(isinstance(b, dict) for b in bodies):\n",
     "target": "tests/unit/test_cognition_loop_judge_digest.py::test_state_after_defaults_stays_empty_for_one_entry_or_none"

@@ -2,13 +2,13 @@
 
 import sqlalchemy as sa
 
+from evals.cognition_loop.advance import advance_record, bump_sequences
+from evals.cognition_loop.run import _batch_view
 from nora.domain.stimuli import NewStimulus
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.schema import METADATA, ROW_HISTORY
 from nora.infra.sql.stimuli import SqlStimulusStore
 from nora.subject import sandbox_as_of
-from scripts.cognition_loop.advance import advance_record, bump_sequences
-from scripts.cognition_loop.run import _batch_view
 from tests.integration.test_snapshot_holds_what_was_held import APPEND, ROWS
 
 

@@ -7,6 +7,7 @@ from uuid import uuid4
 
 import sqlalchemy as sa
 
+from evals import memory_graph_spike as spike
 from nora.infra.embedder import fingerprint
 from nora.infra.sql import memory_index
 from nora.infra.sql.cognitive_graph_schema import CLAIM, GRAPH_SEARCH
@@ -24,7 +25,6 @@ from nora.infra.sql.schema import (
     SOCIAL_POLL,
 )
 from nora.subject.sandbox import sandbox_as_of
-from scripts import memory_graph_spike as spike
 
 MODEL_ID = "synthetic-embedder.gguf@0000feedbeef"
 MODEL = fingerprint(MODEL_ID)

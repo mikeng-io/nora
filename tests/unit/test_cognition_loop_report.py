@@ -1,4 +1,4 @@
-"""`scripts.cognition_loop.__main__.run` — the failure-outcome seams:
+"""`evals.cognition_loop.__main__.run` — the failure-outcome seams:
 `report.json` and `report.html` exist after an evidence-raising run, the
 stated budget prints before any model call, `--stop-after-tokens` is
 refused at startup, and the per-wake default is the measured figure.
@@ -10,7 +10,7 @@ from __future__ import annotations
 import asyncio
 from contextlib import contextmanager
 
-from scripts.cognition_loop.cases import generated_case, write_case
+from evals.cognition_loop.cases import generated_case, write_case
 
 
 def _async_noop():
@@ -32,7 +32,7 @@ def _offline_run_setup(monkeypatch, tmp_path, *, capture=None):
     from contextlib import contextmanager
     from types import SimpleNamespace
 
-    import scripts.cognition_loop.__main__ as cli
+    import evals.cognition_loop.__main__ as cli
 
     case_file = tmp_path / "case.json"
     write_case(generated_case(), case_file)
@@ -193,7 +193,7 @@ def test_the_stated_budget_counts_judges_and_is_printed_first(
 ):
     """The stated budget is wakes x per-wake plus the judge allowance,
     printed before any model call."""
-    import scripts.cognition_loop.__main__ as cli
+    import evals.cognition_loop.__main__ as cli
 
     case = generated_case()  # 2 wakes, 2 expectations
     expected = 2 * 1 + len(case.expectations) * 2 * cli.JUDGE_TOKENS_PER_CALL
@@ -213,7 +213,7 @@ def test_stop_after_tokens_is_refused_at_startup(tmp_path, capsys):
     calls are parallel, so the flag is refused before anything starts."""
     import pytest
 
-    import scripts.cognition_loop.__main__ as cli
+    import evals.cognition_loop.__main__ as cli
 
     with pytest.raises(SystemExit):
         cli.main([
@@ -230,6 +230,6 @@ def test_stop_after_tokens_is_refused_at_startup(tmp_path, capsys):
 
 
 def test_the_default_per_wake_figure_is_the_measured_live_figure():
-    import scripts.cognition_loop.__main__ as cli
+    import evals.cognition_loop.__main__ as cli
 
     assert cli.DEFAULT_TOKENS_PER_WAKE == 800_000

@@ -8,21 +8,21 @@
   },
   {
     "name": "inspect-only executes the read preflight",
-    "file": "scripts/cognition_loop/run.py",
-    "old": "                if judges is None and inspection is not None:\n                    from scripts.cognition_loop.reads import preflight_reads\n\n                    inspection[\"read_probes\"] = await preflight_reads(\n                        runner, case, index, inspection, at_ms)\n",
+    "file": "evals/cognition_loop/run.py",
+    "old": "                if judges is None and inspection is not None:\n                    from evals.cognition_loop.reads import preflight_reads\n\n                    inspection[\"read_probes\"] = await preflight_reads(\n                        runner, case, index, inspection, at_ms)\n",
     "new": "",
     "target": "tests/unit/test_cognition_loop_run.py::test_an_unavailable_read_preflight_cannot_pass_inspection"
   },
   {
     "name": "unavailable and empty reads do not satisfy a positive probe",
-    "file": "scripts/cognition_loop/reads.py",
+    "file": "evals/cognition_loop/reads.py",
     "old": "if not holds or not result or result.get(\"status\") != \"success\":",
     "new": "if not result or result.get(\"status\") != \"success\":",
     "target": "tests/unit/test_cognition_loop_reads.py"
   },
   {
     "name": "rejudging retains the reason for an error",
-    "file": "scripts/cognition_loop/rejudge.py",
+    "file": "evals/cognition_loop/rejudge.py",
     "old": "                \"detail\": verdict.detail,\n",
     "new": "",
     "target": "tests/unit/test_cognition_loop_rejudge.py::test_rejudging_preserves_the_reason_an_answer_cannot_pass"

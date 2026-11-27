@@ -12,12 +12,12 @@ from openai import AsyncOpenAI
 
 from evals import grading_contract as binding
 from evals import judge_controls as controls
+from evals import memory_graph_spike as spike
 from evals.rebuilt.grading import Judge
 from nora.agent import structured
 from nora.subject import sandbox
 from nora.subject.eval_evidence import EvidenceError, fingerprint, read_events, revision
 from nora.subject.run_budget_transport import gate_client
-from scripts import memory_graph_spike as spike
 from tests.integration.test_grading_contract import completion, write_contract
 from tests.integration.test_spike_visibility import (  # noqa: F401 - fixture
     configured_sink,

@@ -7,7 +7,7 @@ from typing import Any
 
 import pytest
 
-from scripts.cognition_loop.cases import generated_case, write_case
+from evals.cognition_loop.cases import generated_case, write_case
 
 NOW = 1_800_000_000_000
 
@@ -26,7 +26,7 @@ async def test_the_replay_refuses_a_version2_behavior_case(tmp_path):
     measured by the wrong instrument."""
     from types import SimpleNamespace
 
-    from scripts.cognition_loop import run as run_mod
+    from evals.cognition_loop import run as run_mod
 
     case = SimpleNamespace(name="v2", unit="u", wakes=(), turns=("t",),
                            expectations=(), version=2)
@@ -46,7 +46,7 @@ def test_run_materialises_the_config_and_folds_the_status(
     from contextlib import contextmanager
     from types import SimpleNamespace
 
-    import scripts.cognition_loop.__main__ as cli
+    import evals.cognition_loop.__main__ as cli
 
     case_file = tmp_path / "case.json"
     write_case(generated_case(), case_file)
@@ -163,7 +163,7 @@ def _async_noop():
 
 
 def test_a_wakes_status_is_derived_fail_closed():
-    from scripts.cognition_loop.run import _wake_status
+    from evals.cognition_loop.run import _wake_status
 
     assert _wake_status(("advance", "boom"), [{"verdict": "PASS"}]) == "ERROR"
     assert _wake_status(None, [{"verdict": "ERROR"}]) == "ERROR"
@@ -182,7 +182,7 @@ async def test_an_unread_guild_is_an_error_naming_the_directory(
     is ERROR at the room directory — never the silent "no policy room"."""
     from types import SimpleNamespace
 
-    from scripts.cognition_loop import run as run_mod
+    from evals.cognition_loop import run as run_mod
 
     async def _recorded(source, wake_id):
         return NOW, SimpleNamespace(unit="u", pending=())
@@ -218,7 +218,7 @@ def test_a_corrupt_service_recording_still_freezes_the_report(
     from contextlib import contextmanager
     from types import SimpleNamespace
 
-    import scripts.cognition_loop.__main__ as cli
+    import evals.cognition_loop.__main__ as cli
 
     case_file = tmp_path / "case.json"
     write_case(generated_case(), case_file)

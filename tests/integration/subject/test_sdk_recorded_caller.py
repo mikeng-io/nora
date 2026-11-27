@@ -13,6 +13,7 @@ from strands_evals import Case, Experiment
 
 from evals import backbone
 from evals.backbone import MeetsGrader, Spec, nora_task, state_of
+from evals.memory_graph_spike import measured_run_budget
 from nora.domain.models import NormalizedMessage
 from nora.infra.sql.audit import SqlRecordStore
 from nora.infra.sql.engine import create_sql_engine
@@ -22,7 +23,6 @@ from nora.subject.eval_evidence import EvidenceError, RunEvidence, read_events, 
 from nora.subject.obtain import SubjectSpec, build_config, default_policy
 from nora.subject.recorded_services import RecordedServices
 from nora.subject.sandbox import eval_host_lock
-from scripts.memory_graph_spike import measured_run_budget
 
 NOW = 2_000_000_000_000
 IDENTITY = '[persons.miles_novak]\nname="Miles"\n[[persons.miles_novak.signal]]\nphone="+852111"\n'

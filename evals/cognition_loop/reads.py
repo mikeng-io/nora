@@ -3,9 +3,9 @@
 from datetime import UTC, datetime
 from typing import Any
 
+from evals.cognition_loop.trajectory import tool_outcome
 from nora.domain.cognition_session import Room
 from nora.subject.eval_evidence import EvidenceError
-from scripts.cognition_loop.trajectory import tool_outcome
 
 
 async def preflight_reads(runner: Any, case: Any, index: int,

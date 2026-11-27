@@ -1,4 +1,4 @@
-"""`scripts.cognition_loop.html` — the one-file operator report, rendered
+"""`evals.cognition_loop.html` — the one-file operator report, rendered
 purely from a run's frozen files.
 """
 
@@ -8,7 +8,7 @@ import json
 import os
 from typing import Any
 
-from scripts.cognition_loop.html import render
+from evals.cognition_loop.html import render
 
 
 def _run_dir(tmp_path, *, cases: list[dict[str, Any]],

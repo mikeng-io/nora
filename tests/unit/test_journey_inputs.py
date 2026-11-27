@@ -3,6 +3,8 @@ frozen-identity damage — pure controls, no App, no store."""
 
 import pytest
 
+from evals.cognition_loop.accounting import frozen_turn_identity
+from evals.cognition_loop.judges import turn_gap
 from evals.rebuilt.autonomous_journey import _expected_turns, _input_ctx
 from evals.rebuilt.journey_manifest import _plan_error
 from evals.rebuilt.journey_turns import _declared_input, _turn_causes
@@ -10,8 +12,6 @@ from nora.domain.models import NormalizedMessage
 from nora.platform.bridge.envelope import Envelope, canonical_source_key
 from nora.platform.bridge.rehydrate import message_to_dict
 from nora.subject.journey import declared_envelope, declared_source
-from scripts.cognition_loop.accounting import frozen_turn_identity
-from scripts.cognition_loop.judges import turn_gap
 
 ACTOR, HANDLE = "+85290000110", "Ada"
 SENT, RECEIVED, QUEUED = 1_600_000_000_000, 1_600_000_000_050, 1_600_000_000_090

@@ -8,14 +8,14 @@ from types import SimpleNamespace
 
 import pytest
 
+from evals.cognition_loop import run as module
+from evals.cognition_loop.verdicts import Rollup
 from nora.domain.models import NormalizedMessage
 from nora.infra.sql.audit import SqlRecordStore
 from nora.infra.sql.engine import create_sql_engine
 from nora.subject import close_private_blank_templates
 from nora.subject.obtain import SubjectSpec, build_config, default_policy
 from nora.subject.recorded_services import RecordedServices
-from scripts.cognition_loop import run as module
-from scripts.cognition_loop.verdicts import Rollup
 
 NOW = 2_000_000_000_000
 
@@ -130,7 +130,7 @@ async def test_replay_owns_one_scope_and_retains_candidate_sql(
 
 
 async def test_missing_replay_recording_stops_before_source_reads(tmp_path, monkeypatch):
-    from scripts.cognition_loop.cases import generated_case
+    from evals.cognition_loop.cases import generated_case
 
     calls = []
     case = generated_case()

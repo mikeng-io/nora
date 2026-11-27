@@ -22,14 +22,14 @@
   },
   {
     "name": "missing terminal and settlement evidence blocks the actual rejudge door",
-    "file": "scripts/cognition_loop/judges.py",
+    "file": "evals/cognition_loop/judges.py",
     "old": "        for name in (\"settlement\", \"final_response\"):",
     "new": "        for name in ():",
     "target": "tests/integration/subject/test_rejudge_recorded_services.py::test_rejudge_prerequisite_gap_spends_no_judge_on_the_affected[terminal] tests/integration/subject/test_rejudge_recorded_services.py::test_rejudge_prerequisite_gap_spends_no_judge_on_the_affected[settlement]"
   },
   {
     "name": "an invalid antecedent blocks subsequent judge dispatch",
-    "file": "scripts/cognition_loop/judges.py",
+    "file": "evals/cognition_loop/judges.py",
     "old": "    return trajectory_gap(trajectory) + _earlier_gaps(earlier_wakes)",
     "new": "    return trajectory_gap(trajectory)",
     "target": "tests/integration/subject/test_rejudge_recorded_services.py::test_rejudge_prerequisite_gap_spends_no_judge_on_the_affected[antecedent]"

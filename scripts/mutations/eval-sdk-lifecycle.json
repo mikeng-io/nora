@@ -99,7 +99,7 @@
   },
   {
     "name": "cognition judges refuse incomplete lifecycle histories",
-    "file": "scripts/cognition_loop/judges.py",
+    "file": "evals/cognition_loop/judges.py",
     "old": "        return [\"trajectory_unavailable\"]\n    if not observed_effects(trajectory.get(\"effects\")):\n        causes.append(\"effects_unobserved\")\n",
     "new": "        return [\"trajectory_unavailable\"]\n    if False and not observed_effects(trajectory.get(\"effects\")):\n        causes.append(\"effects_unobserved\")\n",
     "target": "tests/unit/test_cognition_loop_judge_digest.py::test_missing_lifecycle_evidence_stops_before_either_judge_call"

@@ -137,7 +137,7 @@ async def offline_subject(spec: SubjectSpec):
 
 async def offline_drive(case, spec):
     """Drive the harness with real private capture and an isolated offline world."""
-    from scripts.memory_graph_spike import measured_run_budget
+    from evals.memory_graph_spike import measured_run_budget
 
     backbone._prefill_capture()
     services = {case.name or "unnamed": OfflineSubjectServices()}

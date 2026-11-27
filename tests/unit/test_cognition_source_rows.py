@@ -142,8 +142,8 @@ async def wake(budget=None, seed=None, historical=False, reaction=False, reactio
 
 @pytest.mark.parametrize("historical", [False, True])
 async def test_reaction_cannot_replace_message_author_or_grant_reactor_authority(historical):
+    from evals.memory_graph_spike import evidence_exchanges
     from nora.language.cognition_parse import parse_rendered_agenda, rendered_new_sources
-    from scripts.memory_graph_spike import evidence_exchanges
 
     state, prompt = await wake(historical=historical, reaction=True)
     item = state.memory_items[0]

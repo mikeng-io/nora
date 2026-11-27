@@ -1,4 +1,4 @@
-"""`scripts.cognition_loop` — the verdict roll-up, the case format, the
+"""`evals.cognition_loop` — the verdict roll-up, the case format, the
 budget, the wake verdict, the diff classifier and the hooks the live
 lane runs that replay never did. All offline: the session is
 `FakeCognitionAgentRunner`, the stores are the `nora.testing` fakes the
@@ -12,11 +12,8 @@ from typing import Any
 
 import pytest
 
-from nora.app.cognition_session import CognitionRunResult
-from nora.domain.stimuli import Stimulus, UnitView, Verdict
-from nora.subject.eval_evidence import EvidenceError
-from scripts.cognition_loop.__main__ import token_budget
-from scripts.cognition_loop.cases import (
+from evals.cognition_loop.__main__ import token_budget
+from evals.cognition_loop.cases import (
     Case,
     DeclaredTurn,
     Expectation,
@@ -25,8 +22,8 @@ from scripts.cognition_loop.cases import (
     load_case,
     write_case,
 )
-from scripts.cognition_loop.state import StateDiff, UnitState, diff
-from scripts.cognition_loop.verdicts import (
+from evals.cognition_loop.state import StateDiff, UnitState, diff
+from evals.cognition_loop.verdicts import (
     ERROR,
     FAIL,
     PASS,
@@ -36,7 +33,10 @@ from scripts.cognition_loop.verdicts import (
     rollup,
     validate_citations,
 )
-from scripts.cognition_loop.wakes import eval_verdict
+from evals.cognition_loop.wakes import eval_verdict
+from nora.app.cognition_session import CognitionRunResult
+from nora.domain.stimuli import Stimulus, UnitView, Verdict
+from nora.subject.eval_evidence import EvidenceError
 from tests.unit.test_cognition_session_runner import (
     FakeCognitionAgentRunner,
     _pending,
@@ -122,7 +122,7 @@ def test_the_generated_case_round_trips(tmp_path):
 
 def test_an_expectation_anchor_must_name_a_wake():
     with pytest.raises(EvidenceError):
-        from scripts.cognition_loop.cases import Case
+        from evals.cognition_loop.cases import Case
         Case(name="x", unit="u", wakes=(1,),
              expectations=(Expectation(wake=5, polarity="must",
                                        kind="note", text="t"),))
@@ -182,7 +182,7 @@ def test_a_version2_expectation_declares_only_a_turn_behavior_claim(
 
 
 def test_a_version1_case_declares_no_turns_and_no_behavior():
-    from scripts.cognition_loop.cases import Case
+    from evals.cognition_loop.cases import Case
     with pytest.raises(EvidenceError):
         Case(name="x", unit="u", wakes=(1,), turns=("generated",))
     with pytest.raises(EvidenceError):
@@ -237,7 +237,7 @@ def test_a_version2_turn_is_generated_text_or_a_declared_envelope(
 
 
 def test_the_budget_is_the_wake_count_times_per_wake():
-    from scripts.cognition_loop.cases import Case
+    from evals.cognition_loop.cases import Case
     cases = [
         Case(name="a", unit="u", wakes=(1, 2, 3)),
         Case(name="b", unit="u", wakes=(4,)),
@@ -391,7 +391,7 @@ async def test_the_replay_lane_still_skips_the_close(monkeypatch):
 
 
 def test_wrote_only_record_accepts_the_record_tables():
-    from scripts.cognition_loop.advance import (
+    from evals.cognition_loop.advance import (
         RECORD_APPEND_TABLES,
         RECORD_HISTORY_TABLES,
         AdvanceReport,
@@ -405,7 +405,7 @@ def test_wrote_only_record_accepts_the_record_tables():
 
 
 def test_wrote_only_record_refuses_derived_state():
-    from scripts.cognition_loop.advance import AdvanceReport
+    from evals.cognition_loop.advance import AdvanceReport
     for derived in ("cognition_wake", "stimulus_claim", "note",
                     "memory_edge", "lesson", "ledger_standing"):
         report = AdvanceReport(at_ms=2, written={derived: 1})
@@ -420,7 +420,7 @@ def test_wrote_only_record_refuses_derived_state():
 def test_egress_requires_an_active_case_owned_boundary():
     from types import SimpleNamespace
 
-    from scripts.cognition_loop.egress import assert_no_egress
+    from evals.cognition_loop.egress import assert_no_egress
 
     subject = SimpleNamespace(deps=SimpleNamespace())
     with pytest.raises(EvidenceError, match="no active case-owned network/storage boundary"):
@@ -435,7 +435,7 @@ def test_egress_requires_an_active_case_owned_boundary():
 async def test_over_budget_refuses_before_starting(monkeypatch, tmp_path):
     from types import SimpleNamespace
 
-    from scripts.cognition_loop import __main__ as cli
+    from evals.cognition_loop import __main__ as cli
     monkeypatch.setattr(cli, "load", lambda p: SimpleNamespace(
         store=SimpleNamespace(database_url_env="X")))
     import nora.secret
@@ -463,7 +463,7 @@ async def test_over_budget_refuses_before_starting(monkeypatch, tmp_path):
 
 
 def test_the_advance_receipt_checks_each_history_table_name():
-    from scripts.cognition_loop.advance import (
+    from evals.cognition_loop.advance import (
         RECORD_HISTORY_TABLES,
         AdvanceReport,
     )
@@ -484,7 +484,7 @@ async def test_the_history_window_skips_derived_tables(pg_url):
     import sqlalchemy as sa
     from sqlalchemy.ext.asyncio import create_async_engine
 
-    from scripts.cognition_loop.advance import _history_window
+    from evals.cognition_loop.advance import _history_window
 
     engine = create_async_engine(pg_url)
     try:
@@ -521,7 +521,7 @@ async def test_the_history_window_skips_derived_tables(pg_url):
 
 
 def test_overrides_parse_key_value_pairs_with_toml_types():
-    from scripts.cognition_loop.__main__ import parse_overrides
+    from evals.cognition_loop.__main__ import parse_overrides
 
     assert parse_overrides(
         ["cognition.enabled=false", "llm.model=\"claude-test\"", "wake.x=1.5"]
@@ -537,7 +537,7 @@ async def test_compose_preserves_declared_arm_and_active_service_boundary(
 ):
     from types import SimpleNamespace
 
-    from scripts.cognition_loop import run as run_mod
+    from evals.cognition_loop import run as run_mod
 
     captured = {}
 
@@ -577,7 +577,7 @@ def _session(name: str, **body):
 
 
 def test_a_trajectory_binds_to_its_own_session_not_the_last_one():
-    from scripts.cognition_loop.trajectory import (
+    from evals.cognition_loop.trajectory import (
         session_events,
         wake_trajectory,
     )
@@ -602,7 +602,7 @@ def test_a_trajectory_binds_to_its_own_session_not_the_last_one():
 
 
 def test_an_empty_agenda_wake_gets_an_empty_trajectory():
-    from scripts.cognition_loop.trajectory import (
+    from evals.cognition_loop.trajectory import (
         session_events,
         wake_trajectory,
     )
@@ -628,7 +628,7 @@ def test_an_empty_agenda_wake_gets_an_empty_trajectory():
 
 
 def test_run_status_keeps_fail_and_review_and_folds_evidence_error():
-    from scripts.cognition_loop.__main__ import run_status
+    from evals.cognition_loop.__main__ import run_status
 
     ok = {"status": "PASS"}
     assert run_status([{"status": "FAIL"}, {"status": "PASS"}], ok) == "FAIL"
@@ -664,7 +664,7 @@ class _FakeJudges:
 
 
 async def test_a_missing_served_header_is_an_error_answer():
-    from scripts.cognition_loop.judges import judge_one
+    from evals.cognition_loop.judges import judge_one
 
     judges = _FakeJudges(
         text='{"verdict": "met", "reason": "x", "entry_ids": ["note:1"]}',
@@ -675,7 +675,7 @@ async def test_a_missing_served_header_is_an_error_answer():
 
 
 async def test_an_alias_served_by_its_routed_model_is_answered():
-    from scripts.cognition_loop.judges import judge_one
+    from evals.cognition_loop.judges import judge_one
 
     judges = _FakeJudges(
         text='{"verdict": "met", "reason": "x", "entry_ids": ["note:1"]}',
@@ -686,7 +686,7 @@ async def test_an_alias_served_by_its_routed_model_is_answered():
 
 
 async def test_two_judges_served_by_one_model_are_not_independent():
-    from scripts.cognition_loop.judges import judge_expectation
+    from evals.cognition_loop.judges import judge_expectation
 
     judges = _FakeJudges(
         text='{"verdict": "met", "reason": "x", "entry_ids": []}',
@@ -722,13 +722,11 @@ def test_an_ungrounded_met_is_error_never_pass():
 
 
 def test_the_graph_only_scorer_and_its_entries_stay_retired():
-    from scripts import memory_graph_spike as spike
+    from evals import memory_graph_spike as spike
 
     for name in ("run", "run_rescore", "run_diagnostic",
-                 "spike_contract", "report_exit"):
+                 "spike_contract", "report_exit", "main"):
         assert not hasattr(spike, name), name
-    with pytest.raises(SystemExit, match="retired"):
-        spike.main()
 
 
 # --------------------------------------------------------------------------
@@ -739,7 +737,7 @@ def test_the_graph_only_scorer_and_its_entries_stay_retired():
 def test_reminders_scope_to_the_units_rooms_not_a_unit_fallback():
     from types import SimpleNamespace
 
-    from scripts.cognition_loop.state import reminder_in_rooms
+    from evals.cognition_loop.state import reminder_in_rooms
 
     rooms = [("signal", "room-a")]
     ours = SimpleNamespace(platform="signal", conversation_id="room-a")
@@ -751,7 +749,7 @@ def test_reminders_scope_to_the_units_rooms_not_a_unit_fallback():
 
 
 def test_recorded_wakes_must_be_the_cases_unit_and_ordered():
-    from scripts.cognition_loop.run import validate_recorded_wakes
+    from evals.cognition_loop.run import validate_recorded_wakes
 
     assert validate_recorded_wakes(
         [(1, "u1", 100), (2, "u1", 200)], "u1") is None

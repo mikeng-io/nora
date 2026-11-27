@@ -4,9 +4,9 @@ from pathlib import Path
 
 import pytest
 
-from scripts.cognition_loop.accounting import manifest
-from scripts.cognition_loop.rejudge import frozen_diff
-from scripts.cognition_loop.verdicts import JudgeAnswer
+from evals.cognition_loop.accounting import manifest
+from evals.cognition_loop.rejudge import frozen_diff
+from evals.cognition_loop.verdicts import JudgeAnswer
 
 
 def _trajectory(**fields):
@@ -26,7 +26,7 @@ def _trajectory(**fields):
 def rejudge_services(tmp_path, example_config):
     import json
 
-    from scripts.cognition_loop.cases import generated_case
+    from evals.cognition_loop.cases import generated_case
 
     bindings = {"llm.base_url": "judge"}
     bindings.update({f"providers.{name}.base_url": "judge" for name in example_config.providers})
@@ -42,8 +42,8 @@ async def test_missing_frozen_wake_stops_before_judge_setup(monkeypatch, tmp_pat
     import json
     from dataclasses import replace
 
-    from scripts.cognition_loop import rejudge as module
-    from scripts.cognition_loop.cases import generated_case, write_case
+    from evals.cognition_loop import rejudge as module
+    from evals.cognition_loop.cases import generated_case, write_case
 
     case = replace(generated_case(), wakes=(101, 102, 103))
     case_path = tmp_path / "case.json"
@@ -98,9 +98,9 @@ async def test_preflight_reconciles_rows_and_json_without_changing_originals(
     import json
     from dataclasses import replace
 
-    from scripts.cognition_loop import rejudge as module
-    from scripts.cognition_loop.cases import generated_case, write_case
-    from scripts.cognition_loop.verdicts import ExpectationVerdict
+    from evals.cognition_loop import rejudge as module
+    from evals.cognition_loop.cases import generated_case, write_case
+    from evals.cognition_loop.verdicts import ExpectationVerdict
 
     case = generated_case()
     if damage == "criteria":
@@ -180,9 +180,9 @@ async def test_a_frozen_artifact_that_is_not_this_wake_is_never_judged(
     sound artifact still is."""
     import json
 
-    from scripts.cognition_loop import rejudge as module
-    from scripts.cognition_loop.cases import generated_case
-    from scripts.cognition_loop.verdicts import ExpectationVerdict
+    from evals.cognition_loop import rejudge as module
+    from evals.cognition_loop.cases import generated_case
+    from evals.cognition_loop.verdicts import ExpectationVerdict
 
     case = generated_case()
     row = {"case": case.name, "unit": case.unit, "errors": [], "wakes": [
@@ -236,7 +236,7 @@ async def test_a_frozen_artifact_that_is_not_this_wake_is_never_judged(
 
 
 def test_rejudging_keeps_a_case_error_and_a_failed_evidence_receipt():
-    from scripts.cognition_loop.rejudge import case_status, run_status_after
+    from evals.cognition_loop.rejudge import case_status, run_status_after
 
     assert case_status({"errors": ["advance failed"]}, ["PASS"]) == "ERROR"
     assert case_status({}, ["PASS"]) == "PASS"
@@ -248,15 +248,15 @@ def test_rejudging_keeps_a_case_error_and_a_failed_evidence_receipt():
 
 
 def test_rejudging_recomputes_the_derived_wake_error():
-    from scripts.cognition_loop.rejudge import case_status
-    from scripts.cognition_loop.verdicts import WAKE_ERRED
+    from evals.cognition_loop.rejudge import case_status
+    from evals.cognition_loop.verdicts import WAKE_ERRED
 
     assert case_status({"errors": [WAKE_ERRED]}, ["PASS"]) == "PASS"
     assert case_status({"errors": [WAKE_ERRED, "advance failed"]}, ["PASS"]) == "ERROR"
 
 
 def test_a_report_error_with_no_frozen_after_state_stays_unmeasured():
-    from scripts.cognition_loop.rejudge import unmeasured
+    from evals.cognition_loop.rejudge import unmeasured
 
     no_diff = {"error": {"step": "report", "message": "snapshot failed"}}
     assert unmeasured(no_diff, {"step": "report", "status": "ERROR"})
@@ -272,9 +272,9 @@ async def test_an_unmeasured_wake_spends_no_judge_call(
     and its expectations are never judged; a settled wake still is."""
     import json
 
-    from scripts.cognition_loop import rejudge as module
-    from scripts.cognition_loop.cases import generated_case, write_case
-    from scripts.cognition_loop.verdicts import ExpectationVerdict
+    from evals.cognition_loop import rejudge as module
+    from evals.cognition_loop.cases import generated_case, write_case
+    from evals.cognition_loop.verdicts import ExpectationVerdict
 
     case = generated_case()
     case_path = tmp_path / "case.json"
@@ -327,9 +327,9 @@ async def test_rejudging_preserves_the_reason_an_answer_cannot_pass(
 ):
     import json
 
-    from scripts.cognition_loop import rejudge as module
-    from scripts.cognition_loop.cases import generated_case, write_case
-    from scripts.cognition_loop.verdicts import ExpectationVerdict
+    from evals.cognition_loop import rejudge as module
+    from evals.cognition_loop.cases import generated_case, write_case
+    from evals.cognition_loop.verdicts import ExpectationVerdict
 
     case = generated_case()
     case_path = tmp_path / "case.json"
@@ -412,14 +412,14 @@ async def test_a_declared_turn_is_judged_against_the_original_declaration(
     cannot substitute for agreement with the original case."""
     import json
 
-    from scripts.cognition_loop import rejudge as module
-    from scripts.cognition_loop.cases import (
+    from evals.cognition_loop import rejudge as module
+    from evals.cognition_loop.cases import (
         Case,
         DeclaredTurn,
         Expectation,
         write_case,
     )
-    from scripts.cognition_loop.verdicts import ExpectationVerdict
+    from evals.cognition_loop.verdicts import ExpectationVerdict
     from tests.unit.test_journey_inputs import (
         SENT,
         _fields,

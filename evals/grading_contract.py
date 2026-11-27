@@ -18,7 +18,7 @@ IMPLEMENTATION_FILES = tuple(
     sorted(
         {str(p.relative_to(_ROOT)) for p in (_ROOT / "evals").rglob("*.py")}
         | {
-            "scripts/memory_graph_spike.py",
+            "evals/memory_graph_spike.py",
             "nora/agent/replay_inspection.py",
             "nora/agent/replay_capture.py",
             "nora/agent/telemetry.py",

@@ -6,9 +6,9 @@ from types import SimpleNamespace
 import pytest
 from strands import tool
 
+from evals.cognition_loop.cases import ReadProbe, generated_case, load_case, write_case
+from evals.cognition_loop.reads import preflight_reads
 from nora.subject.eval_evidence import EvidenceError
-from scripts.cognition_loop.cases import ReadProbe, generated_case, load_case, write_case
-from scripts.cognition_loop.reads import preflight_reads
 
 
 @pytest.mark.parametrize(("query", "expected", "passes"), [

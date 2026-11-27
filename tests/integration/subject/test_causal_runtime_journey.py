@@ -13,6 +13,7 @@ from aiohttp import web
 from jsonschema import validate
 from opentelemetry import trace
 
+from evals.memory_graph_spike import measured_run_budget
 from nora.__main__ import App
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.schema import BRIDGE_ACTION, MESSAGES, STIMULUS
@@ -26,7 +27,6 @@ from nora.subject.obtain import SubjectSpec, build_config, default_policy, obtai
 from nora.subject.sandbox import eval_host_lock
 from nora.testing.causal_protocol import completion
 from nora.testing.signal_daemon import FakeSignalDaemon
-from scripts.memory_graph_spike import measured_run_budget
 from tests.integration.subject.test_recorded_wake_runtime import services
 
 

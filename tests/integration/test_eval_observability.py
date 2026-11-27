@@ -58,7 +58,7 @@ def test_real_case_request_tools_results_logs_and_report_are_durable(evidence_ro
             evidence.exit_code = 0
     data = rows(evidence)
     assert len(requests) == 2  # actual SDK formatting and tool execution ran
-    from scripts.cognition_loop.trajectory import terminal_response
+    from evals.cognition_loop.trajectory import terminal_response
 
     terminal = terminal_response(data)
     assert terminal["status"] == "observed", terminal
@@ -302,7 +302,7 @@ def test_two_round_private_record_sdk_and_each_public_sink(
         assert receipt["status"] == "PASS", receipt
         assert len(requests) == 3
         assert sum(e["kind"] == "tool_finished" for e in events) == 2
-        from scripts.memory_graph_spike import evidence_exchanges
+        from evals.memory_graph_spike import evidence_exchanges
         assert all(e["source_rows"] == {"1": {"text": "generated source"}}
                    for e in evidence_exchanges(events))
         assert isinstance(result["trajectory"], Session)
@@ -439,10 +439,10 @@ async def test_structured_call_captures_beta_parse(evidence_root):
 async def test_review_judge_verdict_keeps_run_complete(evidence_root, monkeypatch, tmp_path):
     from types import SimpleNamespace
 
+    from evals.memory_graph_spike import Judges
     from nora.subject.eval_evidence import read_events, validate_events
-    from scripts.memory_graph_spike import Judges
 
-    monkeypatch.setattr("scripts.memory_graph_spike.model_endpoint",
+    monkeypatch.setattr("evals.memory_graph_spike.model_endpoint",
                         lambda path, purpose, model: ("", "", model))
     judges = Judges(SimpleNamespace(), ["generated-judge"], tmp_path / "generated.toml")
 
@@ -585,8 +585,8 @@ async def test_cancelled_model_pass_has_its_own_complete_lifecycle(
 
 @pytest.mark.parametrize("nested", [True, False], ids=["nested", "reuse"])
 async def test_sdk_invocation_attribution_and_windows(evidence_root, nested):
+    from evals.cognition_loop.trajectory import terminal_response
     from nora.subject.eval_evidence import validate_events
-    from scripts.cognition_loop.trajectory import terminal_response
     from tests.integration.eval_observability_env import nested_or_reused
 
     with eval_host_lock() as fd:

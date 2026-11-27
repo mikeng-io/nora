@@ -78,7 +78,7 @@ async def test_subject_uses_composed_policy_with_real_guild_directory(
             return await obtain(replace(spec, environment=environment))
         from types import SimpleNamespace
 
-        from scripts.cognition_loop.run import _compose
+        from evals.cognition_loop.run import _compose
 
         args = SimpleNamespace(workdir=tmp_path, overrides=spec.overrides, environment=environment)
         return await _compose(

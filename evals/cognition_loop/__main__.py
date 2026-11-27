@@ -1,4 +1,4 @@
-"""`python -m scripts.cognition_loop` — the Cognition loop eval.
+"""`python -m evals.cognition_loop` — the Cognition loop eval.
 
 Reads case files (private, host-side), restores a per-case sandbox from a
 read-only clone of the corpus, runs each case's recorded wakes in order
@@ -19,6 +19,19 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
+from evals.cognition_loop import html as report_html
+from evals.cognition_loop.accounting import manifest
+from evals.cognition_loop.accounting import write_report as _write_report
+from evals.cognition_loop.cases import Case, load_case
+from evals.cognition_loop.judges import JUDGE_TOKENS_PER_CALL
+from evals.cognition_loop.run import run_case
+from evals.cognition_loop.verdicts import ERROR, PASS, rollup
+from evals.memory_graph_spike import (
+    Judges,
+    measured_run_budget,
+    private_directory,
+    snapshot_only,
+)
 from evals.services import load_services
 from evals.subject_config import materialise
 from nora.config import load
@@ -32,19 +45,6 @@ from nora.subject.eval_evidence import (
     validate_events,
 )
 from nora.subject.sandbox import close_private_blank_templates, eval_host_lock
-from scripts.cognition_loop import html as report_html
-from scripts.cognition_loop.accounting import manifest
-from scripts.cognition_loop.accounting import write_report as _write_report
-from scripts.cognition_loop.cases import Case, load_case
-from scripts.cognition_loop.judges import JUDGE_TOKENS_PER_CALL
-from scripts.cognition_loop.run import run_case
-from scripts.cognition_loop.verdicts import ERROR, PASS, rollup
-from scripts.memory_graph_spike import (
-    Judges,
-    measured_run_budget,
-    private_directory,
-    snapshot_only,
-)
 
 #: A cognition session's token spend per wake — the measured live figure.
 DEFAULT_TOKENS_PER_WAKE = 800_000
@@ -268,7 +268,7 @@ async def _run_locked(
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="scripts.cognition_loop")
+    parser = argparse.ArgumentParser(prog="evals.cognition_loop")
     parser.add_argument("--config", type=Path, required=True)
     parser.add_argument("--policy", type=Path, required=True)
     parser.add_argument("--identity", type=Path, required=True)

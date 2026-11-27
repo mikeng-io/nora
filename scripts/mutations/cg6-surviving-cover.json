@@ -78,7 +78,7 @@
   },
   {
     "name": "replay preparation rebuilds the legacy substrate",
-    "file": "scripts/memory_graph_spike.py",
+    "file": "evals/memory_graph_spike.py",
     "old": "    await _legacy_replay_substrate(subject, source_url=source_url)",
     "new": "    pass",
     "target": "tests/integration/test_spike_sandbox_index.py::test_the_replay_preparation_indexes_both_restored_substrates"

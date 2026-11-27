@@ -16,6 +16,8 @@ from types import SimpleNamespace
 from typing import Any
 
 from evals import grading_contract as binding
+from evals import memory_graph_spike as spike
+from evals.memory_graph_facts import smoke_fact_support
 from evals.rebuilt.grading import Judge, criteria_for
 from nora.domain.run_budget import active_run_budget
 from nora.subject.eval_evidence import (
@@ -28,8 +30,6 @@ from nora.subject.eval_evidence import (
     validate_events,
 )
 from nora.subject.sandbox import EvalLockHeldError, eval_host_lock
-from scripts import memory_graph_spike as spike
-from scripts.memory_graph_facts import smoke_fact_support
 
 
 def read_bound(ref: dict[str, str]) -> Any:

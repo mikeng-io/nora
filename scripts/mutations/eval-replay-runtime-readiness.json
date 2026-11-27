@@ -1,7 +1,7 @@
 [
  {
   "name": "vector readiness follows the actual vector-consuming surfaces",
-  "file": "scripts/memory_graph_spike.py",
+  "file": "evals/memory_graph_spike.py",
   "old": "        require_vectors=index.embed,\n",
   "new": "        require_vectors=True,\n",
   "target": "tests/integration/subject/test_recorded_wake_runtime.py::test_real_recorded_wake_settles_and_both_judges_receive_terminal_evidence"

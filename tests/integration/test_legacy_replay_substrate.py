@@ -1,6 +1,6 @@
 """The retained legacy replay substrate's adoption keeps its own cover.
 
-`scripts/memory_graph_spike.py` still builds the legacy `memory_node` index
+`evals/memory_graph_spike.py` still builds the legacy `memory_node` index
 for the recorded-wake replay runner (`_legacy_replay_substrate` calls
 `memory_index.rebuild` and `memory_index.adopt_worker_state`). The graph
 eval arm no longer reads this substrate, but the substrate itself has not

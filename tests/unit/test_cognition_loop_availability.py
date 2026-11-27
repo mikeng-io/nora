@@ -2,7 +2,7 @@
 
 from types import SimpleNamespace
 
-from scripts.cognition_loop.availability import availability
+from evals.cognition_loop.availability import availability
 
 
 def test_availability_reads_switches_offered_tools_and_closed_calls():
@@ -25,7 +25,7 @@ def test_availability_reads_switches_offered_tools_and_closed_calls():
 def test_the_report_lists_unavailable_calls_from_every_wake(tmp_path):
     import json
 
-    from scripts.cognition_loop.html import _availability
+    from evals.cognition_loop.html import _availability
 
     for i, calls in enumerate(([], [{"tool": "memory_read", "reason": "roster"}])):
         (tmp_path / f"wake-{i}-{i}.json").write_text(json.dumps({"trajectory": {

@@ -16,6 +16,13 @@ from typing import Any, cast
 
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from evals.cognition_loop import state as state_mod
+from evals.cognition_loop.accounting import _canonical_outcome
+from evals.cognition_loop.availability import availability
+from evals.cognition_loop.cases import Expectation
+from evals.cognition_loop.judges import evidence_gap, judge_expectation
+from evals.cognition_loop.trajectory import session_events, wake_trajectory
+from evals.cognition_loop.verdicts import ERROR, ExpectationVerdict
 from nora.subject.effects import (
     cognition_wake_outcomes,
     cognition_wakes,
@@ -25,13 +32,6 @@ from nora.subject.effects import (
     read_effects,
 )
 from nora.subject.eval_evidence import read_events, validate_events
-from scripts.cognition_loop import state as state_mod
-from scripts.cognition_loop.accounting import _canonical_outcome
-from scripts.cognition_loop.availability import availability
-from scripts.cognition_loop.cases import Expectation
-from scripts.cognition_loop.judges import evidence_gap, judge_expectation
-from scripts.cognition_loop.trajectory import session_events, wake_trajectory
-from scripts.cognition_loop.verdicts import ERROR, ExpectationVerdict
 
 
 def _now_ms() -> int:
@@ -55,7 +55,7 @@ def _freeze_wake(output: Path, index: int, wake: Any, session_id: Any,
                  no_session: str | None, step_error: tuple[str, str] | None,
                  prior_links: set[str] | None) -> dict[str, Any]:
     """The production wake's private evidence file and its report row."""
-    from scripts.cognition_loop.run import _freeze_wake as freeze_row
+    from evals.cognition_loop.run import _freeze_wake as freeze_row
 
     return freeze_row(
         output, index, wake["id"],
@@ -70,7 +70,7 @@ def _wake_error(output: Path, index: int, wake: Any, *, step: str,
                 message: str, unit: str, batch: dict[str, Any] | None = None,
                 no_session: str | None = None,
                 trajectory: dict[str, Any] | None = None) -> dict[str, Any]:
-    from scripts.cognition_loop.run import _wake_error as error_row
+    from evals.cognition_loop.run import _wake_error as error_row
 
     return error_row(
         output, index, int(wake["id"]), int(wake["at_ms"]), str(wake["reason"]),

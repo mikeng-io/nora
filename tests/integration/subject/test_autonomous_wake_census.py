@@ -27,6 +27,7 @@ import pytest
 import sqlalchemy as sa
 
 import evals.rebuilt.autonomous_journey as journey_mod
+from evals.cognition_loop.judges import JUDGE_INPUT_MAX_BYTES
 from evals.rebuilt.autonomous_journey import autonomous_journey
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.schema import (
@@ -40,7 +41,6 @@ from nora.subject.environment import IsolatedServices
 from nora.subject.eval_evidence import read_events
 from nora.subject.journey import JourneyDriver
 from nora.subject.obtain import SubjectSpec, build_config, default_policy
-from scripts.cognition_loop.judges import JUDGE_INPUT_MAX_BYTES
 from tests.integration.subject.test_autonomous_finalize_controls import (
     _session_events,
 )

@@ -1,6 +1,6 @@
 """Drafted expectations are kept only when they fit the case format."""
 
-from scripts.cognition_loop.draft import parse
+from evals.cognition_loop.draft import parse
 
 
 def test_only_well_formed_state_expectations_are_kept():

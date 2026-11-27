@@ -38,15 +38,16 @@ def test_cognition_corpus_census_and_held_out():
     from evals.scenarios import census, load_all, load_corpus
 
     count = census("cognition_session")
-    assert (count.total, count.active, count.parked, count.unanchored) == (17, 6, 11, 0)
+    assert (count.total, count.active, count.parked, count.unanchored) == (17, 0, 17, 0)
     cases = load_all("cognition_session")
     scenarios = [c for c in cases if "scenario" in c.metadata]
     assert {c.metadata["scenario"] for c in scenarios} == {1, 2, 3, 4, 5, 6, 8, 10, 11, 12, 13}
     assert sum(c.metadata["held_out"] for c in cases) >= 3
-    # The active set is exactly the recorded-wake replays (node 33's measurement).
-    active = load_corpus("cognition_session")
-    assert {c.name[:3] for c in active} == {"r01", "r02", "r03", "r04", "r05", "r06"}
-    assert all(type(c.metadata["wake"]) is int for c in active)
+    # The recorded-wake cases are parked until a graph wake replays them.
+    assert load_corpus("cognition_session") == []
+    recorded = [c for c in cases if c.name[:1] == "r"]
+    assert {c.name[:3] for c in recorded} == {"r01", "r02", "r03", "r04", "r05", "r06"}
+    assert all(type(c.metadata["wake"]) is int for c in recorded)
 
 
 def test_ambient_generated_messages_do_not_emit_broad_scenario_noise():

@@ -16,8 +16,8 @@ import json
 import re
 from typing import Any
 
+from evals.memory_graph_spike import evidence_exchanges
 from nora.subject.effects import tool_outcome
-from scripts.memory_graph_spike import evidence_exchanges
 
 _MEMORY_READS = ("memory_search", "memory_read")
 #: The prefetch block's row shapes (`preview_text`): `@kind:id` node rows and

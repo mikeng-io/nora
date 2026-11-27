@@ -15,7 +15,7 @@
   },
   {
     "name": "fire workers are rejected instead of isolating their external effects",
-    "file": "scripts/cognition_loop/egress.py",
+    "file": "evals/cognition_loop/egress.py",
     "old": "    subject.environment.check()",
     "new": "    subject.environment.check()\n    if any(report[\"workers\"].values()):\n        raise ValueError(\"delivery worker composed\")",
     "target": "tests/integration/test_the_subject_is_the_deployed_graph.py::test_real_bridge_identity_bound_sends_and_refusals_stay_in_owned_service"

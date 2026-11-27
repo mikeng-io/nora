@@ -15,14 +15,14 @@
   },
   {
     "name": "memory judges receive fixed instructions",
-    "file": "scripts/memory_graph_facts.py",
+    "file": "evals/memory_graph_facts.py",
     "old": "        contract.instruction(\"memory_support\") + _FIXED_SUPPORT_OUTPUT\n        if contract is not None\n        else _FACT_SUPPORT_INSTRUCTION",
     "new": "        _FACT_SUPPORT_INSTRUCTION + _FIXED_SUPPORT_OUTPUT",
     "target": "tests/integration/test_grading_contract.py::test_actual_memory_judges_bind_frozen_units_and_keep_diagnostics_unscored"
   },
   {
     "name": "judges cannot silently replace the required units",
-    "file": "scripts/memory_graph_facts.py",
+    "file": "evals/memory_graph_facts.py",
     "old": "                    or {row[\"id\"] for row in rows} != expected",
     "new": "                    or False",
     "target": "tests/integration/test_grading_contract.py::test_fixed_coverage_is_total_and_requires_shown_evidence"
@@ -43,7 +43,7 @@
   },
   {
     "name": "final budget trace survives budget file failure",
-    "file": "scripts/memory_graph_spike.py",
+    "file": "evals/memory_graph_spike.py",
     "old": "                evidence.record(\"run_budget_final\", **metadata)\n                freeze(output / \"run_budget.json\", metadata)",
     "new": "                freeze(output / \"run_budget.json\", metadata)\n                evidence.record(\"run_budget_final\", **metadata)",
     "target": "tests/integration/test_spike_visibility.py::test_budget_file_failure_retains_terminal_trace_counters"

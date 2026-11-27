@@ -113,7 +113,7 @@ def test_a_lost_compute_job_cannot_reach_speak():
 
 def _run_stubs(monkeypatch, environments: list, wake_error=None,
                advance_error=None):
-    from scripts.cognition_loop import run as run_mod
+    from evals.cognition_loop import run as run_mod
 
     created, deleted = [], []
 
@@ -187,7 +187,7 @@ def _case_args(tmp_path, recording):
 
 async def test_the_case_lives_inside_one_service_scope(monkeypatch, tmp_path):
     """Both wakes use one scope, closed after the case on every exit."""
-    from scripts.cognition_loop import run as run_mod
+    from evals.cognition_loop import run as run_mod
 
     environments: list = []
     created, deleted, recording = _run_stubs(monkeypatch, environments)
@@ -200,7 +200,7 @@ async def test_the_case_lives_inside_one_service_scope(monkeypatch, tmp_path):
 
 
 async def test_the_service_scope_closes_when_a_wake_fails(monkeypatch, tmp_path):
-    from scripts.cognition_loop import run as run_mod
+    from evals.cognition_loop import run as run_mod
 
     environments: list = []
     created, deleted, recording = _run_stubs(
@@ -221,7 +221,7 @@ async def test_an_advance_failure_freezes_the_wakes_error(
     so the report and its HTML have a wake section to show."""
     import json
 
-    from scripts.cognition_loop import run as run_mod
+    from evals.cognition_loop import run as run_mod
 
     _, _, recording = _run_stubs(monkeypatch, [], advance_error=RuntimeError("pg gone"))
     args, case, policy, evidence = _case_args(tmp_path, recording)

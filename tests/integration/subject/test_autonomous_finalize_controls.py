@@ -21,6 +21,10 @@ from typing import Any
 import pytest
 import sqlalchemy as sa
 
+from evals.cognition_loop import state as state_mod
+from evals.cognition_loop.cases import Expectation
+from evals.cognition_loop.judges import JUDGE_INPUT_MAX_BYTES
+from evals.cognition_loop.verdicts import ERROR, PASS, Rollup
 from evals.rebuilt.autonomous_journey import (
     _bind_declared_wakes,
     _finalize,
@@ -34,10 +38,6 @@ from nora.infra.sql.schema import (
     COGNITION_WAKE_OUTCOME,
 )
 from nora.subject.effects import EffectScope, effect_boundary
-from scripts.cognition_loop import state as state_mod
-from scripts.cognition_loop.cases import Expectation
-from scripts.cognition_loop.judges import JUDGE_INPUT_MAX_BYTES
-from scripts.cognition_loop.verdicts import ERROR, PASS, Rollup
 
 UNIT = "generated-unit"
 SCOPE = EffectScope(unit=UNIT, rooms=(("signal", "g1"),),

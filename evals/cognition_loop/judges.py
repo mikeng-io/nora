@@ -32,15 +32,15 @@ import json
 from dataclasses import replace
 from typing import Any
 
-from nora.subject.effects import observed_effects, result_values, tool_outcome
-from nora.subject.eval_evidence import EvidenceError
-from nora.subject.request_evidence import subject_instructions
-from scripts.cognition_loop.cases import BEHAVIOR_KIND, STATE_KINDS
-from scripts.cognition_loop.verdicts import (
+from evals.cognition_loop.cases import BEHAVIOR_KIND, STATE_KINDS
+from evals.cognition_loop.verdicts import (
     JudgeAnswer,
     expectation_verdict,
     validate_citations,
 )
+from nora.subject.effects import observed_effects, result_values, tool_outcome
+from nora.subject.eval_evidence import EvidenceError
+from nora.subject.request_evidence import subject_instructions
 
 #: The judge's context budget as a serialized size ceiling: a digest
 #: larger than this never reaches the model.

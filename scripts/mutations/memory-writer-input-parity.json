@@ -22,14 +22,14 @@
   },
   {
     "name": "saved statements expose their own coverage index",
-    "file": "scripts/memory_graph_facts.py",
+    "file": "evals/memory_graph_facts.py",
     "old": "                            {**statement, \"evidence_index\": index}\n                            if reference is not None else statement",
     "new": "                            statement",
     "target": "tests/integration/test_grading_contract.py::test_fixed_coverage_wire_labels_sparse_saved_and_read_indices"
   },
   {
     "name": "shown reads expose their own coverage index",
-    "file": "scripts/memory_graph_facts.py",
+    "file": "evals/memory_graph_facts.py",
     "old": "                            {**read, \"evidence_index\": index}",
     "new": "                            read",
     "target": "tests/integration/test_grading_contract.py::test_fixed_coverage_wire_labels_sparse_saved_and_read_indices"

@@ -110,10 +110,10 @@ async def check_consumers(result):
     import html
     import json
 
-    from scripts.cognition_loop.cases import Expectation
-    from scripts.cognition_loop.html import _did
-    from scripts.cognition_loop.judges import judge_expectation
-    from scripts.cognition_loop.state import StateDiff, UnitState
+    from evals.cognition_loop.cases import Expectation
+    from evals.cognition_loop.html import _did
+    from evals.cognition_loop.judges import judge_expectation
+    from evals.cognition_loop.state import StateDiff, UnitState
 
     note = next(row for row in result["items"] if row["kind"] == "note")
 

@@ -11,19 +11,19 @@ from typing import Any
 
 import pytest
 
-from scripts.cognition_loop.cases import Expectation
-from scripts.cognition_loop.judges import (
+from evals.cognition_loop.cases import Expectation
+from evals.cognition_loop.judges import (
     JUDGE_INPUT_MAX_BYTES,
     judge_one,
     judge_payload,
 )
-from scripts.cognition_loop.state import (
+from evals.cognition_loop.state import (
     Entry,
     KindDiff,
     StateDiff,
     UnitState,
 )
-from scripts.cognition_loop.trajectory import terminal_response
+from evals.cognition_loop.trajectory import terminal_response
 from tests.integration.subject.evidence_fixtures import judge_trajectory
 
 
@@ -409,7 +409,7 @@ def test_judges_receive_the_recorded_sources_and_clock_once_per_wake():
 
 
 async def test_a_judge_can_cite_an_emitted_prior_change_but_not_an_unshown_entry():
-    from scripts.cognition_loop.judges import judge_expectation
+    from evals.cognition_loop.judges import judge_expectation
 
     class Judges:
         def __init__(self, cited):
@@ -440,7 +440,7 @@ async def test_a_judge_cites_only_the_ids_the_digest_shows():
     """A changed entry cites freely; an unchanged entry of the expected
     kind cites through `state_after`; another kind's unchanged entry is
     emitted as a count only, so citing it is ERROR."""
-    from scripts.cognition_loop.judges import judge_expectation
+    from evals.cognition_loop.judges import judge_expectation
 
     class Judges:
         def __init__(self, cited):
@@ -576,7 +576,7 @@ async def test_a_digest_still_over_budget_after_defaults_is_error_unseen():
 
 
 async def test_a_citation_still_names_a_state_after_entry_under_defaults():
-    from scripts.cognition_loop.judges import judge_expectation
+    from evals.cognition_loop.judges import judge_expectation
 
     class Judges:
         def __init__(self):
@@ -597,7 +597,7 @@ async def test_a_citation_still_names_a_state_after_entry_under_defaults():
 
 @pytest.mark.parametrize("missing", ["current", "earlier", "items", "tools"])
 async def test_missing_lifecycle_evidence_stops_before_either_judge_call(missing):
-    from scripts.cognition_loop.judges import judge_expectation
+    from evals.cognition_loop.judges import judge_expectation
 
     class Judges:
         def __init__(self):
@@ -645,7 +645,7 @@ def test_instruction_evidence_uses_the_first_actual_request_without_assembly_fal
     assert payload["subject_instructions"] == {"status": "observed", "messages": messages[:2]}
     import html
 
-    from scripts.cognition_loop.html import _read
+    from evals.cognition_loop.html import _read
 
     rendered = _read({"trajectory": trajectory})
     assert html.escape(json.dumps(payload["subject_instructions"], indent=2,

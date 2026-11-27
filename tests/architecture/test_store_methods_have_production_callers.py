@@ -268,7 +268,7 @@ _NO_PRODUCTION_CALLER: dict[tuple[str, str], _Pin] = {
     ("reminders.py", "in_rooms"): _Pin(
         "operator_script",
         "Every reminder row in the unit's rooms, every state — the ledger "
-        "half of the unit state dump `scripts/cognition_loop/state.py` "
+        "half of the unit state dump `evals/cognition_loop/state.py` "
         "builds, which is the operator's tool outside `nora/` and outside "
         "`_call_sites`' scan. `all_pending` serves the pending work queue.",
     ),
@@ -675,13 +675,13 @@ def test_every_pin_declares_a_known_shape() -> None:
 
 
 def _scripts_call_sites() -> dict[str, list[_Site]]:
-    """Call sites under `scripts/`, in the same shape as `_call_sites`'s
+    """Call sites under `scripts/` and `evals/`, in the same shape as `_call_sites`'s
     `calls` half. `_call_sites` deliberately never looks here (`scripts/` is
     not the daemon), which is exactly why this scan exists: it verifies an
     `operator_script` pin's claim — "a real caller exists, just not where this
     file scans" — rather than leaving it unfalsifiable by the other tests."""
     calls: dict[str, list[_Site]] = defaultdict(list)
-    for path in sorted((ROOT / "scripts").rglob("*.py")):
+    for path in sorted(p for top in ("scripts", "evals") for p in (ROOT / top).rglob("*.py")):
         for node in ast.walk(_parse(path)):
             if (
                 isinstance(node, ast.Call)

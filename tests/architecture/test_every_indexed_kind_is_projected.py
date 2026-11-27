@@ -44,10 +44,10 @@ _ALLOWED_PROJECTION_FILES = frozenset({
     "nora/subject/lexical_seed.py",
 })
 
-#: The retained sandbox replay, reached through `scripts/cognition_loop/run.py`.
+#: The retained sandbox replay, reached through `evals/cognition_loop/run.py`.
 #: No other operator entry point may write the legacy index.
-_SANDBOX_REPLAY_FILES = frozenset({"scripts/memory_graph_spike.py"})
-_SCAN_ROOTS = ("nora", "scripts")
+_SANDBOX_REPLAY_FILES = frozenset({"evals/memory_graph_spike.py"})
+_SCAN_ROOTS = ("nora", "scripts", "evals")
 
 
 def _projector_names(
@@ -268,7 +268,7 @@ def test_the_scan_has_positive_controls_in_the_tree() -> None:
     assert ("nora/infra/sql/profile.py", "project") in sites
     assert ("nora/app/graph_project.py", "project") in sites
     assert ("nora/app/graph_project.py", "reproject_episodes") in sites
-    assert ("scripts/memory_graph_spike.py", "rebuild") in sites
+    assert ("evals/memory_graph_spike.py", "rebuild") in sites
 
 
 def test_no_live_writer_projects_the_legacy_index() -> None:

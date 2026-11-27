@@ -41,8 +41,8 @@ Its image and compatibility with future Postgres upgrades are adoption costs.
 ## Run
 
 The graph-only replay scorer, its `--rescore` and `--decision-judge` entries
-are retired; `python -m scripts.memory_graph_spike` refuses. The Cognition-loop
-evaluator — `python -m scripts.cognition_loop` — is the evaluator: it composes
+are retired. The Cognition-loop
+evaluator — `python -m evals.cognition_loop` — is the evaluator: it composes
 the deployment's real session runner per case, advances the sandbox's Record
 between the case's recorded wakes, diffs every owned store, and rolls two
 judges' answers up fail-closed.

@@ -311,7 +311,7 @@ def test_duplicate_rating_fields_are_ungradable_not_last_value_wins(fields):
     '{"coverage":[{"covered_by":{"reads":[],"reads":[0]}}]}',
 ])
 def test_fact_parser_rejects_duplicate_fields_at_every_object_depth(raw):
-    from scripts.memory_graph_spike import parse_fact_output
+    from evals.memory_graph_spike import parse_fact_output
 
     with pytest.raises(ValueError, match="duplicate_json_field"):
         parse_fact_output(raw)

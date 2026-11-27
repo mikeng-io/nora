@@ -49,8 +49,8 @@ def test_judges_keep_the_bound_config_instead_of_reloading_deployment_routes(
 ):
     import importlib
 
+    from evals.memory_graph_spike import Judges
     from nora.subject.obtain import _with
-    from scripts.memory_graph_spike import Judges
 
     module = importlib.import_module("nora.subject.obtain")
     endpoint = "http://127.0.0.1:13421/v1"

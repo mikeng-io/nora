@@ -4,7 +4,7 @@ Frozen session inputs (`freeze_fact_session`), the fact-support smoke
 (`smoke_fact_support`), the decision judge (`decision_judge`) and the rescore
 path (`rescore_facts`). Shared harness pieces (`freeze`, `prompt`,
 `evidence_file`, `evidence_exchanges`, `served_independence`) stay in
-`scripts.memory_graph_spike` and are reached through the lazy references below,
+`evals.memory_graph_spike` and are reached through the lazy references below,
 so this module and the spike never deadlock on import.
 """
 
@@ -34,23 +34,23 @@ from nora.subject.replay_diagnosis import cited_source_numbers, missed_source_nu
 
 if TYPE_CHECKING:
     from evals.grading_contract import GradingContract
-    from scripts.memory_graph_spike import Judges
+    from evals.memory_graph_spike import Judges
 
 
 def _evidence_exchanges(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    from scripts.memory_graph_spike import evidence_exchanges
+    from evals.memory_graph_spike import evidence_exchanges
 
     return evidence_exchanges(events)
 
 
 def _served_independence(served: dict[str, list[dict[str, Any]]]) -> str:
-    from scripts.memory_graph_spike import served_independence
+    from evals.memory_graph_spike import served_independence
 
     return served_independence(served)
 
 
 def _prompt(payload: Any) -> str:
-    from scripts.memory_graph_spike import prompt
+    from evals.memory_graph_spike import prompt
 
     return prompt(payload)
 
@@ -133,7 +133,7 @@ def freeze_fact_session(
         exchanges=_evidence_exchanges(events),
         grading_reference_key=str(wake["id"]) if "id" in wake else None,
     )
-    from scripts.memory_graph_spike import freeze
+    from evals.memory_graph_spike import freeze
 
     freeze(output / f"session-{index}.json",
            {"wake": wake, "inspection": inspection, "events": events})
@@ -523,6 +523,7 @@ def _flagged_statements(
 
 
 async def decision_judge(directory: Path, judges: Judges) -> dict[str, Any]:
+    from evals.memory_graph_spike import evidence_file
     from nora.subject.replay_diagnosis import (
         MAX_DIAGNOSTIC_INPUT_BYTES,
         OBSERVATIONS,
@@ -530,11 +531,10 @@ async def decision_judge(directory: Path, judges: Judges) -> dict[str, Any]:
         compact_trajectory,
         diagnose,
     )
-    from scripts.memory_graph_spike import evidence_file
 
     path = evidence_file(directory)
     events = read_events(path.parent)
-    from scripts.memory_graph_spike import decision_sources
+    from evals.memory_graph_spike import decision_sources
 
     sources = decision_sources(path, events)
     receipt = validate_events(events)

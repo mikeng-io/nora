@@ -28,7 +28,7 @@ from nora.subject.eval_evidence import EvidenceError
 from nora.subject.journey import declared_envelope, declared_source
 
 #: The stores a version-1 expectation's `kind` names; the diff kinds it is
-#: judged against (`scripts.cognition_loop.state`).
+#: judged against (`evals.cognition_loop.state`).
 STATE_KINDS = (
     "graph", "profile", "note", "memo", "event", "topic",
     "lesson", "standing", "reminder", "wake",

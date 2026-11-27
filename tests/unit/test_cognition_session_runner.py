@@ -1275,13 +1275,13 @@ async def test_inspection_social_read_scope_uses_expanded_rendered_sources():
 
     from opentelemetry import context
 
+    from evals.memory_graph_spike import recorded_fact_sessions
     from nora.agent.punctuation import undash
     from nora.domain.cognition_ground import Grounding, SocialLine
     from nora.domain.comprehend import ComprehendItem
     from nora.domain.memory_graph import Source, WorkItem
     from nora.obs.tracing import EVAL_EVIDENCE_KEY
     from nora.testing.cognition_grounding import StaticGrounder
-    from scripts.memory_graph_spike import recorded_fact_sessions
 
     memory = wake_memory()
     stimulus = replace(_pending("unit-1")[0], kind="social", ref="social_read:generated-read")

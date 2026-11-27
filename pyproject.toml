@@ -385,6 +385,13 @@ forbidden_modules = [
     "nora.instructions", "tests",
 ]
 allow_indirect_imports = "True"
+# The recorded-wake harness reads the stores it measures and the deployment's
+# config, so it is the one part of evals/ that reaches below nora.app.
+ignore_imports = [
+    "evals.cognition_loop.** -> nora.**",
+    "evals.memory_graph_spike -> nora.**",
+    "evals.memory_graph_facts -> nora.**",
+]
 
 
 [[tool.importlinter.contracts]]
