@@ -327,6 +327,8 @@ RULE_TESTS = {
     "R-122": "test_lesson_tallies_resting_verdicts_and_renders_counts",
     "R-123": "test_operator_retirement_hides_graph_lesson_and_sets_evidence_floor",
     "R-126": "test_only_the_person_a_claim_is_about_may_ask_to_forget_it",
+    "R-129": "test_wake_admits_a_told_claim_citing_the_speaker",
+    "R-131": "test_the_retired_write_is_absent_from_general_specs",
 }
 
 def _collected() -> set[str]:

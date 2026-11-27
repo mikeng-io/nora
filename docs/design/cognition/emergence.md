@@ -51,10 +51,10 @@ Nora reads, never as code.
 | capability | how the generic loops produce it |
 |---|---|
 | **game recommendations** | items linking the same site rise above the room's baseline — a generic count over observed link metadata (stimulus); orient judges that the room is into those games and claims it; decide opens a maintain intention that watches those games' pages; a sale (watch item) leads to a child intention, "suggest it, done when someone accepts it", delivered by a proactive pass that may stay silent; verdicts build its track record and a lesson about which suggestions the room takes up |
-| **following through on a promise** | a called pass commits an achieve intention owed to the identity, done when the booking is confirmed; the confirming item closes it, or its time passes and it leaks |
-| **noticing someone has gone quiet** | an identity's activity falls well below its baseline (stimulus); orient looks for a held explanation; with none, decide may open an intention delivered when it comes up, resting on the aggregate; their return closes it |
+| **following through on a promise** | a called pass commits an achieve intention owed to the person, done when the booking is confirmed; the confirming item closes it, or its time passes and it leaks |
+| **noticing someone has gone quiet** | a person's activity falls well below its baseline (stimulus); orient looks for a held explanation; with none, decide may open an intention delivered when it comes up, resting on the aggregate; their return closes it |
 | **learning a room's timing** | early reminders in a room leak while later ones are achieved; the track record shows it; a lesson forms; the next reminder rests on it and moves its support |
-| **choosing dinner for a group** | the plan is a claim; Nora's part is an intention owed to the attendees; decide reads their likes and constraints for that audience and judges fit; the pick is the verdict; an identity's taste is revised only from their own explicit liking or dislike, never from a group pick or compromise |
+| **choosing dinner for a group** | the plan is a claim; Nora's part is an intention owed to the attendees; decide reads their likes and constraints for that audience and judges fit; the pick is the verdict; a person's taste is revised only from their own explicit liking or dislike, never from a group pick or compromise |
 
 Each uses only items, aggregates, claims, intentions, edges, the five stages
 and their checks.

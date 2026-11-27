@@ -59,7 +59,7 @@ poller. Every other stage runs inside a pass.
 | stage | action | actor | does |
 |---|---|---|---|
 | observe | **receive** | code | accepts an input: a platform event, a watch result, a tool outcome, Nora's own act, a clock edge |
-| | **resolve** | code | binds accounts to identities, rooms to units, references to entities it can resolve |
+| | **resolve** | code | binds accounts to persons, rooms to units, references to entities it can resolve |
 | | **record** | code | writes the item |
 | | **compute** | code | recomputes affected aggregates and baselines; matches the item against open intentions' conditions and writes closed-by |
 | | **stimulate** | code | makes the change a durable stimulus |
@@ -95,12 +95,10 @@ connects or a bound stops it. Study repeats on its timescales.
 ## Delivery arbitration
 
 - When a delivery is scheduled, code resolves the act's subject and action and
-  checks it atomically against the unit's pending and firing acts across
-  destinations and citations. A duplicate is refused. A delivery to several
-  rooms is explicit and admitted all-or-none.
-- The subject is its non-pointer about rows and its parent, each at its live head.
-  The action is telling its owed-to identity. An empty subject stays unresolved.
-  A delivered act blocks only at its own destination.
+  checks it atomically against the unit's pending, firing and delivered acts,
+  whatever their destination or citations. A duplicate is refused; an
+  ambiguous identity stays unresolved, never a guessed unique act. A
+  delivery to several rooms is explicit and admitted all-or-none.
 - At delivery, code rechecks the same resolved act against what was delivered
   or superseded and the destination's current eligibility. An incomplete check
   withholds.
@@ -126,8 +124,8 @@ pass's input**; everything after the input is the same run.
 
 | pass | loop | trigger source | input it digests | entry point | delivers |
 |---|---|---|---|---|---|
-| **called** | engagement | an identity addresses Nora: a tag, mention or reply | the message and what it quotes | tag pipeline | yes; a reply is owed |
-| **ambient** | engagement | an identity's conversation, Nora not addressed, admitted as an offer | the room's recent window | fire path | yes; never owed, silence by default |
+| **called** | engagement | a person addresses Nora: a tag, mention or reply | the message and what it quotes | tag pipeline | yes; a reply is owed |
+| **ambient** | engagement | a person's conversation, Nora not addressed, admitted as an offer | the room's recent window | fire path | yes; never owed, silence by default |
 | **proactive** | engagement | Nora's own intention: its time is due or its watched condition holds — a reminder, a gathering, a finished job's result, a relay | the due intention, what it rests on and serves, and why it is due now | fire path | yes; may stay silent |
 | **wake** | reflection | stimuli the wake evaluator claims | the claimed stimuli | Dreamer runtime | never |
 | **review** | reflection | a schedule | the rows due for verification and grading | verifier, judge | never |
@@ -207,7 +205,7 @@ reach outward and take their results back in.
 
 **Stimuli**: a platform item; a watched source changing; an aggregate crossing
 its baseline; a presence change; the clock (an intention due, a review time, a valid-to time
-ending, a deadline passing); a verdict; an identity's correction. Code surfaces a
+ending, a deadline passing); a verdict; a person's correction. Code surfaces a
 stimulus; the model decides whether it means anything. Nothing calls a model
 because a clock advanced.
 
