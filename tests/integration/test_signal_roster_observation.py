@@ -84,5 +84,7 @@ async def test_bridge_roster_reads_the_real_bridge_route(roster_bridge):
     assert known.available
     assert known.members == (frozenset({PHONE, ACI}),)
     assert not (await roster.roster(conversation_id="absent")).available
+    daemon.groups = [{"id": ROOM, "members": [{"number": True}]}]
+    assert not (await roster.roster(conversation_id=ROOM)).available
     daemon.rpc_errors.add("listGroups")
     assert not (await roster.roster(conversation_id=ROOM)).available

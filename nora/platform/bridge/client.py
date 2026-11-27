@@ -376,6 +376,12 @@ class BridgeMediaSource:
             return MediaBytes(available=False, reason="bridge_unreachable")
 
 
+def _member_record(m: object) -> bool:
+    """A signal-cli member record whose id fields, where present, are strings."""
+    return isinstance(m, dict) and bool(ids_of(m)) and all(
+        isinstance(m[k], str) for k in ("number", "uuid", "username") if m.get(k))
+
+
 class BridgeRoster:
     """`RosterSource` over the bridge's `POST /v1/reads` op `roster`, which
     proxies signal-cli `listGroups` for one group. Fail-closed like
@@ -400,8 +406,10 @@ class BridgeRoster:
         except (TimeoutError, aiohttp.ClientError, ValueError) as exc:
             log.warning("%s roster read failed: %s", self.platform, type(exc).__name__)
             return Roster(available=False)
-        members = data.get("members") if isinstance(data, dict) else None
-        if not data.get("available") or not isinstance(members, list) or any(
-                not isinstance(m, dict) or not ids_of(m) for m in members):
+        if not isinstance(data, dict):
+            return Roster(available=False)
+        members = data.get("members")
+        if data.get("available") is not True or not isinstance(members, list) or any(
+                not _member_record(m) for m in members):
             return Roster(available=False)
         return Roster(available=True, members=tuple(ids_of(m) for m in members))
