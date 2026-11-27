@@ -88,7 +88,7 @@
     "file": "nora/testing/memo_store.py",
     "old": "        if head.id != base_revision_id:",
     "new": "        if False:",
-    "target": "tests/contract/test_memo_store_contract.py::test_a_revision_lands_on_its_head_and_a_stale_base_is_refused[memory]"
+    "target": "tests/contract/test_memo_store_contract.py::test_a_revision_lands_on_its_head_and_a_stale_base_is_refused"
   },
   {
     "name": "own send: a note may now cite Nora's message",

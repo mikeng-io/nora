@@ -243,3 +243,28 @@ async def test_a_run_outside_a_session_leaves_nothing_anywhere(monkeypatch):
     _spend_patch(monkeypatch, {"totalTokens": 5}, _raises(RuntimeError("down")))
     with pytest.raises(RuntimeError):
         await _run(_runner(Metrics()))
+
+
+async def test_the_root_span_is_a_generation_so_the_trace_reaches_langfuse(monkeypatch):
+    from contextlib import contextmanager
+
+    from nora.app import cognition_agent_runner as module
+    from nora.obs.tracing import TRACE_KIND
+
+    seen: list[dict[str, Any]] = []
+
+    @contextmanager
+    def span(name: str, **attributes: Any):
+        seen.append(attributes)
+        yield
+
+    class Result:
+        stop_reason = "end_turn"
+
+    async def invoke(*args: Any, **kwargs: Any) -> Any:
+        return Result()
+
+    monkeypatch.setattr(module, "span", span)
+    _patch(monkeypatch, invoke)
+    await _run(_runner(Metrics()))
+    assert seen and seen[0][TRACE_KIND] == "generation"

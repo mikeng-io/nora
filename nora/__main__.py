@@ -265,7 +265,7 @@ class App:
             await deps.wake_poller.recover()
             deps.background.spawn(deps.wake_poller.run())
         else:
-            log.info("graph wake disabled ([cognition] enabled = false)")
+            log.info("graph wake not composed for this subject")
         # The OAuth keepalive (DEC-308): HERE and not in composition, because
         # the eval subject composes the same graph and must not spend the
         # deployment's rotating refresh tokens. `None` with image generation

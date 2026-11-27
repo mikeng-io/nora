@@ -12,5 +12,19 @@
     "old": "else set(missed_source_numbers(statement)))",
     "new": "else set(re.findall(r\"-?\\d+\", str(statement.get(\"location\", \"\")))))",
     "target": "tests/unit/test_replay_diagnosis.py::test_missed_diagnostic_uses_source_ids_not_item_numbers_or_timestamps"
+  },
+  {
+    "name": "reaction context is not new source evidence",
+    "file": "nora/language/cognition_parse.py",
+    "old": "                    or row.attributes.get(\"reaction\")):",
+    "new": "):",
+    "target": "tests/unit/test_agenda_parse_pins.py::test_a_reaction_row_is_not_new_source_evidence"
+  },
+  {
+    "name": "reaction context cannot overwrite the support judges cited row",
+    "file": "nora/language/cognition_parse.py",
+    "old": "            if row.attributes.get(\"reaction\"):\n                continue\n",
+    "new": "",
+    "target": "tests/unit/test_agenda_parse_pins.py::test_a_reaction_row_is_not_a_source_row_the_judge_may_cite"
   }
 ]

@@ -60,7 +60,7 @@
     "file": "scripts/memory_graph_spike.py",
     "old": "        require_vectors=index.embed,\n",
     "new": "        require_vectors=True,\n",
-    "target": "tests/integration/subject/test_causal_runtime_journey.py::test_real_app_bridge_admission_settles_before_cancellation[g1-False]"
+    "target": "tests/unit/test_memory_graph_spike.py::test_replay_embedder_check_uses_effective_subject_config"
   },
   {
     "name": "record-only preparation propagates its readiness requirement",

@@ -32,6 +32,6 @@
     "file": "scripts/cognition_loop/judges.py",
     "old": "\"subject_instructions\": subject_instructions(trajectory),",
     "new": "\"subject_instructions\": {\"status\": \"observed\", \"messages\": []},",
-    "target": "tests/integration/subject/test_autonomous_wake_census.py::test_census_exact_population_passes"
+    "target": "tests/unit/test_cognition_loop_judge_digest.py::test_the_judge_is_given_the_instructions_the_subject_actually_received"
   }
 ]

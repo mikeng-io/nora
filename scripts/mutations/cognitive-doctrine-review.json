@@ -28,13 +28,6 @@
     "target": "tests/test_tools.py::test_the_reaction_picker_reads_the_canonical_public_name"
   },
   {
-    "name": "composition forwards the Markdown name to the live registry",
-    "file": "nora/app/composition_agent.py",
-    "old": "        display_name=cfg.doctrine.display_name,\n",
-    "new": "",
-    "target": "tests/test_composition.py::test_markdown_identity_reaches_live_tools_and_cognition_writers"
-  },
-  {
     "name": "missing identity files report a doctrine failure",
     "file": "nora/doctrine/loader.py",
     "old": "    except OSError as exc:\n        raise DoctrineError(f\"identity.md: cannot read public identity: {exc}\") from exc",

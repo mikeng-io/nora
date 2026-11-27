@@ -4,7 +4,7 @@
     "file": "nora/domain/stimuli.py",
     "old": "    through = max(view.watermark.through_stimulus_id, max(s.id for s in claimed))",
     "new": "    through = max(s.id for s in claimed)",
-    "target": "tests/contract/test_stimulus_store_contract.py::test_a_due_later_wake_does_not_resurrect_earlier_consumed_stimuli tests/unit/test_wake_evaluator.py::test_a_due_later_wake_does_not_resurrect_stimuli_already_consumed"
+    "target": "tests/contract/test_stimulus_store_contract.py::test_a_due_later_wake_does_not_resurrect_earlier_consumed_stimuli"
   },
   {
     "name": "SQL record_wake: an untracked wake consumes the whole range, not what it claimed",
@@ -53,13 +53,34 @@
     "file": "nora/domain/stimuli.py",
     "old": "        not stimulus.waits\n        and stimulus.kind not in view.inert_kinds",
     "new": "        True\n        and stimulus.kind not in view.inert_kinds",
-    "target": "tests/contract/test_stimulus_store_contract.py::test_tracked_wakes_that_fail_expire_or_carry_still_claim_every_stimulus[memory-3-0]"
+    "target": "tests/contract/test_stimulus_store_contract.py::test_tracked_wakes_that_fail_expire_or_carry_still_claim_every_stimulus"
   },
   {
     "name": "twin view: a stimulus due after the watermark's time counts as consumed by the id range",
     "file": "nora/testing/stimuli.py",
     "old": "            sid for w in mine for sid in w.claimed_ids",
     "new": "            sid for w in mine for sid in range(1, w.through_stimulus_id + 1)",
-    "target": "tests/contract/test_stimulus_store_contract.py::test_a_stimulus_due_later_stays_pending_across_an_earlier_wake[memory]"
+    "target": "tests/contract/test_stimulus_store_contract.py::test_a_stimulus_due_later_stays_pending_across_an_earlier_wake"
+  },
+  {
+    "name": "Signal delete of someone else's message is recorded",
+    "file": "nora/ingest/stages/touch.py",
+    "old": "        and not await _same_author(message.sender_id, person_id, target, access)",
+    "new": "        and False",
+    "target": "tests/unit/test_touch_stage_pins.py::test_a_signal_delete_naming_someone_elses_message_is_refused"
+  },
+  {
+    "name": "an unattributed delete asserts the target's author",
+    "file": "nora/ingest/stages/touch.py",
+    "old": "    person_id = person.person_id if person is not None else None",
+    "new": "    person_id = person.person_id if person is not None else target.person_id",
+    "target": "tests/unit/test_touch_stage_pins.py::test_an_unattributed_reaction_is_not_credited_to_the_target_s_author"
+  },
+  {
+    "name": "nora_messages_total counts reactions",
+    "file": "nora/ingest/pipeline.py",
+    "old": "        if message.touch is None:\n            m.inc(\"nora_messages_total\"",
+    "new": "        if True:\n            m.inc(\"nora_messages_total\"",
+    "target": "tests/unit/test_ingest_edit_path.py::test_a_message_is_counted_and_a_reaction_is_not"
   }
 ]

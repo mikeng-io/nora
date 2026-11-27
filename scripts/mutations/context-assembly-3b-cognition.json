@@ -21,24 +21,87 @@
     "target": "tests/unit/test_edited_row_render.py::test_the_first_text_cannot_break_out_of_its_attribute"
   },
   {
-    "name": "3b (b): the shared element renderer does not escape a row's words",
-    "file": "nora/domain/blocks.py",
-    "old": "        out.append(f\"<{tag} {rendered}>{escape(render_file_links(body(row) or ''))}</{tag}>\")",
-    "new": "        out.append(f\"<{tag} {rendered}>{render_file_links(body(row) or '')}</{tag}>\")",
-    "target": "tests/unit/test_eval_full_restore.py::test_a_full_restore_preserves_the_configured_geocoder"
+    "name": "3b (b): a message's words are not collapsed to one line, so a newline writes a second line",
+    "file": "nora/domain/prompt.py",
+    "old": "    line = one_line(text)\n    if len(line) <= limit:",
+    "new": "    line = str(text)\n    if len(line) <= limit:",
+    "target": "tests/unit/test_prompt_and_declared_pins.py::test_a_clipped_message_is_one_line_even_when_it_fits"
   },
   {
-    "name": "3b (b): the shared element renderer does not escape an attribute value, so a name closes its quote",
-    "file": "nora/domain/blocks.py",
-    "old": "            f'{key}=\"{escape_attr(collapsed)}\"'",
-    "new": "            f'{key}=\"{collapsed}\"'",
-    "target": "tests/unit/test_edited_row_render.py::test_the_first_text_cannot_break_out_of_its_attribute"
+    "name": "3b item 4: the `from` field no longer says the name goes in parentheses before the ids",
+    "file": "nora/domain/block_types.py",
+    "old": "use this exact name in parentheses before cited ids",
+    "new": "use this name before cited ids",
+    "target": "tests/unit/test_wake_block_type_text.py::test_the_block_type_keeps_the_sentence_a_reader_needs"
   },
   {
-    "name": "3b item 1: the nesting wrapper does not escape an attribute value, so a room label closes its quote",
-    "file": "nora/domain/blocks.py",
-    "old": "        f' {key}=\"{escape_attr(collapsed)}\"'",
-    "new": "        f' {key}=\"{collapsed}\"'",
-    "target": "tests/unit/test_eval_full_restore.py::test_a_full_restore_preserves_the_configured_geocoder"
+    "name": "3b item 4: the agenda description loses the section order",
+    "file": "nora/domain/block_types.py",
+    "old": "its sections run Decided, \"\n        \"Open, Owed, Proposed, Ruled out. An Owed",
+    "new": "its sections run Decided, \"\n        \"Open, Owed. An Owed",
+    "target": "tests/unit/test_wake_block_type_text.py::test_the_block_type_keeps_the_sentence_a_reader_needs"
+  },
+  {
+    "name": "3b item 4: the agenda description calls every message what a person typed, own sends included",
+    "file": "nora/domain/block_types.py",
+    "old": "marked `own` holds what you sent. Chat data,",
+    "new": "holds what a person typed. Chat data,",
+    "target": "tests/unit/test_wake_block_type_text.py::test_the_block_type_keeps_the_sentence_a_reader_needs"
+  },
+  {
+    "name": "3b item 5: the field that says what an edit is loses its meaning",
+    "file": "nora/domain/block_types.py",
+    "old": "`yes` if its words changed after they were said",
+    "new": "`yes` if it is marked",
+    "target": "tests/unit/test_wake_block_type_text.py::test_the_block_type_keeps_the_sentence_a_reader_needs"
+  },
+  {
+    "name": "3b item 5: the prompt carries a word that says what to conclude (whole-prompt check)",
+    "file": "nora/domain/block_types.py",
+    "old": "counted. A rollup is a fact ",
+    "new": "counted; a settled one needs no look. A rollup is a fact ",
+    "target": "tests/unit/test_wake_block_type_text.py::test_the_block_type_keeps_the_sentence_a_reader_needs"
+  },
+  {
+    "name": "3b last round (a): the agenda `n` gloss calls it a position, not the message's real id",
+    "file": "nora/domain/block_types.py",
+    "old": "the row's citation id (negative for non-message records)",
+    "new": "the row's list position",
+    "target": "tests/unit/test_wake_block_type_text.py::test_the_block_type_keeps_the_sentence_a_reader_needs"
+  },
+  {
+    "name": "3b last round (b): the note_index `n` gloss calls it a position, not the real note id",
+    "file": "nora/domain/block_types.py",
+    "old": "n=\"its handle in this list; real note id when id_kind is real\",",
+    "new": "n=\"the note position\",",
+    "target": "tests/unit/test_wake_block_type_text.py::test_the_block_type_keeps_the_sentence_a_reader_needs"
+  },
+  {
+    "name": "3b last round (c): the reads description no longer says what a read tool's `room` takes",
+    "file": "nora/domain/block_types.py",
+    "old": "as `platform:conversation_id` beside \"\n        \"its label. Code wrote it;",
+    "new": "as its key beside \"\n        \"its label. Code wrote it;",
+    "target": "tests/unit/test_wake_block_type_text.py::test_the_block_type_keeps_the_sentence_a_reader_needs"
+  },
+  {
+    "name": "3b last round (1): the Owed line shape is no longer taught",
+    "file": "nora/domain/block_types.py",
+    "old": "An Owed line is `<name> -> <what> -> \"\n        \"<due> [<ids>]`:",
+    "new": "An Owed line is `<name> -> <what> -> \"\n        \"<due>`:",
+    "target": "tests/unit/test_wake_block_type_text.py::test_the_block_type_keeps_the_sentence_a_reader_needs"
+  },
+  {
+    "name": "3b last round (1): the Ruled out line shape loses its (names), as the validator requires them",
+    "file": "nora/domain/block_types.py",
+    "old": "A Ruled out line is `<option>: <reason> (<names>) \"\n        \"[<ids>]`.",
+    "new": "A Ruled out line is `<option>: <reason> \"\n        \"[<ids>]`.",
+    "target": "tests/unit/test_wake_block_type_text.py::test_the_block_type_keeps_the_sentence_a_reader_needs"
+  },
+  {
+    "name": "3b last round (1): the description says the citation grammar a second time",
+    "file": "nora/domain/block_types.py",
+    "old": "citing them, as the `n` and `from` fields say;",
+    "new": "citing them, as `[n]` at the end of the line;",
+    "target": "tests/unit/test_wake_block_type_text.py::test_the_block_type_keeps_the_sentence_a_reader_needs"
   }
 ]

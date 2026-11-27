@@ -133,13 +133,6 @@
     "target": "tests/unit/test_heartbeat_loop.py::test_a_note_the_rows_unit_cannot_reach_fails_closed"
   },
   {
-    "name": "audit: the act runner remains available with the Dreamer off",
-    "file": "nora/app/composition_models.py",
-    "old": "    proactive_runner = _auto_runner(\n        cfg.proactive.reasoning_effort,\n        \"[proactive] reasoning_effort\",\n        max_tokens=cfg.proactive.max_tokens,\n    )",
-    "new": "    proactive_runner = _auto_runner(\n        cfg.proactive.reasoning_effort,\n        \"[proactive] reasoning_effort\",\n        max_tokens=cfg.proactive.max_tokens,\n    ) if cfg.dreamer.enabled else None",
-    "target": "tests/test_composition.py::test_a_home_room_keeps_the_proactive_runner_even_with_the_dreamer_off"
-  },
-  {
     "name": "audit: a silent failure behind a silent act turn is ERROR",
     "file": "evals/rebuilt/entry.py",
     "old": "    if result.token not in (SENT, SILENT):",

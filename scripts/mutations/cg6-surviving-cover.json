@@ -119,13 +119,6 @@
     "target": "tests/infra/test_graph_search.py::test_an_unexpected_failure_is_recorded_and_given_up_after_the_cap"
   },
   {
-    "name": "both reservation callbacks are registered with the real hook registry",
-    "file": "nora/agent/token_reservation.py",
-    "old": "        registry.add_callback(BeforeModelCallEvent, self.before)\n        registry.add_callback(AfterModelCallEvent, self.after)",
-    "new": "        pass",
-    "target": "tests/unit/test_token_reservation.py::test_the_real_runner_admits_the_boundary_then_refuses_reconciled_usage"
-  },
-  {
     "name": "a restart clears stale graph vectors and keeps the current model",
     "file": "nora/infra/sql/graph_search_embed.py",
     "old": "        row.embedding.is_not(None), row.embedding_model.is_distinct_from(keep_model),",

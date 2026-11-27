@@ -51,7 +51,7 @@ RULE_TESTS = {
     "R-108": "test_debrief_writes_only_commit_operations_citing_its_pass_items",
     "R-130": "test_room_list_reads_each_rooms_graph_profile_in_the_turn_audience",
     "DEC-247": "test_a_cognition_block_that_sets_a_call_ceiling_refuses_to_load",
-    "DEC-231": "test_a_lesson_from_another_unit_is_absent",
+    "DEC-231": "test_other_unit_is_excluded",
     "DEC-233": "test_a_person_item_raises_a_stimulus_and_nora_s_own_item_raises_none",
     "DEC-279": "test_aggregate_crossing_only_rides_with_a_room_stimulus",
     "DEC-281": "test_a_strong_cue_cuts_cooldown_once_after_a_closed_wake",

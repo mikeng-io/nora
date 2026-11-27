@@ -568,3 +568,18 @@ async def test_an_out_of_order_edit_is_judged_against_the_newest_clock_not_the_s
     await pipe.run(message=_edit("stale", ts=900, target=EditTarget(sent_ts=100)))
     rows = await store.recent(conversation_id="g1", limit=5)
     assert rows[0].body == "v2"
+
+
+async def test_a_message_is_counted_and_a_reaction_is_not():
+    from nora.domain.models import Touch
+
+    store = FakeRecordStore()
+    metrics = Metrics()
+    pipeline = _pipeline(store, metrics=metrics)
+    await pipeline.run(message=_msg("dinner at 7"))
+    assert metrics.get("nora_messages_total", platform="signal") == 1
+    reaction = dataclasses.replace(
+        _msg("", ts=9), touch=Touch(kind="reaction", target=ORIGINAL, emoji="👍"),
+    )
+    await pipeline.run(message=reaction)
+    assert metrics.get("nora_messages_total", platform="signal") == 1

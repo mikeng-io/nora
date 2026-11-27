@@ -12,5 +12,12 @@
     "old": "hidden: sa.ColumnElement[bool] = MESSAGES.c.hidden_at.is_(None)",
     "new": "hidden: sa.ColumnElement[bool] = sa.true()",
     "target": "tests/infra/test_record_query.py::test_by_refs_never_returns_a_message_the_withdrawal_cascade_hid"
+  },
+  {
+    "name": "major 2: a message body is not collapsed to one line",
+    "file": "nora/domain/prompt.py",
+    "old": "    line = one_line(text)\n    if len(line) <= limit:",
+    "new": "    line = str(text)\n    if len(line) <= limit:",
+    "target": "tests/unit/test_prompt_and_declared_pins.py::test_a_clipped_message_is_one_line_even_when_it_fits"
   }
 ]

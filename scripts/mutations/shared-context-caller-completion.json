@@ -12,5 +12,12 @@
     "old": "    d[\"mention_persons\"] = tuple(d.get(\"mention_persons\", ()))\n",
     "new": "",
     "target": "tests/infra/test_tag_trace_store.py::test_transcript_round_trips_including_the_delivery_status_enum"
+  },
+  {
+    "name": "shared last-look clock retains elapsed minute precision",
+    "file": "nora/language/context_render.py",
+    "old": "ago(int(now.timestamp() * 1000) - last_session_ms)",
+    "new": "age(last_session_ms, now)",
+    "target": "tests/unit/test_context_render_pins.py::test_the_clock_says_how_long_ago_the_last_look_was_to_the_minute"
   }
 ]

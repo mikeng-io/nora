@@ -19,5 +19,19 @@
     "old": "any(type(n) is not int or n not in sources for n in ids)",
     "new": "any(not isinstance(n, int) or n not in sources for n in ids)",
     "target": "tests/unit/test_documents_service.py::test_autonomous_document_revisions_fail_closed_on_unsupported_evidence[bool_source]"
+  },
+  {
+    "name": "every emitted field is explained by its declaration",
+    "file": "nora/domain/blocks_declared.py",
+    "old": "if unexplained:",
+    "new": "if False:",
+    "target": "tests/unit/test_prompt_and_declared_pins.py::test_a_block_that_emits_a_field_its_type_does_not_explain_is_refused"
+  },
+  {
+    "name": "identically labelled rooms keep separate quote custody",
+    "file": "nora/language/context_render.py",
+    "old": "return f\"{line.platform}:{line.conversation_id}\" if line.platform else line.room",
+    "new": "return line.room",
+    "target": "tests/unit/test_context_render_pins.py::test_identically_timestamped_rooms_keep_separate_quote_custody"
   }
 ]

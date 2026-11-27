@@ -1,0 +1,9 @@
+[
+  {
+    "name": "a shown author's pointer is grounded by shown authorship",
+    "file": "nora/domain/memory_admission.py",
+    "old": "    if ref not in shown_identities and not any(\n        ref in sources[e.source].identities for e in evidence if e.source in sources\n    ):",
+    "new": "    if not any(\n        ref in sources[e.source].identities for e in evidence if e.source in sources\n    ):",
+    "target": "tests/unit/test_admission_and_handoff_pins.py::test_a_person_pointer_needs_a_cited_source_in_their_scope_or_a_row_they_authored"
+  }
+]

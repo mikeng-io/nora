@@ -53,6 +53,6 @@
     "file": "nora/domain/stimuli.py",
     "old": "            if (s.kind == reason and not s.waits) or s.kind in RIDES_ALONG",
     "new": "            if (s.kind == reason and not s.waits)",
-    "target": "tests/contract/test_stimulus_store_contract.py::test_a_random_run_of_wakes_claims_every_stimulus_exactly_once[memory-1]"
+    "target": "tests/contract/test_stimulus_store_contract.py::test_a_random_run_of_wakes_claims_every_stimulus_exactly_once"
   }
 ]

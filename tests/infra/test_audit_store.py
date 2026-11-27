@@ -416,3 +416,47 @@ async def test_the_over_fetched_row_never_reaches_the_caller(make_store):
     for limit in (1, 2, 7, 19):
         rows = await store.recent(conversation_id="g1", limit=limit)
         assert len(rows) == limit, f"limit={limit} returned {len(rows)}"
+
+
+async def _seed_window(store):
+    ids = [await store.append(message=_msg(body=b, ts=t)) for b, t in
+           (("first", 10), ("second", 20), ("third", 30))]
+    async with store._engine.begin() as conn:
+        await conn.execute(sa.text(
+            "INSERT INTO message_edit (message_id, ts, body) VALUES (:id, 25, 'first, edited')"
+        ), {"id": ids[0]})
+        await conn.execute(sa.text(
+            "INSERT INTO message_reaction (message_id, sender_id, emoji, removed, ts) "
+            "VALUES (:id, 's1', '👍', 0, 25)"
+        ), {"id": ids[1]})
+    return ids
+
+
+async def test_a_window_read_as_of_an_instant_ends_at_it(store):
+    await _seed_window(store)
+    rows = await store.recent_before(
+        conversation_id="g1", before_ts=1_000, limit=10, as_of_ms=20,
+    )
+    assert [r.body for r in rows] == ["first", "second"]
+    live = await store.recent_before(conversation_id="g1", before_ts=1_000, limit=10)
+    assert [r.body for r in live][-1] == "third"
+
+
+async def test_an_edit_made_after_the_instant_is_not_shown_in_a_window_read_as_of_it(store):
+    await _seed_window(store)
+    as_of = await store.recent_before(
+        conversation_id="g1", before_ts=1_000, limit=10, as_of_ms=20,
+    )
+    assert as_of[0].body == "first"
+    live = await store.recent_before(conversation_id="g1", before_ts=1_000, limit=10)
+    assert live[0].body == "first, edited"
+
+
+async def test_a_reaction_made_after_the_instant_is_not_shown_in_a_window_read_as_of_it(store):
+    await _seed_window(store)
+    as_of = await store.recent_before(
+        conversation_id="g1", before_ts=1_000, limit=10, as_of_ms=20,
+    )
+    assert not (as_of[1].reactions and as_of[1].reactions.label)
+    live = await store.recent_before(conversation_id="g1", before_ts=1_000, limit=10)
+    assert live[1].reactions and live[1].reactions.label

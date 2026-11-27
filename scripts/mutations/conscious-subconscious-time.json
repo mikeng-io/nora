@@ -53,6 +53,6 @@
     "file": "nora/testing/stimuli.py",
     "old": "            and s.eligible_ms <= now_ms and s.id not in claimed",
     "new": "            and s.eligible_ms <= now_ms",
-    "target": "tests/contract/test_stimulus_store_contract.py::test_a_wake_is_the_watermark_and_consumes_what_it_claimed[memory]"
+    "target": "tests/contract/test_stimulus_store_contract.py::test_a_wake_is_the_watermark_and_consumes_what_it_claimed"
   }
 ]

@@ -77,13 +77,6 @@
     "target": "tests/test_config.py::test_a_cognition_block_that_sets_a_call_ceiling_refuses_to_load"
   },
   {
-    "name": "the wake's timeout default falls back under the session clock",
-    "file": "nora/config.py",
-    "old": "session_timeout_seconds: float = Field(default=3900.0, gt=0)",
-    "new": "session_timeout_seconds: float = Field(default=900.0, gt=0)",
-    "target": "tests/test_config.py::test_the_wakes_timeout_stays_above_the_sessions_by_the_margin"
-  },
-  {
     "name": "an identical pending reminder is no longer refused on the re-run",
     "file": "nora/domain/cognition_remind.py",
     "old": "        if pending_dests and covered <= pending_dests:\n",

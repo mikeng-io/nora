@@ -609,3 +609,11 @@ async def test_context_rows_bound_known_time_related_mentions_and_room(engine):
     other,_,_ = await SqlRecordQuery(engine).context_rows(RecordQuery(
         rooms=(('discord','synthetic-context'),),start_ms=ms-10000,end_ms=ms+1,limit=500),as_of_ms=ms)
     assert not other
+
+
+async def test_a_text_match_as_of_an_instant_still_finds_a_message_deleted_after_it(engine, said):
+    store = SqlRecordQuery(engine)
+    before_the_delete = T0 + DAY + 2_000
+    hits, _, _ = await store.query(_q(text="機器學習"), as_of_ms=before_the_delete)
+    assert [h.row.id for h in hits] == [said["a_other"]]
+    assert (await store.query(_q(text="機器學習")))[0] == ()

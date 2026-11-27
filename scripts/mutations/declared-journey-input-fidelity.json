@@ -109,6 +109,13 @@
     "file": "scripts/cognition_loop/cases.py",
     "old": "                return DeclaredTurn(**raw_turn)",
     "new": "                return str(raw_turn)",
-    "target": "tests/unit/test_cognition_loop_rejudge.py::test_a_declared_turn_is_judged_against_the_original_declaration[None]"
+    "target": "tests/unit/test_cognition_loop_rejudge.py::test_a_declared_turn_is_judged_against_the_original_declaration"
+  },
+  {
+    "name": "a version-2 turn is generated text or a declared envelope",
+    "file": "scripts/cognition_loop/cases.py",
+    "old": "            for turn in self.turns:\n                if not isinstance(turn, (str, DeclaredTurn)):\n                    raise EvidenceError(\n                        \"a version-2 turn is generated text or a declared \"\n                        \"envelope\")",
+    "new": "            for turn in self.turns:\n                pass",
+    "target": "tests/unit/test_trajectory_and_case_pins.py::test_a_version_2_turn_is_generated_text_or_a_declared_envelope"
   }
 ]

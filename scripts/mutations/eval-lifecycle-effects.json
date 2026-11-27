@@ -68,5 +68,12 @@
     "old": "        if event.get(\"name\") == \"nora.session.settled\":",
     "new": "        if event.get(\"name\") == \"nora.session.terminal\":",
     "target": "tests/integration/subject/test_autonomous_turn_controls.py::test_bound_turn_events_joins_the_bound_session_by_identity"
+  },
+  {
+    "name": "completion model output cannot replace the main response",
+    "file": "scripts/cognition_loop/trajectory.py",
+    "old": "terminal_response(events[:terminal_index + 1])",
+    "new": "terminal_response(events)",
+    "target": "tests/unit/test_trajectory_and_case_pins.py::test_a_completion_model_started_after_the_terminal_cannot_replace_the_main_response"
   }
 ]

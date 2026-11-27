@@ -21,13 +21,6 @@
     "target": "tests/unit/test_reaction_annotations.py::test_a_custom_emoji_projects_to_its_scoped_name_never_its_id"
   },
   {
-    "name": "the label never marks omitted detail",
-    "file": "nora/domain/models.py",
-    "old": "                dropped += n",
-    "new": "                dropped += 0",
-    "target": "tests/unit/test_reaction_annotations.py::test_the_annotation_is_budgeted_beside_the_words_and_marks_omission"
-  },
-  {
     "name": "partial coverage renders as a complete state",
     "file": "nora/agent/toolkit/transcript.py",
     "old": "            if r.reactions.coverage == \"partial\":",
