@@ -39,10 +39,10 @@ from typing import Any
 
 from nora.agent import factory
 from nora.agent.dream_guard import DreamGuard
+from nora.agent.dreamer import AdaptorBudget
 from nora.agent.reasoning_strip import ReasoningStripWatch
 from nora.agent.subagent_progress import SubagentProgress
 from nora.agent.subagent_tools import SKILLS_TOOL, SubagentToolsError, SubagentToolSource
-from nora.app.cognition_session import AdaptorBudget
 from nora.domain.errors import PartialReplyError
 from nora.domain.ports import LaunchRequest
 from nora.domain.reasoning_strip import dreamer_path

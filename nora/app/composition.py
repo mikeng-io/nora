@@ -32,10 +32,6 @@ from nora.agent.dreamer import (
 )
 from nora.agent.whereis import Circle
 from nora.app.bridge_queue import BridgeRuntime
-from nora.app.cognition_session import CognitionSessionRunner
-from nora.app.cognition_wiring import (
-    CognitionShutdown,
-)
 from nora.app.composition_agent import (
     backend,
     backends,
@@ -47,10 +43,7 @@ from nora.app.composition_agent import (
 from nora.app.composition_bridge import runtime
 from nora.app.composition_computer import build_computer
 from nora.app.composition_documents import service
-from nora.app.composition_dreamer import (
-    enabled,
-    legacy_cognition_shutdown,
-)
+from nora.app.composition_dreamer import enabled
 from nora.app.composition_fire import (
     build_gate,
     build_recover,
@@ -78,7 +71,7 @@ from nora.app.composition_platforms import (
     signal_link_delivery,
 )
 from nora.app.composition_proactive import build_proactive
-from nora.app.composition_runtime import build_slots, stimulus, tasks
+from nora.app.composition_runtime import build_slots, tasks
 from nora.app.composition_social import expiry, inbox, poller, summons
 from nora.app.composition_stores import (
     build_audit,
@@ -350,12 +343,9 @@ class Dependencies:
     # and every voice verb fails closed.
     voice_hub: VoiceControllerHub | None
     voice_event_consumer: VoiceEventConsumer | None
-    # The graph wake poller and the legacy backfill runner:
-    # `None` under `[cognition] enabled = false`, the shipped default. The
-    # shutdown cancels the sessions in flight, once (`nora.app.cognition_wiring`).
+    # The graph wake poller: `None` while `[dreamer] enabled = false`, which leaves the wake no
+    # model runtime to run on.
     wake_poller: WakePoller | None = None
-    cognition_runner: CognitionSessionRunner | None = None
-    cognition_shutdown: CognitionShutdown | None = None
     # The sub-agent worker: `None` under `[subagent] enabled = false`, the
     # shipped default. The shutdown cancels the jobs in flight.
     subagent_backend: SubagentBackend | None = None
@@ -425,7 +415,6 @@ async def build_dependencies(
     *,
     clock: Callable[[], datetime] = wall_clock,
     operational_clock: Callable[[], datetime] | None = None,
-    legacy_replay: bool = False,
     include_graph_reads: bool = True,
 ) -> Dependencies:
     """Build the process graph from cfg and return its runtime Dependencies.
@@ -445,14 +434,14 @@ async def build_dependencies(
     """
     return await StartupOwner.run(
         _compose_dependencies, cfg,
-        clock=clock, operational_clock=operational_clock, legacy_replay=legacy_replay,
+        clock=clock, operational_clock=operational_clock,
         include_graph_reads=include_graph_reads)
 
 
 async def _compose_dependencies(
     cfg: Config, *, clock: Callable[[], datetime],
     operational_clock: Callable[[], datetime] | None,
-    legacy_replay: bool, include_graph_reads: bool,
+    include_graph_reads: bool,
     owner: StartupOwner,
 ) -> Dependencies:
     op_clock = operational_clock or clock
@@ -579,7 +568,7 @@ async def _compose_dependencies(
     decision_log = _stores_decision_log.decision_log
     _memory_notes = _memory_wire.notes(cfg=cfg, engine=engine)
     memo_store = _memory_notes.memo_store
-    note_store, entry_store = _memory_notes.note_store, _memory_notes.entry_store
+    note_store = _memory_notes.note_store
     _voice_speech = _voice_wire.speech(
         _discord_bridge=_discord_bridge, allowlist=allowlist, cfg=cfg,
         engine=engine, metrics=metrics)
@@ -677,7 +666,6 @@ async def _compose_dependencies(
     )
     _spawn = _pipelines_shared._spawn
     assembler = _pipelines_shared.assembler
-    shared = _pipelines_shared.shared
     _media_sources = await _media_wire.sources(cfg=cfg)
     blobs = _media_sources.blobs
     owner.own_blobs(blobs)
@@ -690,8 +678,6 @@ async def _compose_dependencies(
     model_client_for = _models_lane.model_client_for
     route_model = _models_lane.route_model
     tier = _models_lane.tier
-    _people_unit_scopes = _people_wire.unit_scopes(allowlist=allowlist)
-    unit_scopes = _people_unit_scopes.unit_scopes
     _models_source = source(client=client, route_model=route_model, tier=tier)
     models = _models_source.models
     _browse_wiring = _computer_wire.browse(
@@ -712,8 +698,6 @@ async def _compose_dependencies(
     participation_runner = _models_runners.participation_runner
     proactive_runner = _models_runners.proactive_runner
     summons_runner = _models_runners.summons_runner
-    _agenda_reminder_caps = _agenda_wire.reminder_caps(cfg=cfg)
-    reminder_caps = _agenda_reminder_caps.reminder_caps
     _agenda_event_store = _agenda_wire.event_store(allowlist=allowlist, engine=engine)
     event_room_claims = _agenda_event_store.event_room_claims
     event_store = _agenda_event_store.event_store
@@ -739,9 +723,6 @@ async def _compose_dependencies(
     vision_client = _media_describers.vision_client
     _runtime_slots = build_slots(background=background, cfg=cfg, policy=allowlist)
     slots = _runtime_slots.slots
-    _runtime_stimulus = stimulus(allowlist=allowlist, cfg=cfg, engine=engine, registry=registry)
-    stimulus_store = _runtime_stimulus.stimulus_store
-    stimulus_wiring = _runtime_stimulus.stimulus_wiring
     _pipelines_ingest = build_ingest(
         _spawn=_spawn,
         access=access,
@@ -755,7 +736,6 @@ async def _compose_dependencies(
         metrics=metrics,
         policy=policy,
         sticker_reader=sticker_reader,
-        stimulus_wiring=stimulus_wiring,
         transcriber=transcriber,
     )
     ingest = _pipelines_ingest.ingest
@@ -948,7 +928,6 @@ async def _compose_dependencies(
         standing_store=standing_store, tag_trace_store=tag_trace_store,
     )
     standing_replay_wiring = _pipelines_standing.debrief_wiring
-    standing_fold = _pipelines_standing.standing_fold
     _pipelines_engagement = build_engagement(
         access=access,
         allowlist=allowlist,
@@ -1079,7 +1058,6 @@ async def _compose_dependencies(
         metrics=metrics,
         persons=persons_view,
         social_subjects=social_subjects,
-        stimulus_store=stimulus_store,
     )
     social_perception = _social_poller.social_perception
     social_poller = _social_poller.social_poller
@@ -1127,57 +1105,28 @@ async def _compose_dependencies(
         policy=policy,
         registry=registry,
         slots=slots,
-        stimulus_wiring=stimulus_wiring,
         owner=owner,
         room_command=room_commands.is_command,
     )
     bridge_runtime = _bridge_runtime.bridge_runtime
-    _dreamer_enabled = await enabled(
-        legacy_replay=legacy_replay,
+    _dreamer_enabled = enabled(
         allowlist=allowlist,
         audit=audit,
         cfg=cfg,
-        clock=clock,
-        cognition_context_screen=cognition_context_screen,
-        content_checks=content_checks,
-        doctrine_store=doctrine_store,
-        document_service=document_service,
-        documents_context=documents_context,
         dreamer_instructions=dreamer_instructions,
-        engine=engine, entry_store=entry_store,
-        event_store=event_store,
-        ledger_store=ledger_store,
-        lineage=lineage,
-        media_join=media_join,
-        memo_store=memo_store,
         metrics=metrics,
-        mobility=mobility,
         model_client_for=model_client_for,
-        note_store=note_store,
-        observation_store=observation_store,
         # The dream surface's sync Persons reads get the selected backend's
         # view — absent under managed, never a stale file answer.
         persons=persons_view,
-        presence_circles=presence_circles,
-        presence_reader=presence_reader,
         reasoning_strip_store=reasoning_strip_store,
         registry=registry,
-        reminder_caps=reminder_caps,
-        reminders=reminders,
         rosters=rosters,
         route_model=route_model,
-        shared=shared,
-        standing_fold=standing_fold,
-        standing_store=standing_store,
-        stimulus_store=stimulus_store,
-        tag_trace_store=tag_trace_store,
         tier=tier,
         tool_registry=tool_registry,
-        unit_rooms=unit_rooms,
-        unit_scopes=unit_scopes,
         access=access,
     )
-    cognition_runner = _dreamer_enabled.cognition_runner
     dreamer_runtime = _dreamer_enabled.dreamer_runtime
     wake_poller = build_wake(
         cfg, dreamer_runtime, dreamer_instructions, engine, access, lineage, allowlist,
@@ -1185,9 +1134,6 @@ async def _compose_dependencies(
         graph_reads, metrics, clock, rosters, registry, content_checks, media_join,
         review=_dreamer_enabled.review,
     )
-    cognition_shutdown = legacy_cognition_shutdown(cognition_runner)
-    if cognition_shutdown is not None:
-        owner.own_cognition(cognition_shutdown)
     _stores_otp = build_otp(
         audit=audit,
         cfg=cfg,
@@ -1264,8 +1210,6 @@ async def _compose_dependencies(
         voice_hub=voice_hub,
         voice_event_consumer=voice_event_consumer,
         wake_poller=wake_poller,
-        cognition_runner=cognition_runner,
-        cognition_shutdown=cognition_shutdown,
         subagent_backend=subagent_backend,
         computer_sweeper=computer_sweeper,
         computer_sweep_seconds=cfg.computer.sessions.sweep_interval_seconds,

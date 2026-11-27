@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -98,23 +98,6 @@ def unit_rooms(allowlist) -> UnitRoomsWiring:
         }
     )
     return UnitRoomsWiring(unit_rooms=unit_rooms)
-
-
-@dataclass(frozen=True)
-class UnitScopesWiring:
-    unit_scopes: Any
-
-
-def unit_scopes(allowlist) -> UnitScopesWiring:
-    # The same closure over the OTHER key. Sorted and de-duplicated: two rooms of one unit
-    # are one unit of work, and a set would reorder the tick between runs of the same build
-    # — which turns "did adaptor X run for unit Y this tick" into a question you cannot…
-    unit_scopes: Callable[[], Sequence[str]] = lambda: tuple(  # noqa: E731
-        sorted(
-            {conv.unit for conv in allowlist.rooms() if conv.unit}
-        )
-    )
-    return UnitScopesWiring(unit_scopes=unit_scopes)
 
 
 @dataclass(frozen=True)

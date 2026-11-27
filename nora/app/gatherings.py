@@ -71,8 +71,7 @@ class GatheringService:
         underscore into `self._store` directly."""
         return await self._store.rsvps_for(event_id)
 
-#: The event fields a room's view shows, the same four the Cognition session's
-#: event index is checked over (`nora.app.cognition_grounding._EVENT_SHOWN_FIELDS`).
+#: The event fields a room's view shows.
 ROOM_EVENT_FIELDS = ("what", "start", "place", "status")
 
 

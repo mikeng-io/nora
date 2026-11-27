@@ -1,54 +1,89 @@
-"""`DreamerAgentRunner` — the production `nora.app.cognition_session.
-CognitionAgentRunner`, and a DELEGATE: the session's one model call goes
-through `DreamerRuntime.run_agent`, which creates and invokes the agent.
-What this class still owns is only what is genuinely session-shaped: the
-`CognitionAgentRunner` signature, the guard's vocabulary (R-99's declared
-argument names and the result-size caps — the session holds no per-tool call
-ceiling, DEC-247), the `SESSION_TOKENS` spend handoff and the trace
-annotations a session's outcome is read by. A `ToolSurface` hand is unwrapped
-here: its resident tools are what the agent holds, its hooks (the shelf
-loader) register on the agent, and a shelved set earns the loop one extra
-turn for the `load_tools` call itself.
+"""`DreamerAgentRunner`: the production `CognitionAgentRunner`, a DELEGATE. A
+pass's one model call goes through `DreamerRuntime.run_agent`, which creates and
+invokes the agent. What this class still owns is only what is genuinely
+pass-shaped: the `CognitionAgentRunner` signature, the guard's vocabulary (the
+declared argument names and the result-size caps; a pass holds no per-tool call
+ceiling), the `SESSION_TOKENS` spend handoff and the trace annotations a
+pass's outcome is read by. A `ToolSurface` hand is unwrapped here: its resident
+tools are what the agent holds, its hooks (the shelf loader) register on the
+agent, and a shelved set earns the loop one extra turn for the `load_tools` call
+itself.
 
-The model is resolved by the runtime's `ModelSource` — built by the
-composition root from `[dreamer]`'s model alias — never a second
-model-selection path. No model id or route string is written into this file:
-`CognitionSessionRunner` is handed `model_id`/`model_route` as plain
-config-resolved strings for the session row's provenance column.
+The model is resolved by the runtime's `ModelSource`, built by the composition
+root from `[dreamer]`'s model alias; no model id or route string is written here.
 """
 
 from __future__ import annotations
 
+import contextvars
 import logging
 from collections.abc import Mapping
-from typing import Any
+from dataclasses import dataclass, field
+from typing import Any, Protocol
 
 from nora.agent.dream_guard import DreamGuard
 from nora.agent.dreamer import (
-    AdaptorBudget as DreamerBudget,
-)
-from nora.agent.dreamer import (
+    AdaptorBudget,
     DreamerRuntime,
     as_strands_tools,
 )
 from nora.agent.surface import ToolSurface
-from nora.agent.token_reservation import TokenReservation
 from nora.app.agent_runner import DEFAULT_MAX_TRACE_CHARS
-from nora.app.cognition_session import SESSION_TOKENS, AdaptorBudget, CognitionRunResult
 from nora.domain.stimuli import LIMIT_STOP_REASONS
 from nora.obs.metrics import Metrics
 from nora.obs.tracing import TRACE_KIND, annotate, span
 
 log = logging.getLogger("nora.app.cognition_agent_runner")
 
-__all__ = ["DreamerAgentRunner", "as_strands_tools"]
+__all__ = [
+    "SESSION_TOKENS", "CognitionAgentRunner", "CognitionRunResult", "DreamerAgentRunner",
+    "TokenSpend", "as_strands_tools",
+]
+
+
+@dataclass(frozen=True)
+class CognitionRunResult:
+    """What one model call returned. `stop_reason` is Strands' own."""
+
+    stop_reason: str | None = None
+    #: Tokens the whole loop spent; `None` when the runner could not read it, never a zero.
+    total_tokens: int | None = None
+    messages: tuple[dict[str, Any], ...] = ()
+    requirements: dict[str, Any] = field(default_factory=dict)
+
+
+class CognitionAgentRunner(Protocol):
+    """The test seam: a constructor argument, never an `_fn` hook. `DreamerAgentRunner` is
+    the production implementation. It RAISES on failure: a model loop that errors or runs
+    out its clock must not read as a pass that returned."""
+
+    async def run(
+        self, *, system_prompt: str, prompt: str, tools: list[Any],
+        budget: AdaptorBudget, trace_attributes: Mapping[str, str],
+    ) -> CognitionRunResult: ...
+
+
+@dataclass
+class TokenSpend:
+    """The tokens one pass's loop spent, as far as the runner could read them, left even
+    when the loop failed or timed out. `None`: unread, never a zero."""
+
+    total: int | None = None
+    messages: tuple[dict[str, Any], ...] = ()
+    requirements: dict[str, Any] = field(default_factory=dict)
+
+
+#: The pass's `TokenSpend`, set around the model loop. A context variable and not a
+#: parameter of `CognitionAgentRunner.run`, so every runner double still satisfies the
+#: Protocol; the holder is shared by reference.
+SESSION_TOKENS: contextvars.ContextVar[TokenSpend | None] = contextvars.ContextVar(
+    "pass_tokens", default=None,
+)
 
 
 class DreamerAgentRunner:
-    """Satisfies `nora.app.cognition_session.CognitionAgentRunner` by
-    delegating to `DreamerRuntime.run_agent` — the one model-invocation
-    route, so a session's model call and every other adaptor's sample have
-    one owner, one deadline vocabulary and one spend handoff."""
+    """Satisfies `CognitionAgentRunner` by delegating to `DreamerRuntime.run_agent`, the
+    one model-invocation route."""
 
     def __init__(
         self, *, runtime: DreamerRuntime, metrics: Metrics | None = None,
@@ -92,9 +127,6 @@ class DreamerAgentRunner:
                 for tool in strands_tools
             }
         guard = self._guard(tool_names, param_names)
-        reservation = (
-            TokenReservation(budget.total_tokens) if budget.reserve_tokens else None
-        )
         with span(
             "dream:cognition",
             **{TRACE_KIND: "generation", "nora.dreamer.adaptor": "cognition",
@@ -104,7 +136,7 @@ class DreamerAgentRunner:
                 result = await self._runtime.run_agent(
                     system_prompt=system_prompt, prompt=prompt,
                     strands_tools=strands_tools, guard=guard,
-                    budget=DreamerBudget(
+                    budget=AdaptorBudget(
                         turns=budget.turns
                         + int(surface is not None and bool(surface.shelf)),
                         total_tokens=budget.total_tokens,
@@ -115,16 +147,15 @@ class DreamerAgentRunner:
                     agent_name=self._agent_name,
                     spend=SESSION_TOKENS.get(),
                     max_trace_chars=DEFAULT_MAX_TRACE_CHARS,
-                    reservation=reservation,
                     tool_hooks=surface.hooks if surface is not None else (),
                 )
             except TimeoutError:
                 annotate(**{"nora.outcome": "timeout"})
-                self._metrics.inc("nora_errors_total", stage="cognition_session")
+                self._metrics.inc("nora_errors_total", stage="cognition_pass")
                 raise
             except Exception:
                 annotate(**{"nora.outcome": "failed"})
-                self._metrics.inc("nora_errors_total", stage="cognition_session")
+                self._metrics.inc("nora_errors_total", stage="cognition_pass")
                 raise
             annotate(**{"nora.outcome": (
                 "failed" if result.stop_reason in LIMIT_STOP_REASONS else "ok")})

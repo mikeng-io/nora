@@ -2477,12 +2477,9 @@ class MemoryConfig(BaseModel):
 
 
 class LessonsConfig(BaseModel):
-    """`[lessons]`: lessons, written by the unit's Cognition session, which is
-    shown the closed `response` episodes past its lessons cursor and writes
-    through `lesson_write` and `lesson_retire`.
+    """`[lessons]`: the lesson settings the graph's lesson check reads.
 
-    **Off by default, and off is the safe reading.** On, the session writes lessons
-    into its store. Needs `[cognition] enabled`. The old key `render` is refused at
+    **Off by default, and off is the safe reading.** The old key `render` is refused at
     load: tag and fire turns read the graph's lessons.
     """
 
@@ -2930,15 +2927,9 @@ class DreamerConfig(BaseModel):
 
 
 class CognitionConfig(BaseModel):
-    """The cognition loop: stimuli, the wake evaluator and the Cognition session,
-    the one background writer of the notebook, events, Standing and Nora's own
-    reminders.
-
-    **Ships OFF** (`enabled = false`): off, the ingest pipeline builds no
-    stimulus stage, no evaluator is spawned and no session runs. On, every
-    recorded person-authored item appends a stimulus with its cues, the
-    evaluator ticks every `tick_seconds` and starts a session on each wake.
-    Undo is this flag and a restart.
+    """The graph wake and review passes' settings. There is no on/off key: the wake
+    builds whenever `[dreamer] enabled` gives it a model runtime, and `enabled` here
+    is refused at load.
 
     `floor_grace_seconds` bounds how late a daily floor can be raised. A restart
     at 07:02 raises the 07:00 floor, while a restart at 15:00 skips it.
@@ -2946,7 +2937,6 @@ class CognitionConfig(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    enabled: bool = False
     tick_seconds: float = Field(default=30.0, gt=0)
     quiet_seconds: float = Field(default=1800.0, ge=0)
     cue_quiet_seconds: float = Field(default=120.0, ge=0)
@@ -2976,9 +2966,8 @@ class CognitionConfig(BaseModel):
     #: Strikes after which an item's stimuli are struck (`struck`); a starting value.
     # DEC-242: how long a TRACKED wake may stay OPEN (no outcome row) before it is
     # EXPIRED and read as failed: its unit stops being in flight and its stimuli are
-    # pending again. The session's own wall clock (`AdaptorBudget.timeout_seconds`)
-    # must end at least `nora.app.cognition_session.SESSION_TIMEOUT_MARGIN_SECONDS`
-    # before it (the runner refuses to start otherwise).
+    # pending again. The pass's own wall clock (`AdaptorBudget.timeout_seconds`)
+    # must end before it.
     session_timeout_seconds: float = Field(default=3900.0, gt=0)
     #: At most this many self-set wakes pending per unit; a starting value.
     max_self_wakes: int = Field(default=5, ge=1)
@@ -3909,34 +3898,11 @@ class Config(BaseModel):
         return self
 
     @model_validator(mode="after")
-    def _cognition_sessions_need_the_dreamer(self) -> Config:
-        """A Cognition session borrows the Dreamer's model source, tool source
-        and objective corpus, so `[cognition]
-        enabled = true` with `[dreamer] enabled = false` would build an
-        evaluator whose hook has nothing to run on. Refused at load, where the
-        operator is looking, not discovered as a session that never starts."""
-        if self.cognition.enabled and not self.dreamer.enabled:
-            raise ValueError(
-                "[cognition] enabled = true needs [dreamer] enabled = true: "
-                "a session runs on the Dreamer's model, tools and objectives"
-            )
-        return self
-
-    @model_validator(mode="after")
-    def _lessons_need_cognition(self) -> Config:
-        """Lessons are written by the Cognition session (its `lesson_write`
-        and `lesson_retire` verbs); `[lessons] enabled` without Cognition
-        would build nothing and say nothing. Cognition itself needs the
-        Dreamer, checked above."""
-        if self.lessons.enabled and not self.cognition.enabled:
-            raise ValueError(
-                "[lessons] enabled = true needs [cognition] enabled = true: "
-                "the Cognition session writes lessons"
-            )
-        # The doctrine check is "a model other than the session": a judge on the
-        # writer's own model grades its own homework. Compared by the configured
-        # name, so an operator who points two aliases at one model is not caught; a
-        # same-name one is.
+    def _the_lesson_judge_is_not_the_writer(self) -> Config:
+        """The doctrine check is "a model other than the wake": a judge on the
+        writer's own model grades its own homework. Compared by the configured
+        name, so an operator who points two aliases at one model is not caught; a
+        same-name one is."""
         judge = self.lessons.check_model or self.llm.model
         if self.lessons.enabled and judge == self.dreamer_model():
             raise ValueError(
@@ -3970,23 +3936,6 @@ class Config(BaseModel):
         return self
 
     @model_validator(mode="after")
-    def _cognition_sessions_need_their_own_budget(self) -> Config:
-        """`[cognition] enabled = true` REFUSES to load without an explicit
-        `[dreamer.budgets.cognition]` block. `budget_for` answers an adaptor with
-        no block from the class defaults (6 turns, 40k tokens, 120 s), which is a
-        budget nobody chose for a session that reads and writes across up to
-        `max_items` items. The block is in `config.example.toml`; a deployment that
-        turns sessions on copies it, or sizes its own."""
-        if self.cognition.enabled and "cognition" not in self.dreamer.budgets:
-            raise ValueError(
-                "[cognition] enabled = true needs an explicit "
-                "[dreamer.budgets.cognition] block: without one the session silently "
-                "runs on the code defaults (200 turns, 10.24M tokens, 3600 s). Copy the block "
-                "from config.example.toml or size your own"
-            )
-        return self
-
-    @model_validator(mode="after")
     def _subagent_has_no_call_ceilings(self) -> Config:
         """`[dreamer.budgets.subagent]` names no per-tool, memory or pass-wide call ceiling
         (DEC-247: the worker is bounded by rounds, tokens and time, never per tool).
@@ -4012,10 +3961,9 @@ class Config(BaseModel):
     @model_validator(mode="after")
     def _subagent_needs_its_own_budget(self) -> Config:
         """`[subagent] enabled = true` REFUSES to load without an explicit
-        `[dreamer.budgets.subagent]` block, for `_cognition_sessions_need_their_own_budget`'s
-        reason: `budget_for` would answer a missing block from the class defaults (6 turns, 40k
-        tokens, 120 s), a budget nobody chose for a job that runs for minutes. The block is in
-        `config.example.toml`."""
+        `[dreamer.budgets.subagent]` block: `budget_for` would answer a missing block from the
+        class defaults (6 turns, 40k tokens, 120 s), a budget nobody chose for a job that runs
+        for minutes. The block is in `config.example.toml`."""
         if self.subagent.enabled and "subagent" not in self.dreamer.budgets:
             raise ValueError(
                 "[subagent] enabled = true needs an explicit [dreamer.budgets.subagent] "

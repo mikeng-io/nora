@@ -57,6 +57,9 @@ def is_live_actor(actor: str) -> bool:
     return actor in LIVE_ACTORS
 DREAMER_ACTOR_PREFIX = "dreamer:"
 
+#: The Dreamer adaptor whose tools identify people by id.
+COGNITION_ADAPTOR = "cognition"
+
 #: How the call reached the computer (`ComputerEvent.path`). `direct` is a
 #: tool call from Nora's own loop; `subagent` is a call made by a background
 #: worker acting on her behalf.

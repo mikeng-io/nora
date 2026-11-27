@@ -88,7 +88,7 @@ from nora.infra.sql.tag_traces import _json_to_row
 
 from .obtain import Subject
 
-__all__ = ["FoldCall", "FoldTurn", "Folded", "fold", "fold_recorded_unit", "read_fold_turn"]
+__all__ = ["FoldCall", "FoldTurn", "Folded", "fold", "read_fold_turn"]
 
 #: The counter every exit of the debrief lands on exactly once
 #: (`nora.engagement.stages.debrief.run`'s own docstring). Reading its delta is
@@ -452,95 +452,3 @@ async def fold(
         outcome=outcome, position=position, working_set=working_set,
         calls=tuple(recorder.calls),
     )
-
-
-async def fold_recorded_unit(
-    subject: Subject, *, source_url: str, tag_id: str, now_ms: int,
-    call_model: bool = True, generated_record_text: str | None = None,
-) -> tuple[Folded, str, str]:
-    """Fold a retained Cognition Record through its composed completion hook.
-
-    The full-restore corpus preserves IDs and the unit's stores. No Cognition
-    session is rerun, and no action is sent; only the tools-less updater runs.
-    """
-    import dataclasses
-
-    from nora.domain.rollup import room_key
-    from nora.domain.standing import DEFAULT_STANDING_MAX_CHARS
-    from nora.domain.turn_record import cited_turn_lineage
-    from nora.engagement.debrief_render import fold_prompt, render_debrief_input
-    from nora.infra.sql import create_readonly_sql_engine
-    from nora.infra.sql.tag_traces import SqlTagTraceStore
-    from nora.language.shared_render import render_shared_state
-
-    runner = subject.deps.cognition_runner
-    wiring = subject.deps.engagement._standing_replay_wiring
-    if runner is None or runner._standing_fold is None or wiring is None:
-        raise LookupError("unit Standing completion hook unavailable")
-    engine = create_readonly_sql_engine(source_url)
-    try:
-        trace = await SqlTagTraceStore(engine).by_tag(tag_id=tag_id)
-    finally:
-        await engine.dispose()
-    if (trace is None or trace.occasion != "cognition" or trace.unit != subject.unit
-            or trace.created_at != now_ms or not trace.messages):
-        raise LookupError("anchor must name a complete Cognition Record")
-    if runner._rooms_of_unit is None:
-        raise LookupError("unit room reader unavailable")
-    available = {room_key(*r): r for r in runner._rooms_of_unit(subject.unit)}
-    if not trace.bound_rooms or any(r not in available for r in trace.bound_rooms):
-        raise LookupError("Record rooms do not resolve inside the unit")
-    rooms = tuple(available[r] for r in trace.bound_rooms)
-    if generated_record_text is not None:
-        trace = dataclasses.replace(
-            trace, tag_id=f"generated-unit:{trace.tag_id}", turn_id=None,
-            messages=({"role": "assistant", "content": [{"text": generated_record_text}]},),
-            transcript=(), requirements={}, sent_message_ids=(), outcome="silent",
-        )
-    # Refuse an unresolvable historical source before paying for its fold.
-    cited_turn_lineage(trace, unit=subject.unit)
-    prior = {}
-    for platform, cid in rooms:
-        for entry in await runner._ledger.read(
-            unit=subject.unit, platform=platform, conversation_id=cid,
-        ):
-            if entry.scope == "unit":
-                prior[entry.id] = entry
-    rendered = render_debrief_input(
-        trace=trace, prior=None, display_name=subject.cfg.doctrine.display_name,
-        metrics=subject.deps.metrics, since_rows=(), ledger_prior=tuple(prior.values()),
-    )
-    system, prompt = fold_prompt(
-        instructions=wiring.objective.objective_body("standing-debrief"),
-        rendered=rendered, max_chars=DEFAULT_STANDING_MAX_CHARS,
-        working_set_max_items=0, working_set_max_chars=0,
-        unit=True,
-    )
-    shown = f"SYSTEM\n{system}\nINPUT\n{prompt}"
-    if not call_model:
-        return Folded("preview", None, (), ()), shown, rendered
-    # The ordinary hook resolves the saved Record's own citation handle.
-    if await runner._tag_trace_store.by_tag(tag_id=trace.tag_id) is None:
-        await runner._tag_trace_store.save(trace)
-    before = _outcome_counts(subject)
-    await runner._standing_fold(trace=trace, unit=subject.unit, rooms=rooms)
-    moved = [k for k, v in _outcome_counts(subject).items() if v > before.get(k, 0)]
-    if len(moved) != 1 or moved[0] not in {"written", "no_change"}:
-        raise RuntimeError("unit fold did not complete: " + ",".join(moved))
-    view = await runner._shared(unit=subject.unit, now_ms=now_ms)
-    ledger_entries = tuple(e for e in view.entries
-                           if e.kind in {"decision", "commitment", "thread"} and e.scope == "unit")
-    if not ledger_entries:
-        raise LookupError("unit fold retained no judged state")
-    for platform, cid in rooms:
-        destination = await runner._shared(unit=subject.unit, room=(platform, cid), now_ms=now_ms)
-        # The common view retains a withheld entry's existence. Disclosure
-        # governs its content; it does not require every room to see it.
-        projected = {e.id for e in destination.entries} if destination else set()
-        if (destination is None or destination.unit != subject.unit
-                or not {e.id for e in ledger_entries} <= projected):
-            raise LookupError("unit state is missing in a bound destination")
-    block = render_shared_state(dataclasses.replace(view, entries=ledger_entries), now_ms=now_ms)
-    if block is None:
-        raise LookupError("unit Standing projection unavailable")
-    return Folded(moved[0], block.body.text, (), ()), shown, rendered

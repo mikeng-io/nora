@@ -470,11 +470,9 @@ async def run_until_stopped(
     """Run `app` until it ends or a stop signal arrives, then shut it down.
 
     Without a SIGTERM handler the process dies on the signal without
-    unwinding: `finally` never runs, so `App.shutdown` (and with it
-    `CognitionShutdown`, which waits for remaining session outcome writes)
-    would be reachable only by SIGINT. `docker stop` sends SIGTERM, so a
-    restart would kill sessions mid-flight and leave their wakes open to hold
-    their units for the rest of the session timeout. (`uv run`, the image's
+    unwinding: `finally` never runs, so `App.shutdown` would be
+    reachable only by SIGINT. `docker stop` sends SIGTERM, so a restart would kill work
+    mid-flight. (`uv run`, the image's
     entrypoint, forwards SIGTERM to the process it spawns.)
 
     The first signal cancels `app.run()`, which stops the adapters and every

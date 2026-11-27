@@ -20,8 +20,6 @@ def build_review_runner(
     cfg: Config, instructions: DreamerInstructions, tools: DreamToolSource,
     model_client_for: Callable[[str], AsyncOpenAI], metrics: Metrics,
 ) -> tuple[DreamerAgentRunner, str] | None:
-    if not cfg.cognition.enabled:
-        return None
     model = independent_judge_model(cfg)
     try:
         instructions.for_objective("review")

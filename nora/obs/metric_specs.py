@@ -15,10 +15,8 @@ from typing import NamedTuple
 
 from nora.domain.assess import DQ_CHECKS
 from nora.domain.comprehend import (
-    EGRESS_REASONS,
     ITEM_OUTCOMES,
     LANES,
-    LOOKUPS,
     PARTS,
     REFUSAL_REASONS,
 )
@@ -57,9 +55,7 @@ from nora.domain.social_stream import (
 )
 from nora.domain.speech_markup import FORMAT_OUTCOMES
 from nora.domain.stimuli import (
-    LIMIT_STOP_REASONS,
     STIMULUS_KINDS,
-    WAKE_BRAKES,
     WAKE_MODES,
     WAKE_REASONS,
 )
@@ -126,11 +122,6 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
     _CounterSpec("nora_comprehend_refused_parts_total",
                  f"Refused parts {PARTS}, reasons {REFUSAL_REASONS}.",
                  ("part", "reason")),
-    _CounterSpec("nora_comprehend_egress_refusals_total",
-                 f"Web calls refused before egress: {EGRESS_REASONS}.",
-                 ("reason",)),
-    _CounterSpec("nora_comprehend_web_lookups_total", f"Outbound web lookups attempted: {LOOKUPS}.",
-                 ("tool",)),
 
     # The OAuth keepalive (DEC-308, `nora.app.oauth_keepalive`). The alert reads
     # the timestamp gauges below, never these: a rare counter reads empty after a
@@ -1353,19 +1344,6 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "nothing (an instrument error is never a pass).",
         ("outcome",),
     ),
-    _CounterSpec(
-        "nora_lessons_correction_wake_total",
-        "Cognition sessions handed a correction by the fast path (L4): a "
-        "message that spoke to her and read as an instruction about how she "
-        "acts.",
-        (),
-    ),
-    _CounterSpec(
-        "nora_self_tension_total",
-        "Tension rows: a lesson refused because it would loosen or contradict a "
-        "law rule, by the doctrine file of that rule. Operator-only.",
-        ("doctrine_file",),
-    ),
     # The OmniRoute Chat Completions transport drops `reasoningContent` in a
     # multi-turn position; it does not raise, the loop runs on and the turn speaks
     # with its reasoning gone.
@@ -1463,82 +1441,6 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "its reason and stimulus range in cognition_wake.",
         ("reason", "mode"),
     ),
-    _CounterSpec(
-        "nora_cognition_wake_reclaimed_total",
-        "Wakes a previous process left open (a tracked wake with no outcome row, "
-        "recorded before this process started) that this process released at "
-        "boot, recorded `cancelled` with a restart detail. Each one is a session "
-        "a restart killed that would otherwise have held its unit single-flight "
-        "for the rest of session_timeout_seconds and then counted as a failure. "
-        "Written once at start, so a value above 0 reads «the previous process "
-        "ended with sessions in flight».",
-    ),
-    _CounterSpec(
-        "nora_cognition_session_total",
-        "Cognition sessions started: one per wake whose agenda was non-empty, "
-        "session row recorded before the model call.",
-        ("mode",),
-    ),
-    _CounterSpec(
-        "nora_cognition_session_skipped_total",
-        "Wakes on which no Cognition session ran, by reason "
-        "(no_home_room, also recorded failed so its stimuli stay pending / "
-        "empty_agenda). No model call is made on either.",
-        ("reason",),
-    ),
-    _CounterSpec(
-        "nora_cognition_session_ended_total",
-        "Tracked Cognition wakes whose outcome this process wrote, by outcome "
-        "(closed / failed / timeout / cancelled). Only closed advances the "
-        "unit's watermark; the other three return the wake's stimuli to "
-        "pending (20 §3). A wake that expires with no outcome (a crash, a "
-        "failed write) is not counted here: it is read as failed.",
-        ("outcome",),
-    ),
-    _CounterSpec(
-        "nora_cognition_session_limit_total",
-        "Cognition sessions whose model loop stopped at one of its bounds ("
-        + " / ".join(LIMIT_STOP_REASONS)
-        + "), by which. Each is recorded as a FAILED wake with cause infra "
-        "(nothing closed or struck, the stimuli stay pending, the failure "
-        "backoff applies), so it also counts in "
-        "nora_cognition_session_ended_total{outcome=failed}. A rising rate is "
-        "a session that cannot finish inside its bounds (DEC-247).",
-        ("limit",),
-    ),
-    _CounterSpec(
-        "nora_cognition_carry_total",
-        "Stimuli a closed Cognition session returned to the next agenda, by "
-        "state: carried defers unseen input; released consumes a prior carry.",
-        ("state",),
-    ),
-    _CounterSpec(
-        "nora_cognition_stimuli_skipped_total",
-        "Wakes that skipped stimuli a session could not read, by reason: "
-        "unreadable_rollup is a Rollup stimulus whose ref did not parse (consumed); "
-        "roster_miss_rollup names a person the roster does not know yet (retained "
-        "as a waiting carry, DEC-245). It counts the wakes, and the skipped ids "
-        "are on the session row (agenda.skipped_stimulus_ids, retained_stimulus_ids).",
-        ("reason",),
-    ),
-    _CounterSpec(
-        "nora_cognition_stimuli_struck_total",
-        "Stimuli code struck (retracted) so a unit stops re-waking on input it "
-        "cannot process, by reason: failed is the stimuli the failing wakes "
-        "claimed, struck once a unit has failed max_consecutive_failures "
-        "sessions in a row (#637 review, major 1). A count of stimuli, not of "
-        "wakes; one strike event increments by however many it struck.",
-        ("reason",),
-    ),
-    _CounterSpec(
-        "nora_cognition_wake_deferred_total",
-        "Unit-ticks where a wake trigger held and a brake stopped it, by "
-        "brake ("
-        + " / ".join(WAKE_BRAKES)
-        + "). Counted once per unit per ~30s tick while it holds, so it "
-        "measures how long brakes hold, not how many wakes they stopped.",
-        ("brake",),
-    ),
     # The session's own outcomes. None of the four carries a room, a person, a
     # unit or any text as a label: each label is a closed vocabulary the code
     # owns.
@@ -1562,14 +1464,6 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "could not read its usage adds nothing, so the series is absent for it "
         "rather than zero.",
         ("unit_kind",),
-    ),
-    _CounterSpec(
-        "nora_self_wake_total",
-        "Self-wake calls and firings, by outcome: created / moved / cancelled "
-        "(a `wake_at`, `wake_move` or `wake_cancel` the code accepted), refused "
-        "(it did not), and fired (a closed session picked a due self-wake up "
-        "onto its agenda).",
-        ("outcome",),
     ),
     # The Assess adaptor's nightly data-quality checks. ONE INCREMENT PER
     # (run, check) when a check's status is `fail`, never per offending row, so this
@@ -1864,17 +1758,6 @@ _GAUGES: tuple[_GaugeSpec, ...] = (
         "issuer refused the refresh token, or the state file is unwritable); 0 "
         "after a success or at registration.",
         ("lane",),
-    ),
-    # The divergence itself, which IS the failure rather than a proxy for it:
-    # nora's belief on one side, the controller's own report on the other. Both 1 =
-    # agreement. expected=1 with controller=0 sustained is the failure shape.
-    _GaugeSpec(
-        "nora_cognition_session_units",
-        "Units by whether a Cognition session can run for them: state=runnable "
-        "(a home_room = true room in policy.toml, woken by the evaluator) or "
-        "no_home_room (never woken). Set at boot with [cognition] enabled; a "
-        "non-zero no_home_room is a unit the loop does not cover.",
-        ("state",),
     ),
     _GaugeSpec(
         "nora_music_expected_playing",

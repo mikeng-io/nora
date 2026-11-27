@@ -33,7 +33,7 @@ from nora.agent.toolkit.transcript import (
     _transcript_messages,
 )
 from nora.agent.turn_recording import record_requirement
-from nora.domain.cognition_session import COGNITION_ADAPTOR
+from nora.domain.computer_events import COGNITION_ADAPTOR
 from nora.domain.lineage import (
     LiveRoom,
     RoomFacts,

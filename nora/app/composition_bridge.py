@@ -25,7 +25,7 @@ async def runtime(
     allowlist: Any, cfg: Any, engagement: Any, engine: Any,
     fire_path: Any, ingest: Any, metrics: Any,
     observation_store: Any, onboarding: Any, participation_trigger: Any,
-    persons: Any, policy: Any, registry: Any, slots: Any, stimulus_wiring: Any,
+    persons: Any, policy: Any, registry: Any, slots: Any,
     access: Any = None, room_command: Any = None, owner: Any = None,
 ) -> RuntimeWiring:
 
@@ -75,7 +75,6 @@ async def runtime(
             # Absorption is a PER-MESSAGE admission fact, never a wiring constant: each obligation
             # carries the value canonical policy computed at ingest, and the deferred executor
             # rechecks the allowlist as it stands when the work actually runs.
-            stimulus=stimulus_wiring,
             lease_seconds=cfg.bridges.lease_seconds,
             allowlist=allowlist,
             persons=persons,

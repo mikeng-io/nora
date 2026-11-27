@@ -37,8 +37,8 @@ _TOOL_RESULT_CAPS: Mapping[str, int] = {
     "memory_read": MAX_MEMORY_RESULT_CHARS,
 }
 
-#: The same table under a public name, for the Cognition session's guard
-#: (`nora.app.cognition_wiring`): one table, two readers, never a second copy.
+#: The same table under a public name, for the wake and review guards: one table,
+#: never a second copy.
 TOOL_RESULT_CAPS: Mapping[str, int] = _TOOL_RESULT_CAPS
 
 @dataclass(frozen=True)
@@ -77,16 +77,6 @@ class AdaptorGrant:
     """Permission to bind read tools to the agenda room."""
 
     home_room: bool = False
-
-
-def cognition_grant() -> AdaptorGrant:
-    """The Cognition adaptor's grant: a real room, and NO act verb. Its write, pace
-    and act verbs are not registry tools at all: the session holds them as its own
-    closures (`nora.app.cognition_session`), so nothing here widens the read-only
-    ceiling. It is SCOPE-resolved (`RegistryToolSource.build` with the agenda
-    item's room as the key), so lineage and the roster's disclosure guard are the
-    room's own."""
-    return AdaptorGrant(home_room=True)
 
 
 class DreamToolSource(Protocol):

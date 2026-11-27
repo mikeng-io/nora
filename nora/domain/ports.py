@@ -140,7 +140,6 @@ from enum import StrEnum
 from typing import Any, Literal, Protocol, runtime_checkable
 from uuid import UUID
 
-from nora.domain.cognition_pace import PendingSelfWake
 from nora.domain.computer import BrowseOutcome as BrowseOutcome
 from nora.domain.computer import BytesResult as BytesResult
 from nora.domain.computer import FileResult as FileResult
@@ -1064,31 +1063,6 @@ class RecordedOutcome:
     written: bool
 
 
-@dataclass(frozen=True)
-class NewCognitionSession:
-    """A session's provenance, as recorded before any write verb is called, so
-    a session is replayable. `situation`/`agenda` are the JSON shapes
-    `nora.domain.cognition_session`'s
-    `Situation.as_dict`/`AgendaItem.as_dict` build; this port does not parse
-    them back."""
-
-    unit: str
-    mode: str
-    started_at_ms: int
-    from_stimulus_id: int
-    through_stimulus_id: int
-    situation: dict[str, object]
-    agenda: dict[str, object]
-    doctrine_sha256: str | None = None
-    skill_versions: dict[str, object] = field(default_factory=dict)
-    config_revision_id: int | None = None
-    model_id: str | None = None
-    model_route: str | None = None
-    wake_id: int | None = None
-
-
-
-
 @runtime_checkable
 class ObservationStore(Protocol):
     """The typed platform-observation Record (docs/design/platform/observations.md
@@ -1215,72 +1189,6 @@ class ObservationStore(Protocol):
         ...
 
     async def aclose(self) -> None: ...
-
-
-@runtime_checkable
-class CognitionStore(Protocol):
-    """A Cognition session's own bookkeeping: `cognition_session` and
-    `cognition_self_wake`, each append-only. The
-    session's writes to the tiers go to the tiers' own stores (notes, events,
-    Standing, reminders), never here.
-    Implementations: `nora.infra.sql.cognition_store.SqlCognitionStore`,
-    `nora.testing.cognition_store.InMemoryCognitionStore`, bound by
-    `tests/contract/test_cognition_store_contract.py`."""
-
-    async def record_session(
-        self, *, session: NewCognitionSession, recorded_at_ms: int,
-    ) -> int:
-        """Append the session row and return its id."""
-        ...
-
-
-    async def record_pace(
-        self, *, pace: NewCognitionPace, recorded_at_ms: int,
-    ) -> int:
-        """Append one pace-verb transition (`wake_at`/`wake_move`/
-        `wake_cancel`) and return its id."""
-        ...
-
-    async def pending_self_wakes(
-        self, *, unit: str, since_ms: int,
-    ) -> Sequence[PendingSelfWake]:
-        """The unit's LIVE pending self-wakes: per `wake_ref`, the newest
-        transition decides. `created`/`moved` is pending; `cancelled`,
-        `fired`, a ref another `created` row superseded, and one whose
-        standing `self` stimulus is retracted are not. BOUNDED: only refs with
-        a transition recorded at or after `since_ms` are read (a caller passes
-        the horizon plus a margin; a ref silent for longer is past due)."""
-        ...
-
-    async def count_self_wakes_created(self, *, unit: str, since_ms: int) -> int:
-        """`created` (recorded, not refused) `wake_at` rows for the unit at or
-        after `since_ms` (the per-day cap's count; moves do not count)."""
-        ...
-
-
-@dataclass(frozen=True)
-class NewCognitionPace:
-    """One pace-verb call (`wake_at`/`wake_move`/`wake_cancel`, the self-wakes), as recorded.
-    `wake_ref` is the stable id a `wake_at` call mints and every later
-    `wake_move`/`wake_cancel` on the same self-wake names; `None` only on a
-    `wake_at` call that was itself refused before a ref existed. `stimulus_id`
-    is the `self` stimulus row this pace call appended to the unit's
-    `stimulus` table (a `self` signal due at `at`), `None`
-    on `wake_move`/`wake_cancel` (no new stimulus) or a refusal."""
-
-    session_id: int | None
-    unit: str
-    verb: str
-    wake_ref: str | None
-    transition: str
-    subject_rows: tuple[str, ...]
-    why: str
-    at_ms: int | None
-    outcome: str
-    refusal_reason: str | None = None
-    refusal_detail: str | None = None
-    stimulus_id: int | None = None
-    supersedes: str | None = None
 
 
 #: How a source's health row came about: a `poll` it made, or a `transition`

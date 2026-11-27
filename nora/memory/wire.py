@@ -52,7 +52,6 @@ from nora.memory.adapters.subject_claims import SqlSubjectClaims
 from nora.memory.adapters.tools import build as _build
 from nora.memory.adapters.tools.notes import _make__resolve
 from nora.memory.adapters.tools.search import GraphReadTools
-from nora.memory.adapters.tools.session import session_verbs as _session_verbs
 from nora.memory.adapters.tools.wake import WAKE_HISTORY_TOOLS as WAKE_HISTORY_TOOLS
 from nora.memory.adapters.tools.wake import WAKE_TOOLS as WAKE_TOOLS
 from nora.memory.adapters.tools.wake import WakeToolSurface as WakeToolSurface
@@ -84,10 +83,6 @@ def subject_claims(engine: AsyncEngine) -> SqlSubjectClaims:
 
 def tool_specs(deps):
     return _build(deps)
-
-
-def session_verbs(deps):
-    return _session_verbs(deps)
 
 
 def delivery_arbitration(engine: AsyncEngine, policy: Policy) -> DeliveryArbitration:

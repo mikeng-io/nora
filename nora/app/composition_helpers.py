@@ -1,19 +1,15 @@
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable, Mapping, Set
+from collections.abc import Awaitable, Callable, Mapping
 from datetime import UTC, datetime
-from typing import Any, cast
+from typing import cast
 
 from openai.types.shared.reasoning_effort import ReasoningEffort
 
-from nora.agent.room import Room
 from nora.app.startup import StartupError
 from nora.config import Config
-from nora.domain.culture import unit_culture_key
-from nora.domain.lessons import CharacterRoom, UnitKey
 from nora.domain.ports import RosterSource
 from nora.engagement.self_presence import PresenceReader
-from nora.persons import Persons
 from nora.platform.discord.adapter import DiscordAdapter
 from nora.platform.discord.bridge_control import BridgeDiscordAdapter
 from nora.platform.instagram.adapter import InstagramAdapter
@@ -99,46 +95,6 @@ def _otp_secrets(cfg: Config)-> tuple[bytes, str]:
 def _now_ms() -> int:
     """Wall-clock epoch milliseconds, the Lessons book's and evidence's clock."""
     return int(datetime.now(UTC).timestamp() * 1000)
-
-
-def character_unit_keys(allowlist: Any)-> dict[str, UnitKey]:
-
-    """One key per unit, with its rooms in policy order."""
-    rooms_of: dict[str, list[CharacterRoom]] = {}
-    for conv in allowlist.rooms():
-        if conv.primary_id and conv.unit and conv.absorbed:
-            rooms_of.setdefault(conv.unit, []).append(
-                CharacterRoom(
-                    key=conv.primary_id,
-                    platform=conv.platform,
-                    label=conv.label,
-                )
-            )
-    return {
-        unit_culture_key(unit): UnitKey(unit=unit, rooms=tuple(rooms))
-        for unit, rooms in rooms_of.items()
-    }
-
-
-def _roster_names_of(
-    rosters: Mapping[str, RosterSource], persons: Persons, self_ids: Set[str],
-) -> Callable[[str, str], Awaitable[Mapping[str, str] | None]]:
-    """A cognition session's roster seam: the room's roster NAMES with their"""
-
-    async def roster_of(platform: str, conversation_id: str)-> Mapping[str, str] | None:
-
-        view = await Room(
-            platform=platform,
-            conversation_id=conversation_id,
-            roster_source=rosters.get(platform),
-            persons=persons,
-            self_ids=self_ids,
-        ).members()
-        if not view.available:
-            return None
-        return {p.name: p.person_id for p in view.people}
-
-    return roster_of
 
 
 def _note_unit_of(policy: Policy)-> Callable[[str, str], str | None]:

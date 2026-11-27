@@ -30,7 +30,7 @@ Framework-free, per `nora/domain/`'s rule: stdlib and dataclasses only.
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 from xml.sax.saxutils import unescape
@@ -210,39 +210,6 @@ def note_handle(title: str) -> str:
     # titled «Dinner\nplan» never matches its displayed one-line form:
     # `_resolve_updates` finds nothing and the pass writes a DUPLICATE.
     return one_line(unescape(title.strip(), _ATTR_ENTITIES)).casefold()
-
-
-def _title_words(title: str) -> frozenset[str]:
-    return frozenset(w for w in note_handle(title).split() if len(w) > 2)
-
-
-def likely_duplicates(notes: Sequence[Note]) -> dict[str, str]:
-    """Note id -> the id of another open note whose title shares at least half
-    of the two titles' words (Jaccard >= 0.5, words of three letters or more):
-    the code-side hint that two notes may track one question. Each note names
-    its most similar partner; a note with none is absent."""
-    words = {n.id: _title_words(n.title) for n in notes}
-    out: dict[str, str] = {}
-    for a in notes:
-        best, score = None, 0.5
-        for b in notes:
-            if a.id == b.id or not words[a.id] or not words[b.id]:
-                continue
-            union = words[a.id] | words[b.id]
-            jaccard = len(words[a.id] & words[b.id]) / len(union)
-            if jaccard >= score:
-                best, score = b.id, jaccard
-        if best is not None:
-            out[a.id] = best
-    return out
-
-
-def has_duplicate_open_title(title: str, open_titles: Sequence[str]) -> bool:
-    """An open title refuses a second note under the same handle. Shared by the
-    Cognition session's note verbs. `open_titles` is input the caller already fetched
-    (`book.standing(unit=...)`'s titles); this function makes no store call."""
-    wanted = note_handle(title)
-    return any(note_handle(t) == wanted for t in open_titles)
 
 
 #: What `escape_attr` writes and `escape` does not, so `note_handle` decodes the
@@ -768,19 +735,6 @@ class NoteMergeDecision:
                 f"a merge reason is at most {MERGE_REASON_MAX_CHARS} "
                 f"characters (got {len(self.reason)}); clip it at the caller"
             )
-
-
-def latest_anchor(first: int | None, second: int | None) -> int | None:
-    """The later of two anchor days, a dated one over a dateless one.
-
-    A survivor that kept its own earlier anchor could be expired on that day
-    with the later question folded inside it.
-    """
-    if first is None:
-        return second
-    if second is None:
-        return first
-    return max(first, second)
 
 
 class StaleNoteHeadError(Exception):

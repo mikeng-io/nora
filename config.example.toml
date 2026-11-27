@@ -158,7 +158,6 @@ mode = "off"
 enabled = false
 
 [cognition]
-enabled = false
 tick_seconds = 30                     # how often the evaluator checks every unit; one read per unit, no model call
 quiet_seconds = 1800
 cue_quiet_seconds = 120               # strong cue (date/time, place link, keep instruction, pending RSVP), then this much quiet

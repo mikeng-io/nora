@@ -34,17 +34,6 @@ deleted at the story bound before it was read (`expired`, no model called). A
 settles. Usage is summed from
 `social_perception`, so a restart keeps it.
 
-**One stimulus per read** (§5). A read that recorded new polled items raises
-one `social` stimulus per unit of its person, once each of its items has an
-attempt on record (perceived, failed or capped), so a session wakes on a
-described story rather than a URL. Its `item` says what the read recorded
-(`read_item`), its `at_ms` when the newest of them was posted, and its cues
-are `cues_of` over the captions and what perception wrote. `ref` names the
-read, and the stimulus table keeps one per `(unit, ref)`, so a pass that
-finds the read again after a restart writes nothing. Back-filled items raise
-none: history is evidence, not news. With `[cognition]` off there is no
-stimulus store and nothing is raised.
-
 **What is read is what may be read** (§2): `SqlSocialStreamStore` leaves out
 an opted-out person's items and every gone or hidden item, for every reader.
 """
@@ -54,24 +43,20 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import Awaitable, Callable, Mapping
-from datetime import UTC, datetime, timedelta, tzinfo
+from datetime import UTC, datetime, tzinfo
 
-from nora.domain.cues import cues_of
 from nora.domain.media import MediaBlob, MediaObject
-from nora.domain.ports import MediaObjectStore, StimulusStore
+from nora.domain.ports import MediaObjectStore
 from nora.domain.social_stream import (
     MAX_PERCEPTION_ATTEMPTS,
-    SOCIAL_READ_REF,
     PerceptionOutcome,
     is_terminal,
     made_no_call,
     perception_allowance,
     perception_context,
-    read_item,
     vision_calls,
 )
-from nora.domain.stimuli import NewStimulus
-from nora.infra.sql.social_stream import SettledRead, SqlSocialStreamStore, Unperceived
+from nora.infra.sql.social_stream import SqlSocialStreamStore, Unperceived
 from nora.ingest.comprehension import MediaComprehension, Perceived, Subject
 from nora.obs.metrics import Metrics
 
@@ -85,7 +70,6 @@ _READ_TOPS = ("image", "video")
 #: How long after a read completes its stimulus may still be raised. A read
 #: waits for its items' perception, at most a day under the cap; past this a
 #: unit the person joins later is not woken for reads that predate it.
-_ANNOUNCE_WITHIN = timedelta(days=2)
 
 
 class SocialPerception:
@@ -95,7 +79,6 @@ class SocialPerception:
         store: SqlSocialStreamStore,
         media_objects: MediaObjectStore,
         comprehension: MediaComprehension | None,
-        stimuli: StimulusStore | None,
         units: Mapping[str, tuple[str, ...]],
         daily_cap: int,
         tz: tzinfo,
@@ -104,19 +87,13 @@ class SocialPerception:
         tick_seconds: float,
         metrics: Metrics,
         batch: int = 50,
-        rooms: Mapping[tuple[str, str], tuple[str, str]] | None = None,
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
     ) -> None:
         self._store = store
         self._media_objects = media_objects
         self._comprehension = comprehension
-        self._stimuli = stimuli
         self._units = units
-        # `(person, unit) -> (platform, conversation_id)`: the room each
-        # stimulus binds (`composition.social_person_rooms`). A pair with none
-        # binds the unit's home room.
-        self._rooms = rooms if rooms is not None else {}
         self._cap = daily_cap
         self._tz = tz
         self._chunk_seconds = chunk_seconds
@@ -138,11 +115,9 @@ class SocialPerception:
                 self._metrics.inc("nora_errors_total", stage="social_perception")
 
     async def tick(self) -> None:
-        """Perceive what is due today, then announce every read whose items
-        are all settled."""
+        """Perceive what is due today."""
         if self._comprehension is not None:
             await self._perceive(self._comprehension)
-        await self._announce()
 
     # -- perception ------------------------------------------------------------
 
@@ -272,52 +247,3 @@ class SocialPerception:
             origin=item.origin, outcome=outcome, calls=calls, at=now, reason=reason or None,
         )
         self._metrics.inc("nora_perception_total", source="social", outcome=outcome)
-
-    # -- the stimulus ----------------------------------------------------------
-
-    async def _announce(self) -> None:
-        if self._stimuli is None:
-            return
-        reads = await self._store.settled_reads(
-            require_perceived=self._comprehension is not None, units=self._units,
-            since=self._clock() - _ANNOUNCE_WITHIN,
-        )
-        for read in reads:
-            units = tuple(u for u in self._units.get(read.person, ()) if u not in read.announced)
-            if not units:
-                continue
-            cues = await self._cues(read)
-            if cues is None:
-                continue
-            stimulus_item = read_item([(i.kind, i.collab) for i in read.items])
-            at_ms = int(max(i.taken_at for i in read.items).timestamp() * 1000)
-            now_ms = int(self._clock().timestamp() * 1000)
-            for unit in units:
-                platform, conversation_id = self._rooms.get((read.person, unit), (None, None))
-                sid = await self._stimuli.append(
-                    stimulus=NewStimulus(
-                        unit=unit, kind="social", item=stimulus_item,
-                        ref=f"{SOCIAL_READ_REF}:{read.read_id}", at_ms=at_ms,
-                        platform=platform, conversation_id=conversation_id,
-                        person_id=read.person, cues=cues,
-                    ),
-                    recorded_at_ms=now_ms,
-                )
-                if sid is not None:
-                    for cue in cues or ("none",):
-                        self._metrics.inc("nora_stimulus_total", kind="social", cue=cue)
-
-    async def _cues(self, read: SettledRead) -> tuple[str, ...] | None:
-        """§3's cues over the read's captions and what perception wrote, or
-        None when the media index could not be read (tried next tick)."""
-        shas = tuple(sha for item in read.items for sha in item.media)
-        texts = [item.caption or "" for item in read.items]
-        if shas:
-            found = await self._media_objects.lookup(sha256s=shas)
-            if not found.available:
-                return None
-            for sha in shas:
-                obj = found.objects.get(sha)
-                if obj is not None:
-                    texts += [obj.title, obj.description, obj.content]
-        return cues_of("\n".join(t for t in texts if t))

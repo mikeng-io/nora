@@ -9,9 +9,9 @@ from datetime import datetime, timedelta
 from typing import Any, Protocol
 from uuid import uuid4
 
-from nora.agent.dreamer import as_strands_tools
+from nora.agent.dreamer import AdaptorBudget, as_strands_tools
 from nora.agent.surface import deferred_surface
-from nora.app.cognition_session import AdaptorBudget, CognitionAgentRunner
+from nora.app.cognition_agent_runner import CognitionAgentRunner
 from nora.domain.blocks import BlockDeclaration, ContextBlock, assemble
 from nora.domain.lineage import room_key
 from nora.engagement.slot_keys import resolve_slot_room

@@ -284,9 +284,8 @@ def presence_audience(
 ) -> PresenceAudience:
     """May a DERIVED-presence answer (a place a person goes, what is usual for
     them) be said in this room? The ONE decision `where_been`/`routine_read`
-    (`nora.agent.tools._presence_audience`) and a Cognition rollup line
-    (`nora.app.cognition_grounding.place_release`) both take, so the two cannot
-    drift (R-35's room-subset rule). Fail-closed: a room that could not be read,
+    (`nora.agent.tools._presence_audience`) and a graph place line both take, so
+    the two cannot drift (R-35's room-subset rule). Fail-closed: a room that could not be read,
     or was read degraded, is `unavailable`; an unnamed account is `unnamed` and a
     room not a subset of `circle` is `not_subset`, both waived only by a
     location-trusted room (DEC-79)."""

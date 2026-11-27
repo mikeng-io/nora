@@ -11,11 +11,6 @@ COMPOSERS = frozenset(
     {
         "nora.memory.adapters.presentation_blocks:_graph_block",
         "nora.app.proactive_fire:_floor",
-        "nora.language.register_render:render_register",
-        "nora.language.cognition_render:_grounded_blocks",
-        "nora.language.cognition_render:_item_blocks",
-        "nora.language.lesson_render:lesson_evidence_blocks",
-        "nora.language.cognition_render:render_agenda",
         "nora.language.context_render:render_clock",
         "nora.language.context_render:render_reads",
         "nora.language.catalogue_render:render_tool_catalogue",
@@ -74,7 +69,6 @@ LEGACY_COMPOSERS = frozenset(
         "nora.agent.prefill:_standing_block",
         "nora.agent.speech_format:render_input",
         "nora.ingest.relevance_gate:render_context",
-        "nora.language.confirmation_render:confirmation_prompts",
         "nora.subject.context_selector_render:selector_prompt",
     }
 )

@@ -6,9 +6,6 @@ from typing import Literal, Protocol
 from nora.domain.lineage import Lineage
 from nora.domain.memory_graph import RECORD, ROLLUP, Key
 
-#: One account's text, like `MEMO_BODY_MAX_CHARS` for a memo.
-TOPIC_BODY_MAX_CHARS = 1600
-
 
 @dataclass(frozen=True)
 class EntryContent:

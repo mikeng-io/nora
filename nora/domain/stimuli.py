@@ -61,9 +61,9 @@ stimuli a CLOSED wake returned to the next agenda with a strike.
 from __future__ import annotations
 
 import re
-from collections.abc import Awaitable, Iterable, Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field, replace
-from typing import Literal, Protocol, get_args
+from typing import Literal, get_args
 
 from .cues import is_rearming, is_strong
 from .ticks import due_tick_of_ms, tick_of_ms, tick_start_ms
@@ -76,9 +76,6 @@ StimulusKind = Literal[
 ]
 STIMULUS_KINDS: tuple[str, ...] = get_args(StimulusKind)
 
-#: What a `message` stimulus's item was (including an edit,
-#: reaction or delete); other kinds name their own producer's item.
-MessageItem = Literal["message", "edit", "reaction", "delete"]
 
 #: The wake reasons, in the table's order — the order `decide` tries them
 #: in and the label vocabulary of `nora_cognition_wake_total{reason}`. No
@@ -274,19 +271,13 @@ OUTCOME_CAUSES: tuple[str, ...] = (*FAILURE_CAUSES, NO_CAUSE)
 
 
 #: What a `cancelled` outcome's `detail` starts with when a PROCESS RESTART ended
-#: the wake: the session was cancelled as the process stopped
-#: (`CognitionSessionRunner`), or the next process found the wake open with no
-#: process left to own it (`WakeEvaluator.reclaim_orphans`). A restart is not a
+#: the wake: the pass was cancelled as the process stopped, or the next process found
+#: the wake open with no process left to own it. A restart is not a
 #: failure of the session, the agenda or the world, so it takes no cause of its
 #: own: `cancelled` already neither counts toward the failure backoff nor strikes
 #: (`failure_streak`), and the detail is what tells an operator why
 #: (the session's `cancelled` outcome carries it).
 RESTART_DETAIL = "restart"
-
-
-def restart_detail(why: str) -> str:
-    """The `detail` of a `cancelled` outcome a restart caused."""
-    return f"{RESTART_DETAIL}: {why}"
 
 
 def is_restart_detail(detail: str) -> bool:
@@ -303,23 +294,10 @@ def stored_cause(outcome: str, cause: str) -> str:
 #: rounds, total tokens, output tokens. The loop RETURNS normally on each (no
 #: exception), so a caller that reads only «it returned» takes a session that
 #: never got to finish for one that did. Duplicated nowhere: the metric's label
-#: vocabulary and `nora.app.cognition_session` both read this.
+#: vocabulary and the wake pass both read this.
 LIMIT_STOP_REASONS: tuple[str, ...] = (
     "limit_turns", "limit_total_tokens", "limit_output_tokens",
 )
-
-
-class SessionLimitError(Exception):
-    """A session's loop stopped at one of its bounds (`LIMIT_STOP_REASONS`)
-    before it finished. Raised by the session runner so the wake is recorded
-    `failed`, and `classify_failure` calls it `infra`: a session that ran out
-    of rounds, tokens or time did not prove the agenda was at fault (a runaway
-    loop is the model's, and one run says nothing about the stimuli), so
-    nothing is struck and the stimuli stay pending (DEC-244, DEC-247)."""
-
-    def __init__(self, stop_reason: str) -> None:
-        super().__init__(f"the session stopped at its bound: {stop_reason}")
-        self.stop_reason = stop_reason
 
 
 class AgendaError(Exception):
@@ -419,16 +397,6 @@ def transport_evidence(exc: BaseException) -> bool:
     return False
 
 
-#: A lower bound on tokens: characters over this. English runs about 4 chars a
-#: token and CJK about 1, so the estimate never overstates the prompt, and a
-#: prompt it calls large IS large.
-CHARS_PER_TOKEN_LOWER_BOUND = 4
-
-
-def estimate_tokens_lower_bound(*texts: str) -> int:
-    return sum(len(t) for t in texts) // CHARS_PER_TOKEN_LOWER_BOUND
-
-
 def prove_overflow_is_the_agenda(
     exc: BaseException, *, estimated_tokens: int, window_tokens: int | None,
     window_fraction: float, previously_overflowed: bool,
@@ -453,14 +421,6 @@ def prove_overflow_is_the_agenda(
 #: How a tracked wake ended (`cognition_wake_outcome`). Only `closed` advances
 #: the watermark; the other three return the wake's stimuli to pending.
 WAKE_OUTCOMES: tuple[str, ...] = ("closed", "failed", "timeout", "cancelled")
-
-
-def inert_kinds_for(*, tracked: bool, floors_ready: bool) -> frozenset[str]:
-    """Stimulus kinds that stay pending but neither wake the unit nor are claimed
-    by any wake: `time`, while sessions are tracked and no skill ships for the
-    `time` agenda kind (DEC-245). Every reader of «what could wake this unit»
-    (`decide`, the age gauge, the health command) takes the set from here."""
-    return frozenset({"time"}) if tracked and not floors_ready else frozenset()
 
 
 @dataclass(frozen=True)
@@ -610,19 +570,6 @@ class UnitView:
     @property
     def watermark(self) -> Watermark:
         return self.mark if self.mark is not None else Watermark.of(self.last_wake)
-
-
-class WakeHook(Protocol):
-    """The ONE typed shape of the evaluator's `on_wake` extension point
-    (`nora.app.wake.WakeEvaluator`) and of what fills it
-    (`nora.app.cognition_session.CognitionSessionRunner.on_wake`). Keyword
-    only, so neither side can drift into a positional order the other does
-    not share. `now_ms` is the tick's clock, the same instant the wake row
-    was decided at."""
-
-    def __call__(
-        self, *, unit: str, view: UnitView, wake_id: int, now_ms: int,
-    ) -> Awaitable[object]: ...
 
 
 @dataclass(frozen=True)

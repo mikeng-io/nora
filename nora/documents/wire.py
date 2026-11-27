@@ -1,12 +1,10 @@
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
-from nora.agent.egress import scan_reply
-from nora.app.cognition_wiring import context_screen as cognition_context_screen_fn
-from nora.app.cognition_wiring import shared_document_room
+from nora.agent.egress import LeakGuard, scan_reply
 from nora.app.startup import StartupError
 from nora.documents.adapters.tools import build as _build
-from nora.documents.adapters.tools import session_tool_specs as _session_tool_specs
 from nora.domain.documents import DocumentStore
 from nora.infra.sql.documents import SqlDocumentStore
 
@@ -15,11 +13,6 @@ from nora.infra.sql.documents import SqlDocumentStore
 
 def tool_specs(deps):
     return _build(deps)
-
-
-def session_tool_specs(service, reader, authority):
-    """A session's document tools, bound to its own capability (never a person)."""
-    return _session_tool_specs(service, reader, authority)
 
 
 @dataclass(frozen=True)
@@ -38,9 +31,36 @@ class GroundWiring:
     cognition_shared_document_room: Any
 
 
+def context_screen(
+    *, content_checks: Any, doctrine_store: Callable[[], Any], canary: Any,
+) -> Callable[[str], str | None]:
+    """The autonomous read's screen: the reply scan plus the doctrine canary.
+    `doctrine_store` is a getter, because it is built after the screen is bound."""
+    def screen(text: str) -> str | None:
+        return scan_reply(text, content_checks=content_checks) or LeakGuard(
+            doctrine_store().get(applies_to="cognition"), canary
+        ).check(text)
+    return screen
+
+
+def shared_document_room(
+    *, allowlist: Any, persons: Any, access: Any = None,
+) -> Callable[[str, str, str], bool]:
+    """A room the unit's own identified persons share, for document reads."""
+    def shared(unit: str, platform: str, cid: str) -> bool:
+        if access is not None and not access.is_file_backend:
+            # Known-person containment needs the selected backend's async read; this is a
+            # sync surface, so managed mode refuses rather than trusting a stale file roster.
+            return False
+        c = allowlist.conversation(platform, cid)
+        return bool(c is not None and c.unit == unit and c.persons
+                    and c.persons <= persons.by_person.keys())
+    return shared
+
+
 def ground(allowlist, cfg, content_checks, doctrine_store, persons, access=None) -> GroundWiring:
     _require_a_sendable_public_url(cfg.documents.public_url, content_checks=content_checks)
-    cognition_context_screen = cognition_context_screen_fn(
+    cognition_context_screen = context_screen(
         content_checks=content_checks,
         doctrine_store=doctrine_store,
         canary=cfg.doctrine.canary,

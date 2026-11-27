@@ -39,11 +39,11 @@ from nora.agent.toolkit.ports import (
 from nora.agent.toolkit.results import _record, _record_media
 from nora.agent.toolkit.rooms import _known_names
 from nora.agent.video_desk import VideoDesk
-from nora.domain.cognition_session import COGNITION_ADAPTOR
 from nora.domain.computer import (
     ComputerToolSettings,
 )
 from nora.domain.computer_events import (
+    COGNITION_ADAPTOR,
     DREAMER_ACTOR_PREFIX,
     ComputerEventStore,
 )
