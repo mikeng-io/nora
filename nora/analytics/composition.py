@@ -41,7 +41,6 @@ from nora.infra.sql.mobility import SqlMobilityStore
 from nora.infra.sql.presence import PresenceStore
 from nora.infra.sql.rollups import SqlRollupStore, UnitRooms
 from nora.infra.sql.social_stream import readable_social_store
-from nora.infra.sql.stimuli import SqlStimulusStore
 from nora.obs.metrics import Metrics
 from nora.persons import Persons, PersonsError
 from nora.policy import Policy, PolicyError, load_policy
@@ -264,9 +263,7 @@ def build_rollup(
         response_window_seconds=analytics.response_window_seconds,
         follow_window_seconds=analytics.follow_window_seconds,
         follow_names=tuple(analytics.follow_names),
-        stimulus_horizon_seconds=analytics.stimulus_horizon_seconds,
         deviation_silence_days=analytics.deviation_silence_days,
-        deviation_stimuli_per_person_per_day=analytics.deviation_stimuli_per_person_per_day,
         health_max_poll_gap_seconds=analytics.health_max_poll_gap_seconds,
         tz_name=analytics.tz_name,
     )
@@ -282,7 +279,6 @@ def build_rollup(
     social = readable_social_store(engine, inputs if inputs is not None else persons)
     unit_rollups = UnitRollups(
         store=rollups, config=unit_config, units=units, people=people,
-        stimuli=SqlStimulusStore(engine), metrics=metrics,
         social=social, access=access,
         areas=geocode_cache,
     )

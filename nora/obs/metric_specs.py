@@ -732,19 +732,6 @@ _COUNTERS: tuple[_CounterSpec, ...] = (
         "gained samples).",
         ("subject", "outcome"),
     ),
-    # Each Rollup stimulus the unit rollups tried to raise. `duplicate` is the
-    # steady state for a co-location still starting on the next run (the stimulus
-    # table keeps one per row); `unhealthy` is a deviation withheld because a source
-    # it rests on was not proved healthy for its span (D3): a rise there is an
-    # outage, not a quiet week; `capped` is a deviation past the per-person per-day
-    # cap (D3, DEC-245).
-    _CounterSpec(
-        "nora_rollup_stimuli_total",
-        "Rollup stimuli the unit rollups tried to raise, by kind "
-        "(colocation_start, arrival, deviation) and outcome (raised, "
-        "duplicate, unhealthy, capped).",
-        ("kind", "outcome"),
-    ),
     # The READ half's counter (DEC-56). `cached` is the axis that makes "MiMo is
     # never actually called" readable: a cache hit and a miss are the SAME
     # status=ok, and only this label tells them apart. Its own series rather than

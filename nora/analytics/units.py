@@ -8,52 +8,33 @@ same code for an incremental run and a rebuild, and it computes every row of
 every unit on every run, so the rows at a watermark are one answer however
 the runs fell (`tests/integration/test_rollup_determinism.py`).
 
-It then raises the Rollup's stimuli into the per-unit `stimulus` table the
-wake evaluator reads:
-
-- **co-location start** — a co-location still open on the Record's clock
-  that began within `stimulus_horizon_seconds`;
-- **arrival at an event's place** — a member's stay in progress, begun within
-  the horizon, inside a place an open event names. Events are step 2b's:
-  `EventPlaces` is the hook, and until a producer exists it names none;
-- **deviation** — a newly closed stay the rhythm scores anomalous, or
-  `deviation_silence_days` consecutive daybooks silent in every room and
-  never at home, raised ONLY when every source it rests on is proved healthy
-  for the span: the collector polled the person's circles
-  throughout (`polls_healthy`) and, for silence, every platform of the
-  unit's rooms was up throughout (`adapter_up`). Missing data from an outage
-  is not absence of activity (R-27).
-
-Each stimulus's `ref` names the row that raised it, and the table keeps one
-per `(unit, ref)` (migration 0071), so a later run, or a rebuild recomputing
-the same row, never raises it twice.
+It then records, for each person silent in every room for
+`deviation_silence_days` consecutive daybooks, a graph `absence` stimulus,
+raised ONLY when every source it rests on is proved healthy for the span: the
+collector polled the person's circles throughout (`polls_healthy`) and every
+platform of the unit's rooms was up throughout (`adapter_up`). Missing data
+from an outage is not absence of activity (R-27).
 """
 
 from __future__ import annotations
 
 import dataclasses
 import logging
-import time
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Any, Literal, Protocol
 
 from nora.access import IdentityAccess
-from nora.domain.mobility import Stay
-from nora.domain.ports import GeocodeCacheStore, StimulusStore
-from nora.domain.presence import haversine_distance_m
+from nora.domain.ports import GeocodeCacheStore
 from nora.domain.rollup import (
     FOLLOW_NAMES,
     FOLLOW_WINDOW_SECONDS,
     NEVER,
-    Colocation,
     Daybook,
     Deviation,
     HealthRow,
     Outing,
     SocialFact,
     SocialInput,
-    StaySpan,
     adapter_up,
     colocations,
     daybooks,
@@ -65,7 +46,6 @@ from nora.domain.rollup import (
     silent_runs,
     ties,
 )
-from nora.domain.stimuli import NewStimulus
 from nora.infra.sql.projection_time import ProjectionInputs
 from nora.infra.sql.rollups import RecordMark, SqlRollupStore, UnitRooms
 from nora.infra.sql.social_stream import SqlSocialStreamStore
@@ -73,9 +53,6 @@ from nora.infra.sql.social_stream import SqlSocialStreamStore
 log = logging.getLogger("nora.analytics.units")
 
 _DAY_MS = 86_400_000
-
-StimulusOutcome = Literal["raised", "duplicate", "unhealthy", "capped"]
-
 
 @dataclass(frozen=True)
 class UnitConfig:
@@ -86,37 +63,9 @@ class UnitConfig:
     #: else, answers it; later it must name her (`FOLLOW_NAMES`).
     follow_window_seconds: float = FOLLOW_WINDOW_SECONDS
     follow_names: tuple[str, ...] = FOLLOW_NAMES
-    stimulus_horizon_seconds: float = 3600.0
     deviation_silence_days: int = 2
-    #: D3 (DEC-245): at most this many deviation stimuli per person per local
-    #: day. A session cannot read the rows behind a rollup yet (`rollup_read`),
-    #: so an unbounded deviation feed would be items it cannot judge.
-    deviation_stimuli_per_person_per_day: int = 1
     health_max_poll_gap_seconds: float = 900.0
     tz_name: str = "Asia/Hong_Kong"
-
-
-@dataclass(frozen=True)
-class EventPlace:
-    """A place an OPEN event names (step 2b's event rows): the stimulus an
-    arrival there raises cites `ref`."""
-
-    ref: str
-    lat: float
-    lng: float
-    radius_m: float
-
-
-class EventPlaces(Protocol):
-    async def open_event_places(self, *, unit: str, at_ms: int) -> Sequence[EventPlace]: ...
-
-
-class NoEventPlaces:
-    """The hook's only implementation until step 2b gives events a place and
-    a lifecycle: no open event names a place, so no arrival is raised."""
-
-    async def open_event_places(self, *, unit: str, at_ms: int) -> Sequence[EventPlace]:
-        return ()
 
 
 @dataclass(frozen=True)
@@ -124,7 +73,6 @@ class UnitRun:
     unit: str
     as_of_ms: int
     changes: Mapping[str, int]
-    stimuli: tuple[tuple[str, StimulusOutcome], ...] = ()
 
 
 @dataclass
@@ -141,9 +89,7 @@ class UnitRollups:
     def __init__(
         self, *, store: SqlRollupStore, config: UnitConfig,
         units: Sequence[UnitRooms], people: Mapping[str, PersonScope],
-        stimuli: StimulusStore | None = None, events: EventPlaces | None = None,
         social: SqlSocialStreamStore | None = None,
-        metrics: Any = None, clock: Callable[[], float] = time.time,
         areas: GeocodeCacheStore | None = None, access: IdentityAccess | None = None,
     ) -> None:
         self._store = store
@@ -156,12 +102,6 @@ class UnitRollups:
         self._cfg = config
         self._units = units
         self._people = people
-        self._stimuli = stimuli
-        self._events = events or NoEventPlaces()
-        self._metrics = metrics
-        # System time for the stimulus rows (when Nora wrote them), never an
-        # input to what is computed.
-        self._clock = clock
         #: every observed person id (current and retired) -> its subject.
 
     @property
@@ -181,21 +121,19 @@ class UnitRollups:
 
     async def run(
         self, *, build_id: int, mark: RecordMark, logical_now: Mapping[str, int],
-        anomalous: Mapping[str, Sequence[Stay]] | None = None,
         raise_stimuli: bool = True,
     ) -> list[UnitRun]:
         out: list[UnitRun] = []
         for unit in self._units:
             out.append(await self._run_unit(
                 unit, build_id=build_id, mark=mark, logical_now=logical_now,
-                anomalous=anomalous or {}, raise_stimuli=raise_stimuli,
+                raise_stimuli=raise_stimuli,
             ))
         return out
 
     async def _run_unit(
         self, unit: UnitRooms, *, build_id: int, mark: RecordMark,
-        logical_now: Mapping[str, int], anomalous: Mapping[str, Sequence[Stay]],
-        raise_stimuli: bool,
+        logical_now: Mapping[str, int], raise_stimuli: bool,
     ) -> UnitRun:
         members = tuple(m for m in unit.members if m in self._people)
         stays = await self._store.stay_spans(build_id=build_id, subjects=members, unit=unit.unit)
@@ -249,13 +187,12 @@ class UnitRollups:
             build_id=build_id, unit=unit.unit, colocations=found, outings=outs,
             daybooks=books, ties=tied, responses=answered,
         )
-        raised: list[tuple[str, StimulusOutcome]] = []
-        if raise_stimuli and self._stimuli is not None:
-            raised = await self._raise(
-                self._stimuli, unit, members=members, as_of=as_of, mark=mark, found=found,
-                stays=stays, books=books, anomalous=anomalous, platforms=platforms,
+        if raise_stimuli:
+            await self._absences(
+                unit, members=members, as_of=as_of, mark=mark, books=books,
+                platforms=platforms,
             )
-        return UnitRun(unit=unit.unit, as_of_ms=as_of, changes=changes, stimuli=tuple(raised))
+        return UnitRun(unit=unit.unit, as_of_ms=as_of, changes=changes)
 
     async def _placed(self, outs: Sequence[Outing]) -> list[Outing]:
         """Each outing with the district and city of the nearest cached
@@ -301,87 +238,22 @@ class UnitRollups:
             observed_from=observed,
         )
 
-    # -- stimuli --------------------------------------------------------------
+    # -- absences -------------------------------------------------------------
 
-    async def _raise(
-        self, sink: StimulusStore, unit: UnitRooms, *, members: Sequence[str], as_of: int,
-        mark: RecordMark, found: Sequence[Colocation], stays: Sequence[StaySpan],
-        books: Sequence[Daybook], anomalous: Mapping[str, Sequence[Stay]],
-        platforms: Sequence[str],
-    ) -> list[tuple[str, StimulusOutcome]]:
-        horizon = int(self._cfg.stimulus_horizon_seconds * 1000)
-        out: list[tuple[str, StimulusOutcome]] = []
-        for c in found:
-            if c.open and as_of - c.valid_from_ms <= horizon:
-                ref = f"colocation|{','.join(c.persons)}|{c.valid_from_ms}"
-                out.append(("colocation_start", await self._append(
-                    sink, unit.unit, "colocation_start", item="colocation_start",
-                    ref=ref, at_ms=c.valid_from_ms,
-                )))
-        places = await self._events.open_event_places(unit=unit.unit, at_ms=as_of)
-        if places:
-            for s in stays:
-                if not s.open or as_of - s.started_ts > horizon:
-                    continue
-                for place in places:
-                    if haversine_distance_m(s.lat, s.lng, place.lat, place.lng) <= place.radius_m:
-                        ref = f"arrival|{place.ref}|{s.person_id}|{s.started_ts}"
-                        out.append(("arrival", await self._append(
-                            sink, unit.unit, "arrival", item="arrival", ref=ref, at_ms=s.started_ts,
-                            person_id=s.person_id,
-                        )))
-        deviations = self._deviations(unit.unit, members, as_of, books, anomalous)
-        for deviation in deviations:
-            healthy = await self._healthy(
-                deviation, platforms=platforms, through_ms=mark.through_ms,
-            )
-            if not healthy:
-                out.append(("deviation", "unhealthy"))
-                self._count("deviation", "unhealthy")
-                continue
-            if await self._capped(sink, unit.unit, deviation):
-                out.append(("deviation", "capped"))
-                self._count("deviation", "capped")
-                continue
-            out.append(("deviation", await self._append(
-                sink, unit.unit, "deviation", item=f"deviation_{deviation.kind}", ref=deviation.ref,
-                at_ms=deviation.end_ms, person_id=deviation.person_id,
-            )))
-        for deviation in deviations:
-            if deviation.kind == "silence" and await self._healthy(
-                deviation, platforms=platforms, through_ms=mark.through_ms, graph=True,
-            ):
+    async def _absences(
+        self, unit: UnitRooms, *, members: Sequence[str], as_of: int, mark: RecordMark,
+        books: Sequence[Daybook], platforms: Sequence[str],
+    ) -> None:
+        for deviation in self._deviations(unit.unit, members, as_of, books):
+            if await self._healthy(deviation, platforms=platforms, through_ms=mark.through_ms):
                 await self._store.append_absence(deviation)
-        return out
-
-    async def _capped(self, sink: StimulusStore, unit: str, deviation: Deviation) -> bool:
-        """D3: the person already has `deviation_stimuli_per_person_per_day`
-        deviation stimuli on the local day this one falls on (its `at_ms`, the
-        day the stimulus is raised for), raised by this run or an earlier one.
-        The stimulus already on record for THIS deviation counts, so a deviation
-        raised earlier reads as capped again on every later run (as it read as a
-        duplicate)."""
-        day = local_date(deviation.end_ms, self._cfg.tz_name)
-        start, end = local_day_bounds(day, self._cfg.tz_name)
-        raised = await sink.count_rollup(
-            unit=unit, person_id=deviation.person_id, item_prefix="deviation_",
-            from_ms=start, to_ms=end,
-        )
-        return raised >= self._cfg.deviation_stimuli_per_person_per_day
 
     def _deviations(
         self, unit: str, members: Sequence[str], as_of: int,
-        books: Sequence[Daybook], anomalous: Mapping[str, Sequence[Stay]],
+        books: Sequence[Daybook],
     ) -> list[Deviation]:
-        horizon = int(self._cfg.stimulus_horizon_seconds * 1000)
         found: list[Deviation] = []
         for person in members:
-            for stay in anomalous.get(person, ()):
-                if as_of - stay.ended_ts <= horizon:
-                    found.append(Deviation(
-                        unit=unit, person_id=person, kind="anomaly",
-                        start_ms=stay.started_ts, end_ms=stay.ended_ts,
-                    ))
             today = local_date(as_of, self._cfg.tz_name)
             for first, last in silent_runs(
                 books, person_id=person, days=self._cfg.deviation_silence_days,
@@ -401,50 +273,26 @@ class UnitRollups:
 
     async def _healthy(
         self, deviation: Deviation, *, platforms: Sequence[str], through_ms: int,
-        graph: bool = False,
     ) -> bool:
-        """D3: every source the deviation rests on proved healthy for its
-        span. Presence always (both kinds place a person); the unit's
-        platforms too for silence, which also rests on «posted nothing»."""
+        """Every source the silence rests on proved healthy for its span: the
+        person's presence polls and the unit's platforms («posted nothing»)."""
         scope = self._people.get(deviation.person_id)
         if scope is None or not scope.circles:
             return False
         rows: list[HealthRow] = await self._store.health_rows(
-            sources=["presence", *platforms] if deviation.kind == "silence" else ["presence"],
+            sources=["presence", *platforms],
             start_ms=deviation.start_ms, through_ms=through_ms,
-            graph_unit=deviation.unit if graph else None,
+            graph_unit=deviation.unit,
         )
         gap = int(self._cfg.health_max_poll_gap_seconds * 1000)
-        covered = all if graph else any
-        if not covered(
+        if not all(
             polls_healthy(rows, scope=circle, start_ms=deviation.start_ms,
-                          end_ms=deviation.end_ms, max_gap_ms=gap, require_preceding=graph)
+                          end_ms=deviation.end_ms, max_gap_ms=gap, require_preceding=True)
             for circle in scope.circles
         ):
             return False
-        if deviation.kind == "silence":
-            return all(
-                adapter_up(rows, platform=p, start_ms=deviation.start_ms,
-                           end_ms=deviation.end_ms, require_preceding=graph)
-                for p in platforms
-            )
-        return True
-
-    async def _append(
-        self, sink: StimulusStore, unit: str, kind: str, *, item: str, ref: str,
-        at_ms: int, person_id: str | None = None,
-    ) -> StimulusOutcome:
-        stimulus_id = await sink.append(
-            stimulus=NewStimulus(
-                unit=unit, kind="rollup", item=item, ref=ref, at_ms=at_ms,
-                person_id=person_id,
-            ),
-            recorded_at_ms=int(self._clock() * 1000),
+        return all(
+            adapter_up(rows, platform=p, start_ms=deviation.start_ms,
+                       end_ms=deviation.end_ms, require_preceding=True)
+            for p in platforms
         )
-        outcome: StimulusOutcome = "raised" if stimulus_id is not None else "duplicate"
-        self._count(kind, outcome)
-        return outcome
-
-    def _count(self, kind: str, outcome: StimulusOutcome) -> None:
-        if self._metrics is not None:
-            self._metrics.inc("nora_rollup_stimuli_total", kind=kind, outcome=outcome)

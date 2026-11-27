@@ -871,32 +871,3 @@ async def test_a_wakes_detail_is_a_jsonb_object_and_an_old_string_row_still_read
     view = await store.view(unit=UNIT, mode="live", now_ms=NOW + 30, limit=100)
     assert view.watermark.unclaimed == frozenset({m1})
     assert view.last_wake is not None and view.last_wake.detail == {"k": "v"}
-
-
-async def test_count_rollup_counts_a_persons_deviations_in_a_window_retracted_included(store):
-    def dev(ref: str, person: str, at: int, item: str = "deviation_silence") -> NewStimulus:
-        return NewStimulus(
-            unit=UNIT, kind="rollup", item=item, ref=ref, at_ms=at, person_id=person,
-        )
-
-    a = await store.append(
-        stimulus=dev("deviation|silence|p1|1", "p1", NOW + 10), recorded_at_ms=NOW,
-    )
-    await store.append(stimulus=dev("deviation|anomaly|p1|2", "p1", NOW + 20, "deviation_anomaly"),
-                       recorded_at_ms=NOW)
-    await store.append(stimulus=dev("deviation|silence|p2|3", "p2", NOW + 10), recorded_at_ms=NOW)
-    await store.append(stimulus=dev("colocation|p1,p2|4", "p1", NOW + 10, "colocation_start"),
-                       recorded_at_ms=NOW)
-    await store.append(stimulus=dev("deviation|silence|p1|5", "p1", NOW + 500), recorded_at_ms=NOW)
-    await store.retract(unit=UNIT, stimulus_id=a, reason="failed", recorded_at_ms=NOW)
-
-    async def count(person: str, lo: int, hi: int) -> int:
-        return await store.count_rollup(
-            unit=UNIT, person_id=person, item_prefix="deviation_", from_ms=lo, to_ms=hi,
-        )
-
-    assert await count("p1", NOW, NOW + 100) == 2          # both kinds; a struck one still counts
-    assert await count("p1", NOW, NOW + 600) == 3          # the window is half-open on its end
-    assert await count("p2", NOW, NOW + 100) == 1
-    assert await count("p1", NOW + 21, NOW + 100) == 0
-    assert await count("p9", NOW, NOW + 600) == 0

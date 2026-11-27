@@ -264,16 +264,6 @@ class InMemoryStimulusStore:
             key=lambda w: w.id,
         )
 
-    async def count_rollup(
-        self, *, unit: str, person_id: str, item_prefix: str, from_ms: int, to_ms: int,
-    ) -> int:
-        self._check("count_rollup")
-        return sum(
-            1 for s in self.stimuli
-            if s.unit == unit and s.kind == "rollup" and s.person_id == person_id
-            and s.item.startswith(item_prefix) and from_ms <= s.at_ms < to_ms
-        )
-
     async def retract(
         self, *, unit: str, stimulus_id: int, reason: str, recorded_at_ms: int,
     ) -> bool:

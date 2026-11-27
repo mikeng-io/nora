@@ -997,15 +997,6 @@ class StimulusStore(Protocol):
         so they are never listed."""
         ...
 
-    async def count_rollup(
-        self, *, unit: str, person_id: str, item_prefix: str, from_ms: int, to_ms: int,
-    ) -> int:
-        """How many `rollup` stimuli of `unit` name `person_id`, have an `item`
-        starting with `item_prefix` and an `at_ms` in `[from_ms, to_ms)`, retracted
-        ones INCLUDED (a struck stimulus was still raised). What the Rollup reads
-        before raising a deviation, to hold «one per person per day» (D3, DEC-245)."""
-        ...
-
     async def retract(
         self, *, unit: str, stimulus_id: int, reason: str, recorded_at_ms: int,
     ) -> bool:

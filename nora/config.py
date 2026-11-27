@@ -1179,16 +1179,8 @@ class AnalyticsConfig(BaseModel):
     # account, or a word of `follow_names` in the body).
     follow_window_seconds: float = Field(default=120.0, ge=0)
     follow_names: list[str] = Field(default_factory=lambda: ["nora"])
-    # A Rollup stimulus (co-location start, arrival, deviation) is raised
-    # only for a row whose start is this recent on the Record's clock, so a
-    # rebuild over months does not raise a stimulus per historical row.
-    stimulus_horizon_seconds: float = Field(default=3600.0, gt=0)
     # «Silent in every room and at home for N days».
     deviation_silence_days: int = Field(default=2, ge=1)
-    # DEC-245: at most this many deviation stimuli per person per local day, until
-    # `rollup_read` lets a session read the rows behind them. A deviation past it is
-    # counted (`outcome="capped"`) and not raised.
-    deviation_stimuli_per_person_per_day: int = Field(default=1, ge=1)
     # «The collector's recorded polls succeeded» means polled at least this often
     # across the span: three still-cadence polls (300 s, `[presence]
     # cadence_still_seconds`). A longer gap is an outage.
