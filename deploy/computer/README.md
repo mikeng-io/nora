@@ -425,8 +425,10 @@ enabled = true
 
 The paths above are application-visible paths. Packaging must mount the
 host-controlled endpoint registry read-only there, and persistent application
-state writable at `state_dir`. The registry is not the result journal. A
-single application process owns `state_dir/computer` and its exclusive lock;
+state writable at `state_dir`. If the directory is not there, Nora logs an error
+at start, `/health` reports `computer: degraded` with the reason, and the deploy
+read-back prints a WARNING; every scope then reads as unavailable. The registry is
+not the result journal. A single application process owns `state_dir/computer` and its exclusive lock;
 separate eval subjects must use separate state directories.
 
 | Dependency | Required readback before calling the setup ready |

@@ -57,19 +57,28 @@ async def _account(registry, adapter) -> str | None:
         return None
 
 
+def _computer_block(computer_health) -> dict:
+    """The scoped computer registry's state, reported, never counted toward `healthy`."""
+    if computer_health is None:
+        return {}
+    try:
+        return {"computer": computer_health()}
+    except Exception:                          # noqa: BLE001 — a health check never raises
+        return {"computer": {"state": "unavailable"}}
+
+
 def build_health_app(
     *, adapter, store, honcho, doctrine_store, metrics, started_at: float,
     llm_state: LLMState,
     adapters=None,
     registry=None,
     identity_file: str | Path | None = None, policy_file: str | Path | None = None,
-    index_state=None, config_reload=None,
+    index_state=None, config_reload=None, computer_health=None,
 ) -> web.Application:
     app = web.Application()
     # Application-HTTP coverage (ADR 0034): request spans for the portal/API
     # routes; the /health + /metrics polls are excluded inside the helper.
     from nora.obs.tracing import instrument_aiohttp_app
-
     instrument_aiohttp_app(app)
     app["adapter"] = adapter
     # Every platform's adapter, keyed by name, beside `adapter`, which is the
@@ -94,7 +103,7 @@ def build_health_app(
     # A zero-arg callable answering the memory index's `IndexState`
     # (`nora.infra.sql.memory_read.SqlMemoryIndex.index_state`), or None on a
     # deployment with no index to report.
-    app["index_state"] = index_state
+    app["index_state"], app["computer_health"] = index_state, computer_health
     # The bind-mounted, load-once config files — for the staleness canary below.
     app["config_files"] = {
         name: path for name, path in
@@ -200,6 +209,7 @@ def build_health_app(
                 body["index"] = {"status": state.status, "queue": state.queue}
             except Exception:              # noqa: BLE001 — a health check never raises
                 body["index"] = {"status": "unavailable"}
+        body.update(_computer_block(a["computer_health"]))
         # Staleness canary: identity.toml/policy.toml are bind-mounted and
         # loaded ONCE at startup, and an atomic edit changes the inode so a
         # restart keeps serving the OLD file; a recreate is needed.
