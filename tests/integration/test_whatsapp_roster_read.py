@@ -16,7 +16,7 @@ FIXTURE = json.loads((Path(__file__).resolve().parents[2]
 
 
 async def test_whatsapp_roster_decodes_the_bridge_response(aiohttp_server):
-    answers = [FIXTURE["response"], {"available": True, "members": ["+85290000101", 7]},
+    answers = [FIXTURE["response"], {"available": True, "members": [["+85290000101", 7]]},
                {"available": False, "members": []}]
     seen = []
 
@@ -31,7 +31,7 @@ async def test_whatsapp_roster_decodes_the_bridge_response(aiohttp_server):
                                                      "generated-token"))
     known = await roster.roster(conversation_id=FIXTURE["conversation_id"])
     assert known.available
-    assert known.members == tuple(frozenset({m}) for m in FIXTURE["response"]["members"])
+    assert known.members == tuple(frozenset(m) for m in FIXTURE["response"]["members"])
     assert seen[0] == ("Bearer generated-token", {
         "op": "roster", "params": {"conversation_id": FIXTURE["conversation_id"]}})
     assert not (await roster.roster(conversation_id="x")).available

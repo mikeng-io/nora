@@ -881,6 +881,7 @@ function healthV1() {
 const handleV1 = createV1({
   get store() { return actionStore; },
   ctx: actionCtx,
+  identityMaps: () => ({ lidToPhone, phoneToLid }),
   tracer,
   get attachments() { return attachments; },
   get sock() { return sock; },

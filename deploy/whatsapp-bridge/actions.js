@@ -10,7 +10,7 @@
  * blindly. `unsupported` means the platform has no such op.
  */
 import { ACTION_OPS, OWNER_KINDS, actionResponse } from './store.js';
-import { isValidTargetJid, isGroupJid, isLidJid, jidUserDigits, buildMediaPayload, timestampMs } from './bridge_helpers.js';
+import { isValidTargetJid, isGroupJid, jidUserDigits, buildMediaPayload, resolveIdentity, timestampMs } from './bridge_helpers.js';
 import { lidForm, phoneForm } from './wa_jid.js';
 import { readBody, sendJson } from './http_util.js';
 
@@ -335,12 +335,22 @@ export function createV1(deps) {
               return sendJson(res, 200, { available: false, members: [] });
             }
             const meta = await deps.ctx.sock.groupMetadata(jid);
+            const { lidToPhone = {}, phoneToLid = {} } = deps.identityMaps?.() || {};
             const members = [];
             for (const p of meta?.participants || []) {
-              const raw = p.phoneNumber ? `${p.phoneNumber}@s.whatsapp.net` : (p.id || p.lid || '');
-              const digits = jidUserDigits(raw);
-              if (!digits) continue;
-              members.push(isLidJid(raw) ? lidForm(digits) : phoneForm(digits));
+              // Every form the session knows, so a member registered by phone
+              // still resolves when metadata names them by lid alone.
+              let phone = p.phoneNumber ? jidUserDigits(p.phoneNumber) : null;
+              let lid = null;
+              for (const jid of [p.id, p.lid]) {
+                if (!jid) continue;
+                const id = resolveIdentity(jid, lidToPhone, phoneToLid);
+                phone = phone || id.phone;
+                lid = lid || id.lid;
+              }
+              if (phone && !lid) lid = phoneToLid[phone] || null;
+              const forms = [phone && phoneForm(phone), lid && lidForm(lid)].filter(Boolean);
+              if (forms.length) members.push(forms);
             }
             return sendJson(res, 200, { available: true, members });
           }
