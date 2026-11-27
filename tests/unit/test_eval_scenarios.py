@@ -709,4 +709,4 @@ async def test_a_dreamer_restore_rejects_an_unlabelled_case():
         now_ms=1_790_000_000_000,
     )
     assert outcome.source == "fail_closed"
-    assert outcome.error == "Dreamer cases require category 'cognition', got ''"
+    assert outcome.error == "the legacy Cognition session was removed; its cases are parked"

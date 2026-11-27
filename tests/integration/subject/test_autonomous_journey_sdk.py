@@ -49,7 +49,6 @@ def world(*, overrides=None):
         overrides={
             "platforms.signal.mode": "bridge",
             "platforms.signal.enabled": True,
-            "cognition.enabled": True,
             "heartbeat.enabled": True,
             **CAUSAL_TIMING,
             **(overrides or {}),
@@ -71,12 +70,11 @@ def test_autonomous_journey_entry_and_plan_preflight(evaluation_config, tmp_path
     declared = build_config(SubjectSpec(
         database_url="sqlite://", workdir=tmp_path / "declared",
         policy=plan.policy, overrides=plan.overrides()))
-    assert declared.cognition.enabled and declared.heartbeat.enabled
+    assert declared.heartbeat.enabled
     assert declared.platforms.signal.enabled and declared.platforms.signal.mode == "bridge"
     spec = plan.subject_spec("sqlite://", None, workdir=tmp_path / "subject")
     assert spec.room == ("signal", "g1") and spec.environment is None
     assert spec.overrides["platforms.signal.mode"] == "bridge"
-    assert spec.overrides["cognition.enabled"] is True
 
 
 async def test_positional_recording_is_refused_as_a_journey_world(

@@ -79,7 +79,7 @@ async def test_a_model_failure_is_raised_and_counted_not_returned(monkeypatch):
     metrics = Metrics()
     with pytest.raises(RuntimeError, match="fell over"):
         await _run(_runner(metrics))
-    assert metrics.get("nora_errors_total", stage="cognition_session") == 1
+    assert metrics.get("nora_errors_total", stage="cognition_pass") == 1
 
 
 async def test_a_timeout_is_raised_not_returned_as_a_stop_reason(monkeypatch):

@@ -244,7 +244,6 @@ def preflight_spec(source, evaluation_config, clean_pg_url, tmp_path, exit_mode)
     overrides = {"computer.scoped.registry": str(tmp_path / "scopes"),
                  "computer.scoped.lifecycle_socket": str(tmp_path / "lifecycle.sock")}
     if source == evaluation_config:
-        overrides["cognition.enabled"] = True
         overrides.update({
             "computer.enabled": True, "computer.scoped.enabled": True,
             "media.enabled": True, "media.rustfs.enabled": True,

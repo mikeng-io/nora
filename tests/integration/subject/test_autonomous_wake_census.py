@@ -178,7 +178,7 @@ async def _world(clean_pg_url: str, tmp_path: Path, monkeypatch):
         spec = SubjectSpec(
             database_url=clean_pg_url, workdir=tmp_path / "subject",
             policy=policy_text, room=ROOM, environment=env,
-            overrides={"cognition.enabled": True})
+            overrides={})
         cfg = build_config(spec)
         env.world = SimpleNamespace(
             wire_actions=lambda *args, **kwargs: None,

@@ -13,7 +13,6 @@ Database scoped to the MODULE and truncated between tests (docs/engineering/code
 
 from __future__ import annotations
 
-import functools
 import hashlib
 import uuid
 from collections.abc import AsyncIterator, Iterator
@@ -28,28 +27,20 @@ import pytest
 import sqlalchemy as sa
 
 from nora.app.social_perception import SocialPerception
-from nora.app.social_poller import SocialPoller
-from nora.config import SocialPollConfig
 from nora.domain.media import SOCIAL_MEDIA_SOURCE, MediaObject
 from nora.domain.ports import MediaDescription
-from nora.domain.social_stream import Page, Probe, SocialItem, StoryFrame, StorySnapshot
-from nora.domain.stimuli import NewStimulus
-from nora.infra.social.subjects import instagram_roster
+from nora.domain.social_stream import SocialItem
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.schema import SOCIAL_PERCEPTION, STIMULUS
 from nora.infra.sql.social_stream import SqlSocialStreamStore
-from nora.infra.sql.stimuli import SqlStimulusStore
 from nora.ingest.comprehension import MediaComprehension
 from nora.obs.metrics import Metrics
 from nora.testing import (
     FakeBlobStore,
     FakeMediaObjectStore,
     FakeMediaSource,
-    FakeSocialSource,
-    FakeSocialSubjectIndex,
 )
 from nora.testing.fakes import FakeMediaInterpreter
-from nora.testing.stimuli import InMemorySourceHealthLog
 
 HK = ZoneInfo("Asia/Hong_Kong")
 ADA = "10000001"
@@ -115,13 +106,13 @@ class World:
         )
 
     def perception(self, *, cap: int = 200, batch: int = 50,
-                   comprehension: bool = True, rooms: Any = None) -> SocialPerception:
+                   comprehension: bool = True) -> SocialPerception:
         return SocialPerception(
             store=self.store, media_objects=self.media_objects,
             comprehension=self.comprehension() if comprehension else None,
-            stimuli=SqlStimulusStore(self.engine), units=UNITS, daily_cap=cap, tz=HK,
+            units=UNITS, daily_cap=cap, tz=HK,
             chunk_seconds=90, chunk_max=10, tick_seconds=600, metrics=self.metrics,
-            batch=batch, rooms=rooms, clock=self.clock,
+            batch=batch, clock=self.clock,
         )
 
     async def seed(
@@ -314,90 +305,17 @@ async def test_a_failed_read_is_tried_again_on_a_later_day(world) -> None:
 # ---- the stimulus -------------------------------------------------------------
 
 
-async def test_a_polled_read_raises_one_stimulus_per_unit_after_its_items_are_perceived(
-    world,
-) -> None:
-    """The real poller records a story read; the pass then perceives one frame
-    a tick (`batch=1`), and the stimulus waits for the second."""
-    clock = world.clock
-    source = FakeSocialSource()
-    source.probes[ADA] = Probe(latest_reel_media=1, media_count=1, total_clips_count=0,
-                               counts_available=True)
-    source.pages[ADA] = Page(items=(), next_cursor=None)
-    frames = tuple(
-        StoryFrame(item_id=f"f{n}", taken_at=clock.now - timedelta(minutes=30 - n),
-                   expires_at=clock.now + timedelta(hours=20), kind="image",
-                   url=f"{_CDN}/f{n}.jpg", caption="dinner tomorrow at 8" if n else None)
-        for n in range(2)
-    )
-    source.stories[ADA] = StorySnapshot(found=True, frames=frames)
-    media = FakeMediaSource()
-    for frame in frames:
-        media.blobs[f"attachment:{frame.url}"] = f"bytes of {frame.item_id}".encode()
-    poller = SocialPoller(
-        source=source, store=world.store, health=InMemorySourceHealthLog(),
-        roster=functools.partial(instagram_roster, FakeSocialSubjectIndex({"ada": ADA})),
-        settings=SocialPollConfig(enabled=True, jitter_seconds=0), metrics=world.metrics,
-        media=media, blobs=world.blobs, media_objects=world.media_objects, clock=clock,
-    )
-    await poller.tick()
-    perception = world.perception(batch=1)
-
-    await perception.tick()
-    assert await world.stimuli() == [], "one frame is still to be perceived"
-
-    await perception.tick()
-    rows = await world.stimuli()
-    assert [r.unit for r in rows] == ["friends", "family"]
-    assert {r.item for r in rows} == {"story_frame,story_frame"}
-    assert {r.person_id for r in rows} == {"ada"}
-    assert all("datetime" in r.cues for r in rows), "the caption's date is a cue"
-    assert {r.at_ms for r in rows} == {int(frames[1].taken_at.timestamp() * 1000)}
-    assert world.metrics.get("nora_stimulus_total", kind="social", cue="datetime") == 2
-
-    await world.perception().tick()        # a restart: a new pass, the same Record
-    assert len(await world.stimuli()) == 2, "the read is announced once"
 
 
-async def test_a_read_past_the_cap_is_announced_unperceived(world) -> None:
-    await world.seed("p1", person="bea", caption="see you at 7pm")
-    await world.perception(cap=0).tick()
-    assert await world.attempts() == [("p1", "capped", 0)]
-    (row,) = await world.stimuli()
-    assert (row.unit, row.item, tuple(row.cues)) == ("friends", "post", ("datetime",))
 
 
-async def test_back_filled_items_raise_no_stimulus(world) -> None:
-    await world.seed("old", person="bea", origin="backfill", ago=timedelta(days=40))
-    perception = world.perception()
-    await perception.tick()
-    await perception.tick()
-    assert await world.attempts() == [("old", "ok", 1)]
-    assert await world.stimuli() == []
 
 
-async def test_without_comprehension_a_read_is_announced_as_recorded(world) -> None:
-    await world.seed("p1", person="bea", kind="reel", collab=True)
-    await world.perception(comprehension=False).tick()
-    assert await world.attempts() == []
-    (row,) = await world.stimuli()
-    assert row.item == "collab:reel"
 
 
 # ---- what may be read -----------------------------------------------------------
 
 
-async def test_an_opted_out_or_gone_item_is_neither_perceived_nor_announced(world) -> None:
-    await world.seed("cy1", person="cy")
-    await world.seed("gone", person="bea")
-    await world.store.record_state(network="instagram", item_id="gone", state="gone")
-    perception = world.perception()
-    await perception.tick()
-    world.clock.next_day()
-    await perception.tick()
-    assert world.interpreter.calls == []
-    assert await world.attempts() == []
-    assert await world.stimuli() == []
 
 
 # ---- a read is announced whole, in every unit -----------------------------------
@@ -417,77 +335,12 @@ class _PassMidRead(FakeMediaSource):
         return await super().fetch(ref=ref)
 
 
-async def test_a_pass_that_runs_mid_read_waits_for_the_whole_read(world) -> None:
-    clock = world.clock
-    source = FakeSocialSource()
-    source.probes[ADA] = Probe(latest_reel_media=1, media_count=1, total_clips_count=0,
-                               counts_available=True)
-    source.pages[ADA] = Page(items=(), next_cursor=None)
-    frames = tuple(
-        StoryFrame(item_id=f"f{n}", taken_at=clock.now - timedelta(minutes=30 - n),
-                   expires_at=clock.now + timedelta(hours=20), kind="image",
-                   url=f"{_CDN}/f{n}.jpg")
-        for n in range(3)
-    )
-    source.stories[ADA] = StorySnapshot(found=True, frames=frames)
-    during: list[Any] = []
-    media = _PassMidRead(during)
-    for frame in frames:
-        media.blobs[f"attachment:{frame.url}"] = f"bytes of {frame.item_id}".encode()
-    poller = SocialPoller(
-        source=source, store=world.store, health=InMemorySourceHealthLog(),
-        roster=functools.partial(instagram_roster, FakeSocialSubjectIndex({"ada": ADA})),
-        settings=SocialPollConfig(enabled=True, jitter_seconds=0), metrics=world.metrics,
-        media=media, blobs=world.blobs, media_objects=world.media_objects, clock=clock,
-    )
-    perception = world.perception()
-    during.append(perception)
-
-    await poller.tick()
-    assert await world.stimuli() == [], "the read was not complete while the pass ran"
-
-    await perception.tick()
-    rows = await world.stimuli()
-    assert [(r.unit, r.item) for r in rows] == [
-        ("friends", "story_frame,story_frame,story_frame"),
-        ("family", "story_frame,story_frame,story_frame"),
-    ]
 
 
-async def test_a_unit_whose_stimulus_is_missing_still_gets_it(world) -> None:
-    """A crash between two units' appends: the next pass raises the one left."""
-    read = await world.seed("p1")
-    await SqlStimulusStore(world.engine).append(
-        stimulus=NewStimulus(unit="friends", kind="social", item="post",
-                             ref=f"social_read:{read}", at_ms=0, person_id="ada"),
-        recorded_at_ms=0,
-    )
-    await world.perception().tick()
-    assert sorted(r.unit for r in await world.stimuli()) == ["family", "friends"]
 
 
-async def test_each_units_stimulus_names_the_room_there_that_lists_the_author(world) -> None:
-    """The session reads a social read through the room its stimulus names
-    (`social_person_rooms`): a room of that unit listing the
-    author. A unit with no room named for them binds its home room."""
-    await world.seed("p1")
-    await world.perception(rooms={("ada", "friends"): ("signal", "side-room")}).tick()
-    rows = {r.unit: (r.platform, r.conversation_id) for r in await world.stimuli()}
-    assert rows == {"friends": ("signal", "side-room"), "family": (None, None)}
 
 
-async def test_a_read_older_than_the_window_wakes_no_unit_added_since(world) -> None:
-    """A unit a person joins later is owed their next reads, not a wake for
-    each read they had before."""
-    read = await world.seed("p1")
-    await SqlStimulusStore(world.engine).append(
-        stimulus=NewStimulus(unit="friends", kind="social", item="post",
-                             ref=f"social_read:{read}", at_ms=0, person_id="ada"),
-        recorded_at_ms=0,
-    )
-    world.clock.now += timedelta(days=3)
-    await world.perception().tick()
-    assert [r.unit for r in await world.stimuli()] == ["friends"]
 
 
 # ---- what the cap counts --------------------------------------------------------
@@ -527,18 +380,6 @@ async def test_the_cap_counts_a_videos_windows_estimated_before_and_spent_after(
 # ---- a read that cannot succeed -----------------------------------------------
 
 
-async def test_a_read_that_keeps_failing_stops_after_three_days(world) -> None:
-    await world.seed("p1", person="bea")
-    world.interpreter.available = False
-    perception = world.perception()
-    for _ in range(4):
-        await perception.tick()
-        world.clock.next_day()
-    assert await world.attempts() == [
-        ("p1", "unavailable", 1), ("p1", "unavailable", 1), ("p1", "failed", 1),
-    ]
-    assert len(world.interpreter.calls) == 3
-    assert len(await world.stimuli()) == 1, "a failed item still settles its read"
 
 
 async def test_a_permanent_failure_is_final_and_one_with_no_call_costs_nothing(world) -> None:

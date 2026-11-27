@@ -9,11 +9,8 @@ each social stimulus binds a room of its unit that lists its author
 
 from __future__ import annotations
 
-import ast
-import inspect
 from types import SimpleNamespace
 
-import nora.app.composition_social as composition
 from nora.infra.sql.social_stream import readable_social_store
 from nora.persons import load_persons
 
@@ -50,18 +47,3 @@ class _Policy:
 
 
 
-def test_perception_is_built_with_the_rooms():
-    """Without `rooms` every social stimulus binds the home room, and a
-    person listed only elsewhere in the unit is named on an agenda whose
-    room cannot read them."""
-    tree = ast.parse(inspect.getsource(composition))
-    (call,) = [
-        n for n in ast.walk(tree)
-        if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)
-        and n.func.id == "SocialPerception"
-    ]
-    rooms = {k.arg: k.value for k in call.keywords}.get("rooms")
-    assert isinstance(rooms, ast.Call), "SocialPerception is built without rooms"
-    assert ast.unparse(rooms.func) == "LiveMapping"
-    assert isinstance(rooms.args[0], ast.Lambda)
-    assert ast.unparse(rooms.args[0].body) == "social_person_rooms(allowlist)"

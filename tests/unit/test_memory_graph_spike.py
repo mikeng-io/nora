@@ -45,10 +45,9 @@ async def test_replay_embedder_check_uses_effective_subject_config(
         "memory.index.embedder_model": "generated-subject.gguf@0000feedbeef",
     }))
     assert source.memory.index.embed != effective.memory.index.embed
-    checked, indexed, legacy = AsyncMock(), AsyncMock(), AsyncMock()
+    checked, indexed = AsyncMock(), AsyncMock()
     monkeypatch.setattr(spike, "check_served_model", checked)
     monkeypatch.setattr(spike, "index_sandbox", indexed)
-    monkeypatch.setattr(spike, "_legacy_replay_substrate", legacy)
     await spike.index_replay_sandbox(
         SimpleNamespace(database_url="generated-sandbox", cfg=effective),
         source_url="generated-source",
@@ -58,64 +57,9 @@ async def test_replay_embedder_check_uses_effective_subject_config(
             effective.memory.index.embedder_url, "generated-subject.gguf@0000feedbeef")
     else:
         checked.assert_not_awaited()
-    legacy.assert_awaited_once()
     indexed.assert_awaited_once_with(
         "generated-sandbox", source_url="generated-source",
         model_id="generated-subject.gguf@0000feedbeef", require_vectors=embed)
-
-
-async def test_replay_sandbox_projects_the_legacy_substrate_with_the_subjects_graph_context(
-    tmp_path, monkeypatch,
-):
-    """The retained legacy replay runner's projection context still comes from
-    the subject's own policy and persons, producing no model work."""
-    import nora.app.graph_project as graph_project
-    from nora.subject.obtain import build_config
-    from tests.unit.test_subject_obtain import _spec
-
-    cfg = build_config(_spec(tmp_path / "subject", overrides={
-        "memory.index.embed": False,
-        "memory.index.embedder_model": "generated-subject.gguf@0000feedbeef",
-    }))
-    made, indexed = object(), AsyncMock()
-    calls, options = [], {}
-
-    class Boundary:
-        def __init__(self, conn):
-            self.conn = conn
-        async def __aenter__(self):
-            return self.conn
-        async def __aexit__(self, *exc):
-            return False
-
-    conn = object()
-    target = SimpleNamespace(
-        update_execution_options=lambda **kw: options.update(kw),
-        begin=lambda: Boundary(conn), dispose=AsyncMock(),
-    )
-    source = SimpleNamespace(connect=lambda: Boundary(conn), dispose=AsyncMock())
-    rebuilt, adopted = AsyncMock(), AsyncMock()
-    monkeypatch.setattr(graph_project, "projection_context",
-                        lambda *a, **k: calls.append((a, k)) or made)
-    monkeypatch.setattr(spike, "create_sql_engine", lambda _: target)
-    monkeypatch.setattr(spike, "create_readonly_sql_engine", lambda _: source)
-    monkeypatch.setattr(spike.memory_index, "rebuild", rebuilt)
-    monkeypatch.setattr(spike.memory_index, "adopt_worker_state", adopted)
-    monkeypatch.setattr(spike, "index_sandbox", indexed)
-    reload = SimpleNamespace(policy="generated-policy", persons="generated-persons")
-    await spike.index_replay_sandbox(
-        SimpleNamespace(database_url="generated-sandbox", cfg=cfg,
-                        deps=SimpleNamespace(config_reload=reload)),
-        source_url="generated-source",
-    )
-    assert calls == [(("generated-policy", "generated-persons"),
-                      {"nora_name": cfg.doctrine.display_name, "produce": False})]
-    assert options == {"memory_graph": made}
-    rebuilt.assert_awaited_once_with(target)
-    adopted.assert_awaited_once()
-    indexed.assert_awaited_once_with(
-        "generated-sandbox", source_url="generated-source",
-        model_id="generated-subject.gguf@0000feedbeef", require_vectors=False)
 
 
 async def test_effective_embedder_refusal_prevents_index_preparation(tmp_path, monkeypatch):
@@ -126,9 +70,8 @@ async def test_effective_embedder_refusal_prevents_index_preparation(tmp_path, m
     effective = build_config(_spec(tmp_path, overrides={
         "memory.index.embed": True,
     }))
-    indexed, legacy = AsyncMock(), AsyncMock()
+    indexed = AsyncMock()
     monkeypatch.setattr(spike, "index_sandbox", indexed)
-    monkeypatch.setattr(spike, "_legacy_replay_substrate", legacy)
     monkeypatch.setattr(spike, "check_served_model", AsyncMock(
         side_effect=GraphIndexRefusedError("generated unavailable embedder")))
     with pytest.raises(GraphIndexRefusedError, match="generated unavailable"):
@@ -136,7 +79,6 @@ async def test_effective_embedder_refusal_prevents_index_preparation(tmp_path, m
             SimpleNamespace(database_url="generated-sandbox", cfg=effective),
             source_url="generated-source")
     indexed.assert_not_awaited()
-    legacy.assert_not_awaited()
 
 
 @pytest.mark.parametrize(

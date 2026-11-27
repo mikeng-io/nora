@@ -98,7 +98,7 @@ async def test_real_app_bridge_admission_settles_before_cancellation(
         port = listener.getsockname()[1]
     policy = default_policy(("signal", "g1"), unit="generated-unit") + "home_room = true\n"
     overrides = {"platforms.signal.mode": "bridge", "platforms.signal.enabled": True,
-                 "cognition.enabled": True, "obs.metrics.port": port}
+                 "obs.metrics.port": port}
     spec = SubjectSpec(database_url=clean_pg_url, workdir=tmp_path / "subject",
                        policy=policy, overrides=overrides)
     cfg = build_config(spec)

@@ -358,7 +358,7 @@ def test_no_agent_module_returns_a_status_outside_the_vocabulary() -> None:
                 continue
             # A Strands `ToolResult` (`status` beside a `content` LIST) speaks
             # Strands' own two words, `success` and `error`, to a sub-agent's
-            # model, not R-27 to Nora's (`nora/agent/comprehend_tools.py` returns one).
+            # model, not R-27 to Nora's (a Nora tool returns one).
             if any(isinstance(k, ast.Constant) and k.value == "content"
                    and isinstance(v, ast.List)
                    for k, v in zip(node.keys, node.values, strict=True)):

@@ -31,25 +31,3 @@ def test_the_default_is_the_positional_n_the_tag_turn_remaps():
     rows = _rows(render_note_rows([_note(7), _note(9)]))
     assert [r.get("n") for r in rows] == ["1", "2"]
 
-
-def test_the_opt_in_carries_the_notes_own_id():
-    rows = _rows(render_note_rows([_note(7), _note(9)], ids=True))
-    assert [r.get("n") for r in rows] == ["note-7", "note-9"]
-    assert [r.get("title") for r in rows] == ["Dinner", "Dinner"]
-    assert [r.text for r in rows] == ["which venue", "which venue"]
-
-
-
-
-def test_a_note_with_an_anchor_keeps_its_about_beside_the_real_id():
-    out = render_note_rows([_note(1, anchor_date=20260930)], today=20260930, ids=True)
-    assert out.startswith('<note n="note-1" title="Dinner" about="Wed 30 Sep, today">')
-
-
-def test_the_opt_in_changes_n_and_nothing_else():
-    notes = [_note(1, anchor_date=20260901), _note(2)]
-    plain = render_note_rows(notes, today=20260930)
-    real = render_note_rows(notes, today=20260930, ids=True)
-    assert plain.replace('n="1"', 'n="note-1"').replace('n="2"', 'n="note-2"') == real
-
-

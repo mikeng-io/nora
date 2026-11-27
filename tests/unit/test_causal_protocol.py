@@ -30,7 +30,6 @@ _POLICY = (
 _OVERRIDES = {
     "platforms.signal.mode": "bridge",
     "platforms.signal.enabled": True,
-    "cognition.enabled": True,
     "heartbeat.enabled": True,
 }
 
@@ -384,7 +383,7 @@ def test_the_declared_world_keeps_production_cadence_and_lanes(tmp_path):
     plan = JourneyServices(policy=_POLICY, overrides=dict(_OVERRIDES))
     cfg = plan._declared_config("sqlite://", tmp_path)
     assert cfg.obs.metrics.port == 0
-    assert cfg.cognition.enabled and cfg.heartbeat.enabled
+    assert cfg.heartbeat.enabled
     assert cfg.dreamer.enabled and cfg.culture.enabled and cfg.standing.enabled
     assert cfg.llm.model == "nora" and cfg.dreamer.model == "nora-dreamer"
     assert cfg.relevance_gate.model == "nora-gate"

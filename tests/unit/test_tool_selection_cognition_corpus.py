@@ -2,47 +2,28 @@
 S2 corpus. COLLECTION only: this test loads
 and censuses the corpus (`evals.scenarios.load_corpus`/`census`) the way
 `python -m evals` does before any run — it makes no model call and drives no
-case. Running it for real goes through `evals.rebuilt.entry._cognition_probe`
-on the session runner the subject builds under `[cognition] enabled =
-true` (`tests/unit/test_cognition_wiring.py` pins that seam).
+case. Every case is parked: the legacy Cognition session it ran on was removed.
 """
 
 from __future__ import annotations
 
-from evals.scenarios import CORPUS_ENTRY, ROUTED_CORPORA, census, load_corpus
+from evals.scenarios import CORPUS_ENTRY, ROUTED_CORPORA, census, load_all
 
 NAME = "tool_selection_cognition"
 NOW = 1_800_000_000_000
-
-#: The vocabulary a `metadata.tools`/`not_tools` entry may name — THE SAME
-#: catalogue the occasion itself is built from: the session's own verbs
-#: (`SESSION_VERB_NAMES`, which `CognitionSessionRunner` constructs from its
-#: real verb tools) and the read surface the catalogue declares
-#: (`COGNITION_READ_CATALOGUE`). Not a third authored list: a corpus case can
-#: name only what the probed session could actually be handed, so a read
-#: added to the catalogue is measurable without this file ever being edited,
-#: and one that leaves it stops being nameable here.
-
 
 def test_the_corpus_is_registered_and_routed():
     assert CORPUS_ENTRY[NAME] == "dreamer"
     assert NAME in ROUTED_CORPORA
 
 
-def test_the_runner_collects_every_case_with_no_error():
-    cases = load_corpus(NAME)
+def test_every_case_is_parked_with_its_id_kept():
+    cases = load_all(NAME)
     assert len(cases) == 23
     for case in cases:
-        assert case.metadata["snapshot"], case.name
-        assert not case.metadata["parked"], case.name
-
-
-def test_census_reports_every_case_active_and_none_parked():
+        assert case.metadata["parked"]["reason"] == "P-A", case.name
     result = census(NAME)
-    assert result.total == 23
-    assert result.active == 23
-    assert result.parked == 0
-    assert result.unanchored == 0
+    assert (result.total, result.active, result.parked) == (23, 0, 23)
 
 
 def test_no_real_name_or_quoted_message_appears_in_any_case_input():
@@ -54,7 +35,7 @@ def test_no_real_name_or_quoted_message_appears_in_any_case_input():
     only in a `social_read` case: that tool takes a name and resolves it among
     the people the room lists, and the live agenda line it answers names the
     person («Miles posted 2 story frames»)."""
-    cases = load_corpus(NAME)
+    cases = load_all(NAME)
     for case in cases:
         allowed = {"Miles"} if "social_read" in case.metadata["tools"] else set()
         for name in ("Miles", "Ada"):
@@ -79,7 +60,7 @@ def test_each_new_read_is_measured_against_the_sibling_it_is_confusable_with():
     `standing_revise`). `character_read` and `event_search` are not
     `social_read`'s siblings: a Cognition session reads them to orient
     itself, so a case forbidding them fails on a right session."""
-    by_name = {c.name: c.metadata for c in load_corpus(NAME)}
+    by_name = {c.name: c.metadata for c in load_all(NAME)}
     against = {
         tool: {n for m in by_name.values() if tool in m["tools"] for n in m.get("not_tools", [])}
         for tool in ("rollup_read", "standing_read", "social_read")
