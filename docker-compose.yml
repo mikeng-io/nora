@@ -195,11 +195,10 @@ services:
   # whatsapp-bridge:18081 on the `nora` network.
   #
   # FIRST RUN needs pairing, the one step signal-cli doesn't have: WhatsApp
-  # has no headless registration, so an operator runs
-  #   docker compose run --rm whatsapp-bridge --pair --phone <digits>
-  # once (prints a pairing code to type into the phone app: Linked Devices →
-  # Link with phone number), then normal `docker compose up -d` boots with
-  # the saved session. See docs/design/platform/whatsapp.md
+  # has no headless registration. The QR carries a session secret, so pairing is a
+  # one-off `docker run --log-driver none` (docs/operations/runbook.md, WhatsApp),
+  # then normal `docker compose up -d` boots with the saved session.
+  # See docs/design/platform/whatsapp.md
   whatsapp-bridge:
     build:
       context: ./deploy/whatsapp-bridge
