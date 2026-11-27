@@ -70,7 +70,7 @@ def _lines() -> list[str]:
 def _tag_catalogue(platform: str, *, graph: bool = False) -> list[str]:
     """The catalogue lines a TAG turn on `platform` is shown: every registered
     tool its scope admits, excluding tools wired only in graph passes, on ONE memory surface
-    (DEC-316: `graph` is `[memory.index] read`)."""
+    (DEC-316)."""
     scope = ToolScope(platform=platform, dreamer=False)
     return [
         line for line in _lines()

@@ -336,6 +336,23 @@ async def test_portal_subject_page_withholds_internal_and_operator_claims(scenar
     assert [line["id"] for line in account["lines"]] == ["external-claim"]
 
 
+async def test_portal_subject_page_withholds_a_claim_that_excludes_its_viewer(scenario):
+    from nora.agent.egress import scan_reply
+    from nora.memory import wire
+    from nora.web.memory import build_memory_payload
+
+    await scenario.claim("visible-claim", identities=[PERSON], exposure="external")
+    await scenario.claim("excluding-claim", identities=[PERSON], exposure="external",
+                         excluded_identities=[PERSON])
+    [account] = await build_memory_payload(
+        persons=scenario.persons, person_id=PERSON, screen=scan_reply,
+        profile=wire.subject_claims(scenario.engine).read,
+        profile_scopes_of=lambda _: ((UNIT, "generated-workspace"),),
+        rooms_of=lambda _: frozenset({("signal", ROOM)}),
+    )
+    assert [line["id"] for line in account["lines"]] == ["visible-claim"]
+
+
 async def test_portal_guess_verdict_uses_only_a_visible_grade_for_the_same_subject(scenario):
     from nora.memory import wire
 

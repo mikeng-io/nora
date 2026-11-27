@@ -2477,7 +2477,7 @@ class RetentionConfig(BaseModel):
 
 
 class MemoryConfig(BaseModel):
-    """Nora's memory graph, index and Profile settings."""
+    """The memory index and retention settings."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
     index: MemoryIndexConfig = MemoryIndexConfig()

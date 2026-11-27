@@ -389,7 +389,7 @@ def test_context_experiment_requires_a_prefill_receipt_for_each_draw(monkeypatch
 
 def test_main_names_the_unconditional_memory_graph_surface(monkeypatch, capsys, tmp_path):
     generated = tmp_path / "config.evaluation.toml"
-    generated.write_text("[memory.index]\nread = false\n")
+    generated.write_text("[memory.index]\nembed = false\n")
     monkeypatch.setattr(m, "source_url_for", lambda *a, **k: "URL")
     monkeypatch.setattr(m, "refuse_if_source_diverges_from_head", lambda url: None)
     _stub_leaked_blank_sweep(monkeypatch)
@@ -422,7 +422,7 @@ def test_graph_preflight_cannot_dispatch_outside_the_case(monkeypatch, tmp_path)
     """The case boundary owns external calls, including embedding checks."""
 
     generated = tmp_path / "config.evaluation.toml"
-    generated.write_text("[memory.index]\nread = false\n")
+    generated.write_text("[memory.index]\nembed = false\n")
     monkeypatch.setattr(m, "source_url_for", lambda *a, **k: "URL")
     monkeypatch.setattr(m, "refuse_if_source_diverges_from_head", lambda url: None)
     _stub_leaked_blank_sweep(monkeypatch)
