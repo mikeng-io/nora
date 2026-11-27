@@ -93,13 +93,10 @@ def build_health_app(
         app["adapters"] = dict(adapters)
     else:
         app["adapters"] = {adapter.platform: adapter} if adapter is not None else {}
-    app["store"] = store
-    app["doctrine_store"] = doctrine_store
-    app["metrics"] = metrics
-    app["config_reload"] = config_reload
-    app["started_at"] = started_at
-    app["llm_state"] = llm_state
-    app["computer_health"] = computer_health
+    app.update(
+        store=store, doctrine_store=doctrine_store, metrics=metrics,
+        config_reload=config_reload, started_at=started_at, llm_state=llm_state,
+        computer_health=computer_health)
     # The bind-mounted, load-once config files — for the staleness canary below.
     app["config_files"] = {
         name: path for name, path in
