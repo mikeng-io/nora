@@ -179,6 +179,7 @@ async def test_trace_attributes_are_computed_from_ctx_and_doctrine():
     attrs = runner.calls[0]["trace_attributes"]
     assert attrs == {
         "tag_id": "tag-42", "conversation_id": "g9", "doctrine_sha256": "cafef00d",
+        "note_index_entries": 0,
     }
 
 
