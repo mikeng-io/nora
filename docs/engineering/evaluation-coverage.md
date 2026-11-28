@@ -37,16 +37,19 @@ transport, model-selected tool use or semantic behaviour.
 An execution rehearsal uses the same runtime, tools, context and evidence path
 with an explicitly selected model route, including a local small model through
 the common gateway. It exercises real inference, streaming, tool round trips,
-state settlement, judging and reporting. Its judgement quality does not gate
-Nora's quality, and a completed run covers only paths it actually exercised.
+state settlement, judging and reporting. It produces no quality score. Its
+judgement quality does not gate Nora's quality, and a completed run covers only
+paths it actually exercised.
 A model that ends without tools has not tested the tool path. Context or tool
 limits cause an explicit failure, never a smaller prompt. Model-independent
 protocol controls complement rehearsal where model choices omit a path.
 
-Behavioural evaluation uses the declared target model and independently fixed
-criteria. It supports only its scenario population and causal reach. Modes
-share execution and measurement components; a mode changes the question and
-model route, not Nora's feature inventory or orchestration.
+Behavioural evaluation applies to every corpus the suite lists whose subject
+exists at the target revision, never one named corpus. It uses the declared
+target model and independently fixed criteria, and supports only that
+population's causal reach. Modes share execution and measurement components; a
+mode changes the question and model route, not Nora's feature inventory or
+orchestration.
 
 ## Properties
 
@@ -74,8 +77,10 @@ reproduction of a known input, oracle or transport defect.
 
 Anchored cases preserve real conditions; counterfactuals are explicit and
 separate. Active, parked, unanchored, excluded and attempted cases remain
-visible. A missing prerequisite is not a silent skip. Calibration and
-confirmation have separate populations and purposes.
+visible. A corpus with no active case, or whose subject was retired, is reported
+with its counts and never scored. An unanchored active case is reported as an
+ERROR and stays in the denominator. A missing prerequisite is not a silent skip.
+Calibration and confirmation have separate populations and purposes.
 
 Finite semantic coverage is fixed from source and product requirements before
 outputs. Equivalent wording and faithful decomposition count when their

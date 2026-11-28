@@ -1,7 +1,8 @@
 ---
 class: engineering
 subject: "the isolated subject an evaluation runs against"
-owns: []
+owns:
+  - world response: "a non-model external response returned inside a behavioural draw's isolated dependency boundary"
 ---
 
 # Subject and sandbox
@@ -35,19 +36,31 @@ result contracts while their effects land in isolated services. Disabling a
 feature, deleting a tool or substituting an unavailable reader is not isolation
 of the same capability.
 
-The one declared exception is the model gateway. When a case declares it,
+The one declared exception is the model gateway: it is a behavioural draw's only
+live dependency. When a case declares it,
 dispatches naming the declared subject or judge identities reach that single
 configured upstream unchanged — model alias, tools and context intact — each
 request admitted on destination, method, configured route and declared model,
-counted once through the installed run budget, and the upstream's addresses
+counted once through the installed [run budget](evaluation-measurement.md), and
+the upstream's addresses
 reachable only while an admitted dispatch is in flight. Every other external
 effect remains refused; a missing declaration or budget refuses rather than
 defaulting to a live endpoint.
 
-Recorded external responses cross the real dependency boundary, not a prompt
-block pretending to be a tool result. Their identities, time and availability
-remain part of the scenario. An unknown historical roster cannot be replaced
-by today's roster and described as the same audience.
+World responses cross the real dependency boundary, not a prompt block pretending
+to be a tool result. Their identities, time and availability remain part of the
+scenario. A behavioural draw's non-model world responses are generated from what
+the case itself grounds: its anchor instant, its recorded source state and each
+tool's production result contract. They are private, reviewed with the case and
+never invent history. A response is generated only for what the case grounds; it
+is never captured live, and no request passes through to a live non-model
+service during a draw.
+
+Where the historical response is unknown — a roster or a reading at the anchor
+instant that nothing recorded — no plausible substitute is generated; the claim
+on that path is UNAVAILABLE. A request the case's world does not declare is
+refused at the boundary and retained as evidence. A criterion whose path needed
+that response is UNAVAILABLE for that draw, never PASS or FAIL.
 
 When a required dependency or history cannot be reproduced, execution refuses
 or the affected claim is unavailable. An explicitly broken dependency can test

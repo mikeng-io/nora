@@ -1,7 +1,11 @@
 ---
 class: engineering
 subject: "what a measurement is and how a verdict is reached"
-owns: []
+owns:
+  - reviewed contrast: "a calibration example used to decide whether a judge can distinguish accepted from rejected behaviour for a criterion"
+  - run budget: "the declared per-run ceiling on model-gateway spend"
+  - grading contract: "the frozen binding of cases, criteria, instructions and judges a run measures against"
+  - single-arm acceptance run: "an acceptance measurement of one arm against fixed criteria and a reviewed grading contract"
 ---
 
 # Measurement and verdicts
@@ -62,9 +66,15 @@ an inferred absence.
 Semantic judges are independent of the subject. Model identity, raw answers,
 reasons, cited evidence and parsing remain inspectable. Citations resolve to
 what the judge was actually shown. Structural failures cannot be cleared by
-fluent prose or an agreeing judge. Reviewed contrasts calibrate false accepts
-and rejects; calibration examples are distinct from held-out confirmation.
-Permission, disclosure and fabricated-presence failures cannot average away.
+fluent prose or an agreeing judge. Permission, disclosure and fabricated-presence
+failures cannot average away.
+
+Reviewed contrasts calibrate false accepts and rejects. They are fixed before
+the run, disjoint from the scored cases and free of production rows. A judged
+criterion's behavioural verdict counts only after both independent judges pass
+calibration against them. Calibration examples remain distinct from held-out
+confirmation. A judge disagreement is REVIEW. A criterion whose judges have not
+passed calibration reports behaviour UNAVAILABLE, not a score.
 
 Learning claims follow [Cognition's evidence chain](../design/cognition/learning.md).
 Persistence, exposure, declared dependence and later success do not alone
@@ -106,11 +116,20 @@ Draws, consecutive wakes and model/tool calls are different units. Repeated
 draws retain unique identities; disagreement is UNSTABLE and errors remain in
 the denominator. One draw is a smoke observation, not a reliable rate.
 
-Budgets cover the actual dispatch path, including SDK serialization, judge
-requests, retries and output reservations. Payload size and total wire size are
-different bounds. Unknown usage remains unknown. Latency, tokens, cache use,
+A run budget is declared once per run at the model gateway. Before spend, the
+run states an estimate in requests. The budget covers the actual dispatch path,
+including SDK serialization, and counts every subject request, judge request,
+retry and output reservation. Payload size and total wire size are different
+bounds. Exhaustion turns each remaining draw into an ERROR, never a skip.
+Spend authority is given per run; a budget with room left is not permission to
+retry or rescore. Unknown usage remains unknown. Latency, tokens, cache use,
 external work and database read cost accompany quality; a cheaper failed path
 is not an improvement. Paid rescoring and retries need their own authority.
+
+Every single-arm acceptance run measures one arm against fixed criteria and a
+reviewed grading contract. It reports, per corpus, execution, measurement
+validity and behaviour with their counts and spend. It claims no improvement
+over another arm.
 
 ## Privacy and observability
 

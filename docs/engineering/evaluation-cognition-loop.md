@@ -42,12 +42,13 @@ cannot establish candidate engagement. Those limits remain visible in its claim.
 
 An autonomous journey runs the composed subject's real `App`. Declared world
 input enters through production ingress and admission; production timers
-schedule cognition and fire without forced wakes. World responses and model
-routes follow the [execution mode](evaluation-coverage.md), preserving composition and control flow.
+schedule cognition and fire without forced wakes. [World responses](evaluation-subject.md)
+and model routes follow the [execution mode](evaluation-coverage.md), preserving
+composition and control flow.
 Per-wake evidence, finalization, both judges and retained JSON/HTML reports use
-the canonical pipeline shared with replay. Finite responses establish protocol
-coverage, not real-model behaviour; an unfulfilled dependency invalidates the
-affected claim.
+the canonical pipeline shared with replay. Generated world responses are part of
+the case's declared world, not a live service's answer; an unfulfilled dependency
+invalidates the affected claim.
 
 ## What the evidence must connect
 

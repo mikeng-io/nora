@@ -23,12 +23,15 @@ scenario + restored state + isolated dependencies
 ```
 
 - [Subject and sandbox](evaluation-subject.md) owns production equivalence, dependency
-  isolation and the boundary between replay and a complete journey.
+  isolation, [world responses](evaluation-subject.md) and the boundary between replay
+  and a complete journey.
 - [Measurement and verdicts](evaluation-measurement.md) owns evidence, judge visibility,
-  criterion authority, comparison and reporting. SDK execution records feed
-  the existing evidence recorder; judge and report views derive from it.
-- [Scenario coverage](evaluation-coverage.md) owns the claims different cases and
-  execution modes can establish, including rehearsal without quality scoring.
+  criterion authority, comparison, [run budgets](evaluation-measurement.md) and
+  reporting. SDK execution records feed the existing evidence recorder; judge and
+  report views derive from it.
+- [Scenario coverage](evaluation-coverage.md) owns the population and claims different
+  cases and execution modes can establish, including rehearsal without quality
+  scoring.
 - [Cognition journeys](evaluation-cognition-loop.md) owns the causal sequence across wakes
   and conscious turns. It applies the common contracts rather than defining
   another harness.
