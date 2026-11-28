@@ -192,8 +192,10 @@ def intention_verifier(
     )
 
 
-def legacy_agenda_migration(engine: AsyncEngine, policy: Policy) -> MigrateLegacyAgenda:
-    return MigrateLegacyAgenda(SqlLegacyAgenda(engine, policy))
+def legacy_agenda_migration(
+    engine: AsyncEngine, policy: Policy, persons: Persons,
+) -> MigrateLegacyAgenda:
+    return MigrateLegacyAgenda(SqlLegacyAgenda(engine, policy, persons))
 
 
 def graph_clock(engine: AsyncEngine, clock: Callable[[], datetime]) -> GraphClock:

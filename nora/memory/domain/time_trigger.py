@@ -3,6 +3,7 @@
 from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from sys import maxsize
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from nora.domain.reminders import Recurrence, RecurrenceRule, occurrence_at
@@ -24,20 +25,30 @@ class TimeTrigger:
     at: datetime
     zone: str
     recurrence: RecurrenceRule | None = None
+    series_anchor: datetime | None = None
+    series_offset: int = 0
+
+    def occurrence(self, index: int) -> datetime | None:
+        rule = self.recurrence
+        if index >= (rule.count if rule else 1):
+            return None
+        try:
+            at = (
+                occurrence_at(anchor=self.series_anchor or self.at, rule=rule,
+                              index=self.series_offset + index)
+                if index and rule else self.at
+            )
+        except (ValueError, OverflowError):
+            return None
+        return at if rule is None or rule.until is None or at <= rule.until else None
 
     def due_occurrences(self, tick: int, start: int) -> Iterator[datetime]:
-        rule = self.recurrence
-        for index in range(start, rule.count if rule else 1):
-            try:
-                at = (
-                    occurrence_at(anchor=self.at, rule=rule, index=index)
-                    if index and rule else self.at
-                )
-            except (ValueError, OverflowError):
-                return
-            if due_tick_of_at(at) > tick or (rule and rule.until and at > rule.until):
+        index = start
+        while (at := self.occurrence(index)) is not None:
+            if due_tick_of_at(at) > tick:
                 return
             yield at
+            index += 1
 
 
 def decode_time_trigger(value: object) -> TimeTrigger | None:
@@ -50,18 +61,28 @@ def decode_time_trigger(value: object) -> TimeTrigger | None:
     try:
         ZoneInfo(zone)
         recurrence = value.get("recurrence")
-        rule = _rule(zone, recurrence) if recurrence is not None else None
-        return TimeTrigger(at, zone, rule)
+        if recurrence is None:
+            return TimeTrigger(at, zone)
+        if not isinstance(recurrence, Mapping):
+            return None
+        rule = _rule(zone, recurrence)
+        anchor, offset = recurrence.get("anchor"), recurrence.get("offset", 0)
+        start = aware_instant(anchor)
+        if type(offset) is not int or offset < 0:
+            return None
+        if start is None and (anchor is not None or offset):
+            return None
+        return TimeTrigger(at, zone, rule, start, offset)
     except (ValueError, ZoneInfoNotFoundError):
         return None
 
 
-def _rule(zone: str, value: object) -> RecurrenceRule:
-    if not isinstance(value, Mapping):
-        raise ValueError("invalid recurrence")
+def _rule(zone: str, value: Mapping) -> RecurrenceRule:
     every, count, interval = value.get("every"), value.get("count"), value.get("interval", 1)
     until = value.get("until")
     end = aware_instant(until)
+    if "count" not in value and end is not None:
+        count = maxsize  # The stored end date bounds this series.
     if (
         not isinstance(every, str) or type(count) is not int or type(interval) is not int
         or (until is not None and end is None)
