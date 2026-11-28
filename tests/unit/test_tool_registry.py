@@ -175,7 +175,7 @@ def _built_tools(registry: ToolRegistry, *, dream_adaptor: str = "proactive") ->
 
 def test_the_registry_exposes_every_declared_tool():
     tools = _built_tools(ToolRegistry(
-        record=_RECORD, rollup=_ROLLUP, graph_profiles=_GRAPH_PROFILES,
+        record=_RECORD, rollup=_ROLLUP, profile_reader=_GRAPH_PROFILES,
         social_items=_SOCIAL_ITEMS,
         computer=FakeSandboxRuntime(), browser=FakeBrowserRunner(), documents=_DOCUMENTS,
         computer_admission=object(), browser_manager=object(),
@@ -502,7 +502,7 @@ def test_adapting_produces_objects_the_agent_factory_accepts():
         model="deepseek-v4-flash", max_tokens=400, temperature=0.7, client=client,
     )
     tools = _built_tools(ToolRegistry(
-        record=_RECORD, rollup=_ROLLUP, graph_profiles=_GRAPH_PROFILES,
+        record=_RECORD, rollup=_ROLLUP, profile_reader=_GRAPH_PROFILES,
         social_items=_SOCIAL_ITEMS,
         computer=FakeSandboxRuntime(), browser=FakeBrowserRunner(), documents=_DOCUMENTS,
         computer_admission=object(), browser_manager=object(),

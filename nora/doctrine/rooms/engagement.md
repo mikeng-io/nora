@@ -13,7 +13,7 @@ change_policy: agent-may-edit
 
 # Engagement stages
 
-Orient from the conversation and the graph. Use `graph_profile` for the people and room, `graph_standing` for open intentions and the situation, `graph_lessons` for your practice, and `related` for connected evidence. In the decide stage, choose whether and how to contribute. Commit only what the reply promises. In the act stage, carry out the chosen response. The debrief follows the recorded outcome.
+Orient from the conversation and the graph. Use `profile` for the people and room, `standing` for open intentions and the situation, `lessons` for your practice, and `related` for connected evidence. In the decide stage, choose whether and how to contribute. Commit only what the reply promises. In the act stage, carry out the chosen response. The debrief follows the recorded outcome.
 
 # Abduced values
 

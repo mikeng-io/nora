@@ -136,7 +136,7 @@ _RENAMED_SINCE: frozenset[str] = frozenset({
     # Retired: `intention_commit` opens, revises, drops and closes a scheduled delivery.
     "remind", "list_reminders", "cancel_reminder",
     "event_propose", "event_revise", "event_rsvp", "event_search", "event_set_status",
-    # Retired: the graph's `graph_profile` presentation carries the accounts it read.
+    # Retired: the graph's `profile` presentation carries the accounts it read.
     "character_read",
     "profile_read", "profile_revise",
     "remember",

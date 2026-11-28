@@ -775,7 +775,7 @@ def build_prefill(
     ctx: TagContext, *, display_name: str, context_window: int,
     now: datetime | None = None, header: str = TAG_HEADER,
     catalogue: str = "",
-    graph_profiles: tuple[ContextBlock, ...] = (),
+    profiles: tuple[ContextBlock, ...] = (),
 ) -> list[dict]:
     """The three prefill messages. **There is deliberately no roster block.**
 
@@ -818,7 +818,7 @@ def build_prefill(
         # reach her comes from `_BLOCKS`, so a block cannot be served without
         # an entry, and an entry cannot survive a block that stopped rendering.
         # Profile blocks take the place of their legacy context blocks.
-        switched = bool(graph_profiles)
+        switched = bool(profiles)
         declared = _declared([
             # `ToolSurface.prompt_catalogue`: the SAME admitted set the turn's
             # tools were built from, so it cannot name a tool this turn cannot
@@ -842,7 +842,7 @@ def build_prefill(
         if switched:
             declared = [
                 b for b in declared if b.name not in _PROFILE_REPLACES
-            ] + list(graph_profiles)
+            ] + list(profiles)
         # Report the blocks selected by `assemble`, including empty blocks
         # that opt into self-closing. Size counts body characters only.
         rendered = [b for b in declared if b.body or b.when_empty != "drop"]

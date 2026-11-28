@@ -4,6 +4,6 @@
     "file": "nora/memory/domain/presentations.py",
     "old": "            or (row.origin_room is None and row.state == \"open\")",
     "new": "            or (open_room_and_unit and row.origin_room is None and row.state == \"open\")",
-    "target": "tests/infra/test_called_pass_context.py::test_called_uses_graph_standing_and_keeps_room_situations"
+    "target": "tests/infra/test_called_pass_context.py::test_called_uses_standing_and_keeps_room_situations"
   }
 ]

@@ -15,14 +15,14 @@ from tests.unit.test_graph_row_render import CLAIM, DM_ROOMS, EARLIER, GROUP, NO
 BOUNDS = RetrievalBounds(2, 8, 40, EARLIER, NOW)
 SUBJECT = EntityAnchor("fixture-entity", "fixture-person")
 NAMES = {"fixture-person": "Fixture <name>"}
-KINDS = ("graph_profile", "graph_standing", "graph_lessons", "related")
+KINDS = ("profile", "standing", "lessons", "related")
 
 
 def test_graph_types_describe_their_owning_store() -> None:
     stores = {
-        "graph_profile": "cognitive_graph.profile",
-        "graph_standing": "cognitive_graph.standing",
-        "graph_lessons": "cognitive_graph.lessons",
+        "profile": "cognitive_graph.profile",
+        "standing": "cognitive_graph.standing",
+        "lessons": "cognitive_graph.lessons",
         "related": "cognitive_graph.related",
     }
     for name, store in stores.items():
@@ -74,7 +74,7 @@ def test_profile_blocks_identify_each_subject_by_id_and_identity_name() -> None:
         })[0]
         for subject in (SUBJECT, other)
     ]
-    rendered = assemble_declared((BlockDeclaration("graph_profile", 0, "Read claims"),), selected)
+    rendered = assemble_declared((BlockDeclaration("profile", 0, "Read claims"),), selected)
     elements = ElementTree.fromstring("<context>" + rendered + "</context>")  # noqa: S314
     assert [(row.get("of"), row.get("name")) for row in elements] == [
         ("fixture-entity", "Fixture <name>"), ("fixture-other-entity", "Another fixture name"),

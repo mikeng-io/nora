@@ -53,9 +53,9 @@ UNIT_ENTITY = "nora:unit:nora"
 #: `standing`, `culture` and `unit_culture` became (design/cognition/context.md's
 #: «Today's blocks» table).
 MUST_COMPARE = {
-    "transcript", "graph_standing",
-    "graph_profile of=" + ROOM_ENTITY,
-    "graph_profile of=" + UNIT_ENTITY,
+    "transcript", "standing",
+    "profile of=" + ROOM_ENTITY,
+    "profile of=" + UNIT_ENTITY,
 }
 
 
@@ -289,11 +289,11 @@ async def test_a_restore_renders_the_blocks_the_turn_was_handed(
         # The open intention and the folded position are Standing now; the
         # room and unit accounts are profile presentations
         # (design/cognition/context.md's «Today's blocks» table).
-        assert "Friday ride" in recorded["graph_standing"]
+        assert "Friday ride" in recorded["standing"]
         assert "they are deciding whether friday still works" in recorded[
-            "graph_standing"]
+            "standing"]
         assert ("they confirm plans late and nobody minds"
-                in recorded["graph_profile of=" + ROOM_ENTITY])
+                in recorded["profile of=" + ROOM_ENTITY])
         at = await _clock(engine)
 
         # THE SOURCE MOVES ON, in every tier the blocks read.
@@ -346,15 +346,15 @@ async def test_a_restore_renders_the_blocks_the_turn_was_handed(
 def test_blocks_of_cuts_a_prefill_into_its_blocks() -> None:
     text = (
         "Right now it is noon.\n"
-        '<graph_profile of="a:room:b">\na &lt;/graph_profile&gt; line\n'
-        '</graph_profile>\n'
-        '<graph_profile of="a:unit:c">\nunit account\n</graph_profile>\n'
+        '<profile of="a:room:b">\na &lt;/profile&gt; line\n'
+        '</profile>\n'
+        '<profile of="a:unit:c">\nunit account\n</profile>\n'
         '<transcript description="y">\n<m id="1">hi</m>\n</transcript>\n'
     )
     blocks = blocks_of(text)
     assert list(blocks) == [
-        "graph_profile of=a:room:b", "graph_profile of=a:unit:c", "transcript"]
-    assert blocks["graph_profile of=a:room:b"].endswith("</graph_profile>")
+        "profile of=a:room:b", "profile of=a:unit:c", "transcript"]
+    assert blocks["profile of=a:room:b"].endswith("</profile>")
     with pytest.raises(ValueError, match="twice"):
         blocks_of(text + '<transcript description="y">\nagain\n</transcript>\n')
 
@@ -364,11 +364,11 @@ def test_an_unavailable_presentation_is_not_an_empty_one() -> None:
     successful empty read differ, so the gate cannot call them equal."""
     recorded = blocks_of(
         "<transcript>\nx\n</transcript>\n"
-        '<graph_standing status="unavailable" cause="graph_read_timeout" />')
-    restored = blocks_of("<transcript>\nx\n</transcript>\n<graph_standing />")
+        '<standing status="unavailable" cause="graph_read_timeout" />')
+    restored = blocks_of("<transcript>\nx\n</transcript>\n<standing />")
     diff = compare_blocks(recorded, restored)
-    assert "graph_standing" in diff.differs
-    assert "graph_standing" in diff.unavailable
+    assert "standing" in diff.differs
+    assert "standing" in diff.unavailable
     assert not diff.equal
 
 
@@ -376,9 +376,9 @@ def test_unavailable_on_both_sides_is_still_unavailable() -> None:
     """Identical `status="unavailable"` text is still an unavailable read:
     the gate reports it, never EQUAL, never absent."""
     text = ("<transcript>\nx\n</transcript>\n"
-            '<graph_standing status="unavailable" cause="graph_read_timeout" />')
+            '<standing status="unavailable" cause="graph_read_timeout" />')
     diff = compare_blocks(blocks_of(text), blocks_of(text))
-    assert diff.unavailable == ("graph_standing",)
+    assert diff.unavailable == ("standing",)
     assert not diff.equal
 
 

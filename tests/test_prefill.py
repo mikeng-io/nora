@@ -1383,7 +1383,7 @@ async def test_eval_context_filter_withholds_only_selected_optional_blocks(tmp_p
         body = await _called_prompt(ctx)
     assert "<documents " in body and "<computer " not in body and "<subagents " not in body
     assert "<transcript " in body and "<tag_message " in body
-    assert "<graph_profile " in body and "<graph_standing " in body
+    assert "<profile " in body and "<standing " in body
     assert "full_transcript_window: 1" in received[0]
     assert "first 600 characters" in received[0]
     assert await _called_prompt(ctx) == before

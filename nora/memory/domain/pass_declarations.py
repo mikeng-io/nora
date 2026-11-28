@@ -16,7 +16,7 @@ from nora.memory.domain.pass_inputs import (
 from nora.memory.domain.retrieval import RetrievalBounds
 
 PassName = Literal["called", "ambient", "proactive", "debrief", "wake", "wake_history", "review"]
-Presentation = Literal["graph_profile", "graph_standing", "graph_lessons", "related"]
+Presentation = Literal["profile", "standing", "lessons", "related"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -39,13 +39,13 @@ _WAKE = (3, 10, 80, timedelta(days=365))
 _REVIEW = (1, 10, 60, timedelta(days=365))
 
 _PRESENTATIONS: tuple[Presentation, ...] = (
-    "graph_profile", "graph_standing", "graph_lessons", "related",
+    "profile", "standing", "lessons", "related",
 )
 _DECLARATIONS: dict[PassName, PassDeclaration] = {
     "called": PassDeclaration(CalledInput, _PRESENTATIONS, ("read",), _ENGAGEMENT),
     "ambient": PassDeclaration(AmbientInput, _PRESENTATIONS, ("read",), _ENGAGEMENT),
     "proactive": PassDeclaration(ProactiveInput, _PRESENTATIONS, ("read",), _ENGAGEMENT),
-    "debrief": PassDeclaration(DebriefInput, ("graph_standing",), (), _DEBRIEF),
+    "debrief": PassDeclaration(DebriefInput, ("standing",), (), _DEBRIEF),
     "wake": PassDeclaration(WakeInput, _PRESENTATIONS, ("read",), _WAKE),
     "wake_history": PassDeclaration(WakeInput, _PRESENTATIONS, ("read",), _WAKE),
     "review": PassDeclaration(ReviewInput, (), ("read",), _REVIEW),

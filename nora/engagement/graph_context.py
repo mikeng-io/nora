@@ -156,5 +156,5 @@ def _unavailable(floor: Sequence[ContextBlock], cause: str) -> AssembledPass:
     attrs = (("status", "unavailable"), ("cause", cause))
     blocks = tuple(ContextBlock(
         name, compose_body(""), attrs=attrs, when_empty="self_close",
-    ) for name in ("graph_profile", "graph_lessons", "graph_standing", "related"))
+    ) for name in ("profile", "lessons", "standing", "related"))
     return AssembledPass((*blocks[:2], *floor, *blocks[2:]), "unavailable", cause)

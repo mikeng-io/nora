@@ -50,7 +50,7 @@ from pathlib import Path
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import ArgumentError
 
-from nora.app import config_cli, graph_lessons_cli, lessons_cli, report
+from nora.app import config_cli, lessons_cli, report
 from nora.app.assess_run import AssessDisabledError
 from nora.app.assess_run import render as assess_render
 from nora.app.assess_run import run_nightly as assess_run_nightly
@@ -619,7 +619,7 @@ async def cmd_memory_backfill_places(args: argparse.Namespace) -> int:
 
 
 async def cmd_lessons_list(args: argparse.Namespace) -> int:
-    return await graph_lessons_cli.list_lessons(
+    return await lessons_cli.list_lessons(
         _database_url(_config(args)), args.unit, everything=bool(args.all),
     )
 
@@ -640,20 +640,20 @@ async def cmd_lessons_show(args: argparse.Namespace) -> int:
     """`nora lessons show ID`, READ ONLY: one graph lesson."""
     cfg = _config(args)
     try:
-        return await graph_lessons_cli.show_lesson(
+        return await lessons_cli.show_lesson(
             _database_url(cfg), _policy(cfg), args.lesson_id,
         )
-    except graph_lessons_cli.GraphLessonError as exc:
+    except lessons_cli.GraphLessonError as exc:
         raise CliError(str(exc)) from exc
 
 
 async def cmd_lessons_retire(args: argparse.Namespace) -> int:
     cfg = _config(args)
     try:
-        return await graph_lessons_cli.retire_lesson(
+        return await lessons_cli.retire_lesson(
             _database_url(cfg), _policy(cfg), args.lesson_id, apply=args.apply, why=args.why,
         )
-    except graph_lessons_cli.GraphLessonError as exc:
+    except lessons_cli.GraphLessonError as exc:
         raise CliError(str(exc)) from exc
 
 

@@ -44,7 +44,7 @@ _OBJECTIVE = "debrief"
 _BLOCKS: tuple[BlockDeclaration, ...] = (
     BlockDeclaration("debrief_items", 0, "Identify this pass's evidence and its outcomes."),
     BlockDeclaration("debrief_messages", 1, "Read the room context for those outcomes."),
-    BlockDeclaration("graph_standing", 2, "Re-judge the open intentions this pass could change."),
+    BlockDeclaration("standing", 2, "Re-judge the open intentions this pass could change."),
 )
 log = logging.getLogger(__name__)
 

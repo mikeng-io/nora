@@ -57,7 +57,7 @@ RULE_TESTS = {
         "test_a_closed_replay_records_the_exact_inputs_and_a_failed_replay_records_none",
     "R-109": "test_a_due_intention_delivers_once_and_closes_only_on_a_reply_outcome",
     "R-108": "test_debrief_writes_only_commit_operations_citing_its_pass_items",
-    "R-130": "test_room_list_reads_each_rooms_graph_profile_in_the_turn_audience",
+    "R-130": "test_room_list_reads_each_rooms_profile_in_the_turn_audience",
     "DEC-247": "test_a_cognition_block_that_sets_a_call_ceiling_refuses_to_load",
     "DEC-231": "test_other_unit_is_excluded",
     "DEC-233": "test_a_person_item_raises_a_stimulus_and_nora_s_own_item_raises_none",

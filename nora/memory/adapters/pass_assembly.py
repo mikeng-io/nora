@@ -123,7 +123,7 @@ class PassAssembler:
             result = RetrievalResult("unavailable", bounds, cause=seeds.cause)
         else:
             anchors = seeds.anchors
-            if "graph_lessons" in choice.presentations and seeds.collective[0].graph_id:
+            if "lessons" in choice.presentations and seeds.collective[0].graph_id:
                 nora = seeds.collective[0].graph_id
                 anchors = replace(anchors, graph_ids=(*anchors.graph_ids, nora))
             if isinstance(data, ProactiveInput) and data.event is not None:
@@ -183,7 +183,7 @@ def _presentation_order(
     hidden: set[str] = set()
     chosen = choice.presentations
     lesson_slot = 0
-    if "graph_profile" in chosen:
+    if "profile" in chosen:
         for subject in seeds.collective:
             block, ids = builder.profile_block(result, subject, seeds.names)
             if subject.pointer_ref == "nora" and not show_nora_profile:
@@ -199,11 +199,11 @@ def _presentation_order(
             block, ids = builder.profile_block(result, subject, seeds.names)
             late.append(block)
             shown.update(ids)
-    if "graph_lessons" in chosen:
+    if "lessons" in chosen:
         rows = lessons(result)
         early.insert(lesson_slot, builder.lessons_block(result, rows))
         shown.update(row.graph_id for row in rows)
-    if "graph_standing" in chosen:
+    if "standing" in chosen:
         block, ids = builder.standing_block(
             result, seeds.room_ref, seeds.room_entity, open_room_and_unit=open_room_and_unit,
         )

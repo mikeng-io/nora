@@ -52,9 +52,9 @@ async def test_ambient_presents_window_people_and_the_room_floor_in_assembled_or
     (call,) = runner_calls
     blocks = elements(call["tag_message"])
     assert [b.tag for b in blocks] == [
-        "graph_profile", "graph_lessons", "graph_profile", "graph_profile",
+        "profile", "lessons", "profile", "profile",
         "members", "clock", "presence", "tool_catalogue", "subagents", "transcript",
-        "tag_message", "graph_profile", "graph_standing", "related",
+        "tag_message", "profile", "standing", "related",
     ]
     assert blocks.find("subagents") is not None
     assert "Generated task in this room" in call["tag_message"]

@@ -357,7 +357,7 @@ def build_tool_specs(
     # `None` (offline, eval, every tag
     # path) answers `unavailable`; both tools are Dreamer-only besides.
     rollup: RollupReadSource | None = None,
-    graph_profiles: GraphProfileReader | None = None,
+    profile_reader: GraphProfileReader | None = None,
     # `social_read`'s read of the social stream's Record. `None` answers
     # `unavailable`; the registry withholds the tool before that matters.
     social_items: SocialItemsSource | None = None,
@@ -494,7 +494,7 @@ def build_tool_specs(
         observations=observations,
         lineage=lineage,
         rollup=rollup,
-        graph_profiles=graph_profiles,
+        profile_reader=profile_reader,
         social_items=social_items,
         subagent=subagent,
         video=video,
@@ -617,7 +617,7 @@ def build_tools(
     record: RecordQuerySource | None = None,
     lineage: LineagePolicy | None = None,
     rollup: RollupReadSource | None = None,
-    graph_profiles: GraphProfileReader | None = None,
+    profile_reader: GraphProfileReader | None = None,
     # The typed platform-observation Record: `record_query`'s `kind` branch,
     # `poll_list`/`poll_read`/`room_state_read` and the source events a
     # transcript read carries. `None` answers those `unavailable`.
@@ -661,7 +661,7 @@ def build_tools(
         describe_max_bytes=describe_max_bytes, video_chunk_seconds=video_chunk_seconds,
         video_max_chunks=video_max_chunks, media_join=media_join, rooms=rooms, clock=clock,
         record=record, lineage=lineage, rollup=rollup,
-        graph_profiles=graph_profiles, observations=observations, social_items=social_items,
+        profile_reader=profile_reader, observations=observations, social_items=social_items,
         subagent=subagent, video=video, video_ref_kinds=video_ref_kinds,
         graph_retrieval=graph_retrieval, pass_scope=pass_scope,
         intention_admission=intention_admission, memory_intake=memory_intake,

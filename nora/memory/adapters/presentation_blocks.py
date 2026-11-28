@@ -78,7 +78,7 @@ class GraphPresentationBlocks:
         sections = [(part, rows) for part, rows in selected.parts
                     if rows and selected.status != "unavailable"]
         body = "\n".join(f"{part}:\n{self.graph_rows(rows)}" for part, rows in sections)
-        block = _graph_block(selected, body, name="graph_profile", attrs=attrs)
+        block = _graph_block(selected, body, name="profile", attrs=attrs)
         return block, tuple(row.graph_id for _, rows in sections for row in rows)
 
     def standing_block(
@@ -108,12 +108,12 @@ class GraphPresentationBlocks:
                 rows.extend(group)
                 lines.extend((heading + ":", self.graph_rows(group)))
         return (
-            _graph_block(result, "\n".join(lines), name="graph_standing"),
+            _graph_block(result, "\n".join(lines), name="standing"),
             tuple(row.graph_id for row in rows),
         )
 
     def lessons_block(self, result: RetrievalResult, rows: Sequence[RetrievedRow]) -> ContextBlock:
-        return _graph_block(result, self.graph_rows(rows), name="graph_lessons")
+        return _graph_block(result, self.graph_rows(rows), name="lessons")
 
     def related_block(self, result: RetrievalResult, rows: Sequence[RetrievedRow]) -> ContextBlock:
         return _graph_block(

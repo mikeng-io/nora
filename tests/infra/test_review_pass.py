@@ -313,7 +313,7 @@ async def test_guess_profile_renders_its_refuted_grade(scenario):
     review = _review(scenario, _model("guess", "refuted", "later"))
     await review()
     assembled = await _assembler(scenario).assemble("wake", WakeInput(()), (), SCOPE, NOW)
-    profile = next(block for block in assembled.blocks if block.name == "graph_profile")
+    profile = next(block for block in assembled.blocks if block.name == "profile")
     assert "guess" in str(profile.body)
     assert "grade=refuted" in str(profile.body)
 

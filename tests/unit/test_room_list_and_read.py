@@ -152,7 +152,7 @@ async def store():
 
 def _tools(policy, persons, store, *, reader=..., adapters=None, rosters=None,
            conversation_id="SIGNAL-FRIENDS-ID", platform="signal",
-           conversation_type="group", metrics=None, graph_profiles=None):
+           conversation_type="group", metrics=None, profile_reader=None):
     if reader is ...:
         reader = PresenceReader(
             policy=policy, adapters=adapters or _adapters(),
@@ -174,7 +174,7 @@ def _tools(policy, persons, store, *, reader=..., adapters=None, rosters=None,
         deliverer=SinkSender(), metrics=metrics or Metrics(),
         room=room, transit_source=_UNREACHABLE_TRANSIT, rooms=reader,
         clock=lambda: NOW,
-        graph_profiles=graph_profiles,
+        profile_reader=profile_reader,
     )
     return {t.tool_name: t for t in tools}
 
@@ -204,7 +204,7 @@ async def test_room_list_names_this_units_rooms_with_network_and_marks_here(
     assert rooms["Zone 42"]["here"] is False
 
 
-async def test_room_list_keeps_descriptions_when_graph_profiles_are_unavailable(
+async def test_room_list_keeps_descriptions_when_profiles_are_unavailable(
     policy, persons, store,
 ):
     result = await _call(_tools(policy, persons, store)["room_list"])

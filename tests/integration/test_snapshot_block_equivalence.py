@@ -5,7 +5,7 @@ A generated eval source holds what a deployment's clone holds: the three
 recorded in-force loads (written through the production `SqlRevisionStore`,
 the same table the deployment's own start records), a tag turn's transcript
 (written through `SqlRecordStore`) and the room's open position (written as
-graph claims, the rows `graph_standing` renders), all before the snapshot
+graph claims, the rows `standing` renders), all before the snapshot
 instant. The live render runs inside the same finite recorded
 services the script then opens: `materialise` writes `in_force/`,
 `sandbox_as_of` restores as of T, `obtain` composes from the RECORDED config
@@ -66,8 +66,8 @@ def _services(cfg: Any) -> dict[str, Any]:
 
 async def _graph_seed(engine: Any, unit: str, room: str, *, at_ms: int) -> None:
     """The room's account and its open position as graph rows — the claims a
-    `called` pass reaches from the room pointer and renders as `graph_profile`
-    and `graph_standing` (design/cognition/context.md's migration table).
+    `called` pass reaches from the room pointer and renders as `profile`
+    and `standing` (design/cognition/context.md's migration table).
     """
     graph = SqlCognitiveGraph(engine)
     room_entity = f"{unit}:room:signal:{room}"
@@ -147,7 +147,7 @@ async def test_the_block_gate_runs_the_migrated_path_end_to_end(
                 engine = create_sql_engine(url)
                 try:
                     # The room's open position is a graph claim now — what the
-                    # turn's `graph_standing` carries (design/cognition/
+                    # turn's `standing` carries (design/cognition/
                     # context.md's migration table).
                     await _graph_seed(engine, live.unit, ROOM[1], at_ms=before_ms)
                     # The deployment's own start records what it loaded; a
@@ -191,7 +191,7 @@ async def test_the_block_gate_runs_the_migrated_path_end_to_end(
         assert "(none)" not in compared
         # The seeded room position must be among the compared blocks: a
         # transcript-only comparison cannot pass this gate.
-        assert "graph_standing" in compared
+        assert "standing" in compared
         assert "EQUAL" in out.splitlines()[-1]
 
         # Canonical evidence: the run started and settled inside

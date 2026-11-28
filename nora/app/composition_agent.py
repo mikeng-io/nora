@@ -101,7 +101,7 @@ def build_registry(
     cfg: Any, clock: Any, computer: Any, computer_admission: Any,
     computer_context: Any, computer_dm_scope_for: Any, computer_events: Any,
     computer_exports: Any, computer_leases: Any, computer_sessions: Any,
-    computer_settings: Any, content_checks: Any, graph_profiles: Any, discord_presence: Any,
+    computer_settings: Any, content_checks: Any, profile_reader: Any, discord_presence: Any,
     document_service: Any, engine: Any, fetch_client: Any,
     geocoder: Any, giphy_client: Any, image_generator: Any, image_refs_allowed: Any,
     lineage: Any, mcp_tool_groups: Any, media_descriptions: Any,
@@ -125,7 +125,7 @@ def build_registry(
         computer_events=computer_events, computer_exports=computer_exports,
         computer_leases=computer_leases, computer_sessions=computer_sessions,
         computer_settings=computer_settings, content_checks=content_checks,
-        graph_profiles=graph_profiles, discord_presence=discord_presence,
+        profile_reader=profile_reader, discord_presence=discord_presence,
         document_service=document_service, engine=engine,
         fetch_client=fetch_client, geocoder=geocoder, giphy_client=giphy_client,
         image_generator=image_generator, image_refs_allowed=image_refs_allowed,
@@ -157,7 +157,7 @@ def _build_tool_registry(
     computer_admission: Any, computer_sessions: Any, video_desk: Any, fetch_client: Any,
     persons: Any, computer_leases: Any, media_descriptions: Any, media_join: Any,
     geocoder: Any, metrics: Any, media_objects: Any,
-    computer_dm_scope_for: Any, content_checks: Any, graph_profiles: Any,
+    computer_dm_scope_for: Any, content_checks: Any, profile_reader: Any,
     subagent_desk: Any, giphy_client: Any, discord_presence: Any, computer: Any,
     presence_store: Any, mcp_tool_groups: Any, image_generator: Any,
     observation_store: Any,
@@ -195,7 +195,7 @@ def _build_tool_registry(
         budget_overrides=cfg.llm.budgets,
         content_checks=content_checks,
         **_memory_tool_args(
-            graph_profiles=graph_profiles,
+            profile_reader=profile_reader,
             engine=engine, lineage=lineage,
             graph_retrieval=graph_retrieval,
 
@@ -238,7 +238,7 @@ def _build_tool_registry(
 
 
 def _memory_tool_args(
-    graph_profiles: Any, engine: Any,
+    profile_reader: Any, engine: Any,
     lineage: Any,
     graph_retrieval: Any,
 ) -> Any:
@@ -253,7 +253,7 @@ def _memory_tool_args(
         "lineage": lineage,
         "rollup": SqlRollupRead(engine),
         # Room profiles are read through the turn's graph scope.
-        "graph_profiles": graph_profiles,
+        "profile_reader": profile_reader,
     }
 
 

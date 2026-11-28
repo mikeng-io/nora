@@ -148,8 +148,8 @@ async def test_debrief_standing_includes_unit_and_local_intentions_only(scenario
     [prompt] = w.client.prompts
     assert "local-open" in prompt and "unit-open" in prompt
     assert "other-room-open" not in prompt
-    assert "<graph_standing" in prompt
-    assert "<graph_profile" not in prompt and "<related" not in prompt
+    assert "<standing" in prompt
+    assert "<profile" not in prompt and "<related" not in prompt
 
 
 async def test_read_only_refused_and_cancelled_tools_are_individual_graph_items(scenario):
