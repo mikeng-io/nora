@@ -583,3 +583,49 @@ async def test_a_message_is_counted_and_a_reaction_is_not():
     )
     await pipeline.run(message=reaction)
     assert metrics.get("nora_messages_total", platform="signal") == 1
+
+
+async def test_a_recorded_reaction_reports_its_outcome_for_the_durable_handoff():
+    from nora.domain.models import Touch
+
+    store = FakeRecordStore()
+    await store.append(message=_msg("dinner at 7"), person_id="miles")
+    reaction = dataclasses.replace(
+        _msg("", ts=9), touch=Touch(kind="reaction", target=ORIGINAL, emoji="👍"),
+    )
+    result = await _pipeline(store).run(message=reaction)
+    assert result.outcome == "reaction_recorded"
+    orphan = dataclasses.replace(
+        _msg("", ts=10), touch=Touch(kind="reaction", target=EditTarget(sent_ts=999), emoji="👍"),
+    )
+    assert (await _pipeline(store).run(message=orphan)).outcome == "reaction_orphaned"
+
+
+async def test_a_room_that_vanishes_between_scope_and_the_absorb_read_is_not_absorbed(monkeypatch):
+    import nora.ingest.stages.scope as scope_stage
+
+    class _Flipping:
+        vanished = False
+
+        def __init__(self, inner):
+            self._inner = inner
+
+        def conversation(self, platform, conversation_id):
+            return None if self.vanished else self._inner.conversation(platform, conversation_id)
+
+        def __getattr__(self, name):
+            return getattr(self._inner, name)
+
+    policy = _Flipping(permissive_policy())
+    real_run = scope_stage.run
+
+    async def swap_after_scope(**kwargs):
+        admitted = await real_run(**kwargs)
+        policy.vanished = True
+        return admitted
+
+    monkeypatch.setattr(scope_stage, "run", swap_after_scope)
+    pipeline = _pipeline(FakeRecordStore())
+    pipeline._allowlist = policy
+    result = await pipeline.run(message=_msg("hello"))
+    assert result.message is not None and result.absorbed is False

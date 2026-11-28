@@ -1081,7 +1081,7 @@ async def _compose_dependencies(
         room_command=room_commands.is_command,
     )
     bridge_runtime = _bridge_runtime.bridge_runtime
-    _dreamer_enabled = enabled(
+    _dreamer_wiring = enabled(
         allowlist=allowlist,
         audit=audit,
         cfg=cfg,
@@ -1099,12 +1099,12 @@ async def _compose_dependencies(
         tool_registry=tool_registry,
         access=access,
     )
-    dreamer_runtime = _dreamer_enabled.dreamer_runtime
+    dreamer_runtime = _dreamer_wiring.dreamer_runtime
     wake_poller = build_wake(
         cfg, dreamer_runtime, dreamer_instructions, engine, access, lineage, allowlist,
         graph_debrief, slots, audit, presence_reader, documents_context, cognition_context_screen,
         graph_reads, metrics, clock, rosters, registry, content_checks, media_join,
-        review=_dreamer_enabled.review,
+        review=_dreamer_wiring.review,
     )
     _stores_otp = build_otp(
         audit=audit,

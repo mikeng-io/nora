@@ -19,5 +19,12 @@
     "old": "return PersonRef(**{k: v for k, v in data.items() if k in known})",
     "new": "return PersonRef(**data)",
     "target": "tests/unit/test_admission_and_handoff_pins.py::test_a_queued_handoff_with_a_removed_person_key_is_still_rebuilt"
+  },
+  {
+    "name": "the handoff writer no longer emits the removed person key",
+    "file": "nora/app/bridge_payloads.py",
+    "old": "\"name\": person.name,\n            \"first_name\"",
+    "new": "\"name\": person.name, \"honcho_peer_id\": person.person_id,\n            \"first_name\"",
+    "target": "tests/unit/test_admission_and_handoff_pins.py::test_the_handoff_writer_no_longer_emits_the_removed_person_key"
   }
 ]

@@ -82,5 +82,12 @@
     "old": "        if pending_dests and covered <= pending_dests:\n",
     "new": "        if False:\n",
     "target": "tests/unit/test_shared_state.py::test_an_act_pending_everywhere_asked_is_a_duplicate"
+  },
+  {
+    "name": "the wake's timeout default falls back under the session clock",
+    "file": "nora/config.py",
+    "old": "session_timeout_seconds: float = Field(default=3900.0, gt=0)",
+    "new": "session_timeout_seconds: float = Field(default=900.0, gt=0)",
+    "target": "tests/test_config.py::test_the_pass_timeout_ends_a_minute_before_the_open_wake_expires"
   }
 ]

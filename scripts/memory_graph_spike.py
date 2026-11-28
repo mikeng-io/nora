@@ -724,12 +724,8 @@ def evidence_file(directory: Path) -> Path:
 
 def main() -> int:
     """The graph-only replay scorer and its frozen-evidence entries are
-    retired: `python -m scripts.cognition_loop` is the evaluator. The
-    helpers below stay for the tests that still import them."""
-    raise SystemExit(
-        "the graph-only replay scorer is retired; "
-        "use `python -m scripts.cognition_loop`"
-    )
+    retired. The helpers below stay for the tests that still import them."""
+    raise SystemExit("the graph-only replay scorer is retired")
 
 
 

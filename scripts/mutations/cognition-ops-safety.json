@@ -19,5 +19,12 @@
     "old": "    stop_grace_period: 75s\n",
     "new": "",
     "target": "tests/architecture/test_the_stop_grace_covers_the_shutdown.py"
+  },
+  {
+    "name": "WakePoller.recover never recovers stale graph wake claims at startup",
+    "file": "nora/app/wake_poller.py",
+    "old": "    async def recover(self) -> None:\n        await self._recover_at(self._clock())",
+    "new": "    async def recover(self) -> None:\n        return None",
+    "target": "tests/unit/test_element_escaping.py::test_the_poller_recovers_stale_claims_when_asked_at_startup"
   }
 ]

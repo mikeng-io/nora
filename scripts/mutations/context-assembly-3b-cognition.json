@@ -103,5 +103,19 @@
     "old": "citing them, as the `n` and `from` fields say;",
     "new": "citing them, as `[n]` at the end of the line;",
     "target": "tests/unit/test_wake_block_type_text.py::test_the_block_type_keeps_the_sentence_a_reader_needs"
+  },
+  {
+    "name": "3b (b): the shared element renderer does not escape a row's words",
+    "file": "nora/domain/blocks.py",
+    "old": "        out.append(f\"<{tag} {rendered}>{escape(render_file_links(body(row) or ''))}</{tag}>\")",
+    "new": "        out.append(f\"<{tag} {rendered}>{render_file_links(body(row) or '')}</{tag}>\")",
+    "target": "tests/unit/test_element_escaping.py::test_a_row_s_words_and_attribute_values_cannot_break_out_of_their_element"
+  },
+  {
+    "name": "3b item 1: the nesting wrapper does not escape an attribute value, so a room label closes its quote",
+    "file": "nora/domain/blocks.py",
+    "old": "        f' {key}=\"{escape_attr(collapsed)}\"'",
+    "new": "        f' {key}=\"{collapsed}\"'",
+    "target": "tests/unit/test_element_escaping.py::test_a_room_label_cannot_close_the_quote_of_the_group_that_nests_rows"
   }
 ]

@@ -26,5 +26,19 @@
     "old": "        elif self._access is not None and not self._access.is_file_backend:\n            self._view = await self._resolve(self._roster)",
     "new": "        elif self._access is not None and not self._access.is_file_backend:\n            pass",
     "target": "tests/unit/test_managed_record_names.py::test_room_author_lookup_uses_the_current_scoped_name_on_each_read"
+  },
+  {
+    "name": "each returned hit uses its actual room not the agenda room",
+    "file": "nora/agent/toolkit/rooms.py",
+    "old": "        scope=Scope(ScopeKind.ROOM, room_scope_id(platform, conversation_id)))",
+    "new": "        scope=Scope(ScopeKind.ROOM, room_scope_id(room.platform, room.conversation_id)))",
+    "target": "tests/unit/test_record_hits_and_room_naming.py::test_rows_are_named_through_the_room_they_were_read_in_not_the_callers_room"
+  },
+  {
+    "name": "a deleted row retains its visible label without citable body",
+    "file": "nora/conversation/adapters/tools/query.py",
+    "old": "                if on_rows is not None:\n                    on_rows((replace(row, body=None),))",
+    "new": "                if False:\n                    on_rows((replace(row, body=None),))",
+    "target": "tests/unit/test_record_hits_and_room_naming.py::test_a_deleted_hit_is_reported_shown_without_its_words"
   }
 ]

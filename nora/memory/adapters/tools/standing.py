@@ -244,9 +244,7 @@ async def _rollup_read__fetch(c):
             return (True, None, {"status": "nothing_found", "note": _ROLLUP_NO_PERSON})
     for _w1 in [] if c.everyone else c.names:
         c.name = _w1
-        c.matches = c.view.find(c.name) or tuple(
-            p for p in c.view.people if c.by_id and p.person_id == c.name
-        )
+        c.matches = c.view.find(c.name)
         if not c.matches:
             _record(c.metrics, "rollup_read", "nothing_found", reason="subject")
             return (True, None, {"status": "nothing_found", "note": _ROLLUP_NO_PERSON})

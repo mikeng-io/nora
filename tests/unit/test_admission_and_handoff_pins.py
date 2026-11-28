@@ -27,3 +27,17 @@ def test_a_queued_handoff_with_a_removed_person_key_is_still_rebuilt():
     data = {**_person_dict(person), "peer_id": "removed-field"}
     rebuilt = _person_from_dict(data)
     assert (rebuilt.person_id, rebuilt.name) == ("ada", "Ada")
+
+
+def test_the_handoff_writer_no_longer_emits_the_removed_person_key():
+    assert "honcho_peer_id" not in _person_dict(PersonRef("ada", "Ada"))
+
+
+def test_a_reaction_label_marks_what_it_leaves_out_with_a_count():
+    from nora.domain.models import RowReactions
+
+    reactions = RowReactions(
+        counts=tuple((f"emoji-{i}", 1) for i in range(40)), recorded=40,
+    )
+    label = reactions.bounded_label(20)
+    assert label is not None and "+" in label.split()[-1]

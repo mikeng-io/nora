@@ -117,5 +117,12 @@
     "old": "    for conv in allowlist.rooms():\n        home = HomeRoom(",
     "new": "    for conv in allowlist.conversations:\n        home = HomeRoom(",
     "target": "tests/unit/test_discord_guild_entry.py::test_scope_home_rooms_map_a_discovered_channel"
+  },
+  {
+    "name": "the absorb read fails closed when the room vanished (message path)",
+    "file": "nora/ingest/pipeline.py",
+    "old": "        absorbed = room is not None and room.absorbed\n        message = dataclasses.replace(message, admitted_unit=room.unit if room else \"\")",
+    "new": "        absorbed = room is None or room.absorbed\n        message = dataclasses.replace(message, admitted_unit=room.unit if room else \"\")",
+    "target": "tests/unit/test_ingest_edit_path.py::test_a_room_that_vanishes_between_scope_and_the_absorb_read_is_not_absorbed"
   }
 ]

@@ -40,5 +40,82 @@
     "old": "    if any(label is None for label in labels):\n        return {\"status\": \"ambiguous\", \"note\": _AMBIGUOUS_ASK}\n",
     "new": "    labels = [label for label in labels if label is not None]\n",
     "target": "tests/unit/test_rollup_read_namesakes.py::test_on_a_tag_turn_no_person_id_is_offered_or_taken"
+  },
+  {
+    "name": "4 helper: the reader store drops opted_out",
+    "file": "nora/infra/sql/social_stream.py",
+    "old": "    return SqlSocialStreamStore(\n        engine, opted_out=LiveSet(persons.social_off_ids), metrics=metrics,\n        registration=registration,\n    )\n",
+    "new": "    return SqlSocialStreamStore(\n        engine, metrics=metrics,\n        registration=registration,\n    )\n",
+    "target": "tests/infra/test_social_read.py::test_a_person_who_opted_out_is_never_read_even_where_they_are_listed"
+  },
+  {
+    "name": "5 store: items_of reads the first id only",
+    "file": "nora/infra/sql/social_stream.py",
+    "old": "                *self._readable(), i.c.person.in_(sorted(set(persons))),\n",
+    "new": "                *self._readable(), i.c.person == persons[0],\n",
+    "target": "tests/infra/test_social_read.py::test_items_recorded_under_a_retired_id_are_read_with_the_current_ones"
+  },
+  {
+    "name": "5 social_read: the retired ids are not passed",
+    "file": "nora/social/adapters/tools/stream.py",
+    "old": "        ids = tuple(dict.fromkeys((who.person_id, current, *persons.former_ids_for(current))))\n",
+    "new": "        ids = (who.person_id,)\n",
+    "target": "tests/infra/test_social_read.py::test_items_recorded_under_a_retired_id_are_read_with_the_current_ones"
+  },
+  {
+    "name": "6 render: one item's readings are not bounded",
+    "file": "nora/agent/social_read.py",
+    "old": "        readings, more_seen = _fit(\n            readings, SOCIAL_ITEM_CHARS - len(caption) - len(location) - len(counts),\n        )\n",
+    "new": "        more_seen = 0\n",
+    "target": "tests/infra/test_social_read.py::test_a_long_carousel_is_cut_to_the_item_bound_and_says_so"
+  },
+  {
+    "name": "6 social_read: the cut item is not noted",
+    "file": "nora/social/adapters/tools/stream.py",
+    "old": "        if any(\"more_seen\" in i for i in shown):\n            notes.append(_SOCIAL_ITEM_CUT)\n",
+    "new": "",
+    "target": "tests/infra/test_social_read.py::test_a_long_carousel_is_cut_to_the_item_bound_and_says_so"
+  },
+  {
+    "name": "7 social_read: namesakes offered by bare name",
+    "file": "nora/social/adapters/tools/stream.py",
+    "old": "            return _ambiguous_person(matches, listed, by_id=by_id)\n",
+    "new": "            return {\"status\": \"ambiguous\", \"could_be\": [p.name for p in matches]}\n",
+    "target": "tests/infra/test_social_read.py::test_no_person_id_is_offered_or_taken_on_a_tag_turn"
+  },
+  {
+    "name": "7 rollup_read: namesakes offered by bare name",
+    "file": "nora/memory/adapters/tools/standing.py",
+    "old": "return (True, None, _ambiguous_person(c.matches, c.view.people, by_id=c.by_id)",
+    "new": "                return {'status': 'ambiguous', 'could_be': [p.name for p in c.matches]}\n",
+    "target": "tests/infra/test_social_read.py::test_an_item_says_what_it_is_how_old_it_is_and_what_it_showed"
+  },
+  {
+    "name": "8 store: items_of reads the place as first recorded",
+    "file": "nora/infra/sql/social_stream.py",
+    "old": "                i.c.caption, current_place(i).label(\"location\"), i.c.media_ref,\n",
+    "new": "                i.c.caption, i.c.location, i.c.media_ref,\n",
+    "target": "tests/infra/test_social_read.py::test_a_changed_tag_shows_the_new_place_and_a_removed_one_shows_none"
+  },
+  {
+    "name": "8 store: any state row, a place row included, hides an item",
+    "file": "nora/infra/sql/social_stream.py",
+    "old": "        \"\"\"One readable copy of each logical item, respecting opt-outs and hiding.\"\"\"\n        i, s = SOCIAL_ITEM, SOCIAL_ITEM_STATE\n        stated = sa.exists().where(\n            s.c.network == i.c.network, s.c.item_id == i.c.item_id,\n            s.c.source_state.in_(HIDING_STATES),\n        )\n",
+    "new": "        \"\"\"One readable copy of each logical item, respecting opt-outs and hiding.\"\"\"\n        i, s = SOCIAL_ITEM, SOCIAL_ITEM_STATE\n        stated = sa.exists().where(\n            s.c.network == i.c.network, s.c.item_id == i.c.item_id,\n        )\n",
+    "target": "tests/infra/test_social_read.py::test_a_changed_tag_shows_the_new_place_and_a_removed_one_shows_none"
+  },
+  {
+    "name": "9 tag turn: an indistinguishable namesake is offered by person id",
+    "file": "nora/agent/tool_deps.py",
+    "old": "    by_id = self.dream_adaptor == COGNITION_ADAPTOR\n",
+    "new": "    by_id = True\n",
+    "target": "tests/infra/test_social_read.py::test_no_person_id_is_offered_or_taken_on_a_tag_turn"
+  },
+  {
+    "name": "1 social_read: a name matches the roster name exactly, not by find_by_name",
+    "file": "nora/social/adapters/tools/stream.py",
+    "old": "        matches = find_by_name(listed, str(person))\n",
+    "new": "        matches = tuple(r for r in listed if r.name == str(person).strip())\n",
+    "target": "tests/infra/test_social_read.py::test_a_name_resolves_by_the_one_matching_rule_aliases_included"
   }
 ]

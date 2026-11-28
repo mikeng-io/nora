@@ -40,5 +40,12 @@
     "old": "if any(\"reactions_source\" in m for m in c.out):\n        c.notes.append(_REACTIONS_NOTE)\n    if c.older:\n        c.notes.append(_older_note(c.rows))\n    if not c.out and c.before_ts is not None:",
     "new": "        if c.older:\n            c.notes.append(_older_note(c.rows))\n        if not c.out and c.before_ts is not None:",
     "target": "tests/unit/test_reaction_annotations.py::test_the_tool_result_note_explains_the_counts_are_recorded_only"
+  },
+  {
+    "name": "the label never marks omitted detail",
+    "file": "nora/domain/models.py",
+    "old": "                dropped += n",
+    "new": "                dropped += 0",
+    "target": "tests/unit/test_admission_and_handoff_pins.py::test_a_reaction_label_marks_what_it_leaves_out_with_a_count"
   }
 ]

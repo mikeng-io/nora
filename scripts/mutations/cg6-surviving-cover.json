@@ -21,20 +21,6 @@
     "target": "tests/infra/test_memory_index_vectors.py::test_a_wait_is_owed_from_the_last_input_change_never_from_a_reprojection"
   },
   {
-    "name": "an unaffordable reserved call is refused",
-    "file": "nora/agent/token_reservation.py",
-    "old": "        if self.total + reserved > self.limit:",
-    "new": "        if self.total + reserved < self.limit:",
-    "target": "tests/unit/test_token_reservation.py::test_an_unaffordable_first_call_is_refused_before_the_provider_call"
-  },
-  {
-    "name": "cancelled in-flight usage remains unknown",
-    "file": "nora/agent/token_reservation.py",
-    "old": "        return None if self._in_flight else self.total",
-    "new": "        return self.total",
-    "target": "tests/unit/test_token_reservation.py::test_cancelled_in_flight_model_usage_remains_unknown"
-  },
-  {
     "name": "a current withdrawal stays absent at an as-of read",
     "file": "nora/infra/sql/audit.py",
     "old": "    hidden: sa.ColumnElement[bool] = MESSAGES.c.hidden_at.is_(None)",

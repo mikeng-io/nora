@@ -149,9 +149,8 @@ def notes(cfg, engine) -> NotesWiring:
     # flag. Off, `TranscriptInjection` gets `notes=None` and `_notes` answers `()` without a
     # query. No `metrics=`: `SqlNoteStore.__init__` takes an engine and nothing else on…
     note_store: SqlNoteStore | None = SqlNoteStore(engine) if cfg.notes.enabled else None
-    # The memo tier (DEC-306): what a unit settled and keeps. No flag: only a Cognition
-    # session writes a memo (`[cognition] enabled`), and with none kept every read renders
-    # nothing. ONE instance for the tag and fire `<memos>`, `memo_read` and the session's…
+    # The memo tier (DEC-306): what a unit settled and keeps. No flag: with none kept every
+    # read renders nothing. ONE instance for the tag and fire `<memos>` and `memo_read`…
     memo_store = SqlMemoStore(engine)
     # The shared Notebook entry store — the topic account is its only kind so far.
     # No flag, same reason as the memo store: only a session writes an entry.
