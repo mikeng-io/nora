@@ -151,7 +151,7 @@ async def test_the_real_sdk_retains_the_exchange_and_requirements(occasion):
                 platform="signal", conversation_id="room-a", conversation_type="group",
                 sender_id="generated-account", sender_name="Member 1", timestamp=1,
                 body="check", raw={},
-            ), tagger=None, transcript=(), peer_card=(), started_at=0,
+            ), tagger=None, transcript=(), started_at=0,
         )
         _, _, trace = await LiveAgentRunner(models=FixedModelSource(model), retry=RETRY).invoke(
             doctrine=_doctrine(), tools=[tool], pre_fill=[],

@@ -458,7 +458,7 @@ async def run_case(
     # clock settles the window. The verdict is read off `Trajectory.sent`.
     participation = case.expect is not None
     # ONE read of the wall clock for the whole case, the same
-    # "interpret once" discipline `build_prefill` uses for its own clock: the
+    # "interpret once" discipline the engagement floor uses for its own clock: the
     # seeded transcript's base AND the judged line's own timestamp below come
     # from this SAME `now_ms`, so the ordering between them is by
     # CONSTRUCTION rather than by two reads of the clock happening to agree.

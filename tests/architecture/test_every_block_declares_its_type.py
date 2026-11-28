@@ -41,11 +41,10 @@ def _renderer_paths() -> tuple[Path, ...]:
 
 
 def _table_names() -> set[str]:
-    """The block names in `prefill._BLOCKS` and `_TAG_MESSAGE_BLOCKS` — the
-    table the tag path builds from, rather than a literal at a constructor."""
-    from nora.agent.prefill import _BLOCKS, _TAG_MESSAGE_BLOCKS
+    """The names passed through the floor's table-backed block helper."""
+    from nora.agent.prefill import _BLOCKS
 
-    return {row[0] for row in _BLOCKS} | {row[0] for row in _TAG_MESSAGE_BLOCKS}
+    return {row[0] for row in _BLOCKS}
 
 
 def _wrapper_names() -> set[str]:
@@ -96,7 +95,7 @@ def _wrapper_names() -> set[str]:
 
 
 def _literal_block_names(tree: ast.Module) -> set[str]:
-    """Every literal `ContextBlock(name="x", ...)` in one parsed module."""
+    """Every literal block name in a ContextBlock constructor."""
     found: set[str] = set()
     for node in ast.walk(tree):
         if (
@@ -104,6 +103,10 @@ def _literal_block_names(tree: ast.Module) -> set[str]:
             and isinstance(node.func, ast.Name)
             and node.func.id == "ContextBlock"
         ):
+            if node.args and isinstance(node.args[0], ast.Constant):
+                name = node.args[0].value
+                if isinstance(name, str):
+                    found.add(name)
             for kw in node.keywords:
                 if (
                     kw.arg == "name"
@@ -115,14 +118,7 @@ def _literal_block_names(tree: ast.Module) -> set[str]:
 
 
 def _rendered_names() -> set[str]:
-    """Every literal `name=` handed to a `ContextBlock`, discovered from source.
-
-    `prefill` builds its blocks through a `_block(name, …)` helper off a table,
-    so the literal is in `_BLOCKS` rather than at the constructor — read from
-    there too. Missing that would report `peer_card`, `peer_history` and
-    `people_in_window` as DECLARED AND UNRENDERED, arguing for deleting three
-    descriptions of blocks that ship on every tag turn.
-    """
+    """Discover names from block constructors, wrappers and tables."""
     found: set[str] = set(_table_names()) | _wrapper_names()
     for path in _renderer_paths():
         try:
@@ -151,6 +147,11 @@ def test_a_block_with_no_declared_type_is_caught():
     tree = ast.parse("b = ContextBlock(name='scratch_unlisted', body='x')\n")
     assert _literal_block_names(tree) == {"scratch_unlisted"}
     assert _literal_block_names(tree) - set(BLOCK_TYPES) == {"scratch_unlisted"}
+
+
+def test_engagement_tag_blocks_are_discovered_from_live_constructors():
+    tree = ast.parse((ROOT / "nora/agent/prefill.py").read_text(encoding="utf-8"))
+    assert {"replying_to", "tag_message"} <= _literal_block_names(tree)
 
 
 def test_every_declared_type_is_actually_rendered():

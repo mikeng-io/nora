@@ -19,7 +19,7 @@ policy off the line and the architecture test pins every non-default one
 
 * `"escaped"`: R-13's escape (`nora.domain.prompt.escape`), the default;
 * `"carried"`: the text is the BODY of a block that escapes it once itself
-  (`build_tag_message` escapes `<tag_message>`), so escaping it here would
+  (the floor escapes `<tag_message>`), so escaping it here would
   escape it twice. Formatted as an f-string formats it, so any object goes in;
 * `"joined"`: `"carried"` for a text that master joined with `str.join`, which
   REFUSES a non-str with a `TypeError`. A reminder's text is one: a turn whose
@@ -299,7 +299,7 @@ class RequestBody:
     """The due rows' OWN sentence(s), joined, as the words put to her: what was
     asked, in the asker's words, so the decided-at and due-at facts belong in the
     header, never here.
-    Carried: `build_tag_message` escapes the body once, in its block. Joined: a
+    Carried: the floor escapes the body once, in its block. Joined: a
     text that is not a str raises `TypeError`, as `"\n".join` did, so a row that
     somehow holds none fails the turn closed instead of putting «None» to her."""
 
@@ -384,7 +384,7 @@ class LostJobBody:
 #: default rather than a literal inside `ContextHeader`: the fire path passes its
 #: own (`FIRE_HEADERS`), and the blocks and every escaping rule in
 #: `nora.agent.prefill` are shared rather than copied. R-13/R-13b escaping is
-#: pinned to `build_prefill` by two named acceptance tests, and a second prefill
+#: pinned to the engagement floor by two named acceptance tests, and a second prefill
 #: rendering the same transcript would sit outside both.
 TAG_HEADER = (
     "You are in a group chat you have been reading all along. You do not "

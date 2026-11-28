@@ -19,7 +19,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 import tiktoken
 
-from nora.agent.prefill import build_prefill
+from nora.agent.prefill import engagement_floor
 from nora.domain.computer import StateFile, TmuxSession, computer_unit_scope
 from nora.domain.computer_context import (
     ComputerContextCaps,
@@ -87,13 +87,15 @@ def _ctx(computer):
     msg = NormalizedMessage(platform="signal", conversation_id=ROOM,
                             conversation_type="group", sender_id="+1", sender_name="M",
                             timestamp=1, body="hi", raw={})
-    return TagContext(tag_id="t", message=msg, tagger=None, transcript=(), peer_card=(),
+    return TagContext(tag_id="t", message=msg, tagger=None, transcript=(),
                       started_at=0.0, computer=computer)
 
 
 def _prefill_text(ctx) -> str:
-    return "\n".join(str(m["content"]) for m in build_prefill(
-        ctx, display_name="Nora", context_window=40, now=NOW))
+    return "\n".join(block.render() for block in engagement_floor(
+        ctx, display_name="Nora", tagger_name="Member", context_window=40,
+        now=NOW, catalogue="",
+    ))
 
 
 def test_no_view_renders_no_block_in_the_prompt():

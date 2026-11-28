@@ -264,7 +264,7 @@ class ProactiveFire:
         ctx = TagContext(
             claim.pass_id, message, None,
             await room.access.name_transcript(transcript, platform=platform, scope=scope),
-            (), time.perf_counter(), room_members=await room.access.room_refs(platform, room_id),
+            time.perf_counter(), room_members=await room.access.room_refs(platform, room_id),
             presence=presence,
         )
         return await MentionRenderer(

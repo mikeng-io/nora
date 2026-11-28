@@ -173,7 +173,7 @@ def test_a_context_error_is_never_a_pass():
 
 def test_no_prefill_span_captured_is_an_error_not_a_pass():
     """`None` (no `agent.prefill` span seen at all — the entry point never calls
-    `build_prefill`, or the capture itself failed) and `""` (a span WAS seen
+    graph context, or the capture itself failed) and `""` (a span WAS seen
     and nothing was empty) stay distinct: collapsing them would let a
     `gate`/`dreamer` case mistakenly given `must_render`, or any capture
     failure, score a clean PASS with a positively-worded reason."""
@@ -453,7 +453,7 @@ async def test_drive_captures_a_real_prefill_span_emitted_during_the_drive(monke
     """Swapping `_prefill_capture()` for a fresh, unattached exporter must
     redden a test. This drives
     `_drive()` for real and has the fake port open a genuine
-    `nora.obs.tracing.span("agent.prefill", ...)` the way `build_prefill`
+    `nora.obs.tracing.span("agent.prefill", ...)` the way graph context
     does, checking `_drive()` actually reads it back."""
     from nora.obs.tracing import annotate, span
 

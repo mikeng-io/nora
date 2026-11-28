@@ -94,7 +94,7 @@ async def test_a_mention_of_nora_herself_says_her_name(harness_factory):
 
 async def test_the_tagging_message_itself_is_rehydrated(harness_factory):
     """The tag message is a separate block from the transcript, built by
-    `build_tag_message`, and it is where a mention is most likely to be."""
+    the engagement floor, and it is where a mention is most likely to be."""
     h = await harness_factory(script=_reply(), identity_toml=IDENTITY)
     body = f"nora.000 {PLACEHOLDER} 幾點"
     await h.handler.on_event(group_event(

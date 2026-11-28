@@ -130,7 +130,7 @@ def _ctx() -> TagContext:
         raw={},
     )
     return TagContext(
-        tag_id="tag-1", message=msg, tagger=None, transcript=(), peer_card=(),
+        tag_id="tag-1", message=msg, tagger=None, transcript=(),
         started_at=0.0,
     )
 

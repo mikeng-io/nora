@@ -48,8 +48,8 @@ def _blocks() -> list[ContextBlock]:
     return [
         ContextBlock(name="notes", body=compose_fixture("n body"), order=20),
         ContextBlock(name="today", body=compose_fixture("2026-10-01 Thu"), order=10),
-        ContextBlock(name="recalled", body=compose_fixture(""), order=15),
-        ContextBlock(name="source_objects", body=compose_fixture("a & b <c>\nline2"), order=40),
+        ContextBlock(name="transcript", body=compose_fixture(""), order=15),
+        ContextBlock(name="tag_message", body=compose_fixture("a & b <c>\nline2"), order=40),
     ]
 
 
@@ -79,17 +79,17 @@ def test_a_separator_joins_and_does_not_terminate():
     """The default closes every block with a newline; a separator goes BETWEEN
     blocks, so the text ends on the last block's closing tag."""
     blocks = _blocks()
-    assert assemble(blocks).endswith("</source_objects>\n")
-    assert assemble(blocks, sep="\n\n").endswith("</source_objects>")
+    assert assemble(blocks).endswith("</tag_message>\n")
+    assert assemble(blocks, sep="\n\n").endswith("</tag_message>")
     assert assemble([blocks[2]], sep="\n\n") == ""  # an empty body is dropped
 
 
 def test_ordering_by_order_holds_with_a_separator():
     blocks = _blocks()
     rendered = assemble(blocks, sep="\n\n")
-    positions = [rendered.index(f"<{name} ") for name in ("today", "notes", "source_objects")]
+    positions = [rendered.index(f"<{name} ") for name in ("today", "notes", "tag_message")]
     assert positions == sorted(positions)
-    assert "<recalled" not in rendered
+    assert "<transcript" not in rendered
     assert assemble(list(reversed(blocks)), sep="\n\n") == rendered
 
 

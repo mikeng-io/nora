@@ -105,7 +105,7 @@ async def test_each_text_is_rehydrated_against_the_envelope_it_came_from():
             platform="signal", conversation_id="g1", conversation_type="group",
             sender_id="+852111", sender_name="Miles", timestamp=9, body="hi", raw={},
         ),
-        tagger=None, transcript=(row,), peer_card=(), started_at=0.0,
+        tagger=None, transcript=(row,), started_at=0.0,
     )
     out = (await MentionRenderer(
         persons=persons, display_name="Nora", self_ids=frozenset(), metrics=Metrics(),

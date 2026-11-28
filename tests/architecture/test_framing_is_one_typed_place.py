@@ -111,7 +111,7 @@ ALLOWED: dict[tuple[str, str], str] = {
 #: Every value that enters framing text WITHOUT `escape`, as (builder, the
 #: expression handed to `_put`, kind): the whole list, so a new one is a visible
 #: diff. `joined` and `carried` are the BODY of a block that escapes it once
-#: itself (`build_tag_message`); `system` is computed by code, never typed by a
+#: itself (the engagement floor); `system` is computed by code, never typed by a
 #: person. Nothing reaches the model bare.
 NON_ESCAPED: dict[tuple[str, str, str], str] = {
     ("RequestBody", "text", "joined"): (

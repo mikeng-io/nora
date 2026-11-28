@@ -77,7 +77,7 @@ async def test_a_transcript_read_failure_counts_nora_errors_total_stage_context(
     assert metrics.get("nora_errors_total", stage="context") == 1
 
 
-async def test_an_unmapped_tagger_yields_no_tagger_and_no_peer_card():
+async def test_an_unmapped_tagger_yields_no_tagger():
     assembler = TranscriptInjection(
         audit=FakeRecordStore(),
         persons=Persons(by_person={}, index={}),   # nobody mapped
@@ -87,7 +87,6 @@ async def test_an_unmapped_tagger_yields_no_tagger_and_no_peer_card():
     ctx = await assembler.assemble(request=_request(_msg(sender_id="+85299999999")))
 
     assert ctx.tagger is None
-    assert ctx.peer_card == ()
 
 
 async def test_the_transcript_is_oldest_first_and_window_bounded():

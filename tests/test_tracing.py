@@ -16,7 +16,7 @@ def test_trace_attributes_carry_the_provenance_fields(tmp_path):
     write(d, "identity.md", name="soul", order=10, body="x")
     doctrine = DoctrineStore(d, canary="C", metrics=Metrics()).get()
     msg = NormalizedMessage("signal", "g1", "group", "+1", "Miles", 1, "hi", {})
-    attrs = trace_attributes(TagContext("t1", msg, None, (), (), 0.0), doctrine)
+    attrs = trace_attributes(TagContext("t1", msg, None, (), 0.0), doctrine)
     assert attrs["tag_id"] == "t1"
     assert attrs["conversation_id"] == "g1"
     assert attrs["doctrine_sha256"] == doctrine.sha256
@@ -31,7 +31,7 @@ def test_trace_attributes_never_carry_message_content(tmp_path):
     d.mkdir()
     write(d, "identity.md", name="soul", order=10, body="x")
     msg = NormalizedMessage("signal", "g1", "group", "+1", "Miles", 1, "a private thing", {})
-    attrs = trace_attributes(TagContext("t1", msg, None, (), (), 0.0),
+    attrs = trace_attributes(TagContext("t1", msg, None, (), 0.0),
                              DoctrineStore(d, canary="C", metrics=Metrics()).get())
     assert "a private thing" not in json.dumps(attrs)
 

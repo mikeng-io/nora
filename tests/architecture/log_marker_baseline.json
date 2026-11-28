@@ -29,7 +29,7 @@
   "nora/agent/memory_search.py": 9,
   "nora/agent/outbound.py": 8,
   "nora/agent/ports.py": 21,
-  "nora/agent/prefill.py": 17,
+  "nora/agent/prefill.py": 11,
   "nora/agent/reasoning_carry.py": 2,
   "nora/agent/reasoning_strip.py": 2,
   "nora/agent/registry.py": 51,

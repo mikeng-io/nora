@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import re
+from datetime import UTC, datetime
 from types import SimpleNamespace
 
 import pytest
@@ -15,7 +16,7 @@ from aiohttp import web
 from aiohttp.test_utils import TestServer
 
 import nora.agent.prefill as prefill
-from nora.agent.prefill import _BLOCKS, build_prefill
+from nora.agent.prefill import engagement_floor
 from nora.app.composition_helpers import _presence_reader
 from nora.domain.models import NormalizedMessage, TagContext
 from nora.domain.ports import AdapterHealth
@@ -30,12 +31,15 @@ from nora.policy import Conversation, Policy, load_policy
 
 def _ctx(platform: str = "signal", **kwargs) -> TagContext:
     msg = NormalizedMessage(platform, "g1", "group", "+852111", "Miles", 1, "hi", {})
-    return TagContext("tag-1", msg, None, (), (), 0.0, **kwargs)
+    return TagContext("tag-1", msg, None, (), 0.0, **kwargs)
 
 
 def _turn_text(ctx: TagContext) -> str:
     """The per-turn message, where anything that varies between turns lives."""
-    return build_prefill(ctx, display_name="Nora", context_window=40)[1]["content"][0]["text"]
+    return "\n".join(block.render() for block in engagement_floor(
+        ctx, display_name="Nora", tagger_name="Member", context_window=40,
+        now=datetime(2026, 10, 7, tzinfo=UTC), catalogue="",
+    ))
 
 
 # ---- display names --------------------------------------------------
@@ -373,9 +377,9 @@ def test_the_description_says_generated_and_to_trust_it_over_memory():
     assert "trust it over any memory that disagrees" in rendered
 
 
-def test_where_line_is_gone_and_presence_is_a_declared_row():
+def test_presence_is_a_room_floor_block():
     assert not hasattr(prefill, "_where_line")
-    assert ("presence", 5, "turn") in _BLOCKS
+    assert "<presence " in _turn_text(_ctx())
 
 
 def test_presence_reaches_the_turn_through_assemble_not_a_bare_string():
@@ -385,7 +389,7 @@ def test_presence_reaches_the_turn_through_assemble_not_a_bare_string():
         platform="discord", label="Zone 42", here_state="up",
         unit_rooms=(), other_groups=False,
     )))
-    after_clock = text.split("\n", 1)[1]
+    after_clock = text.split("</clock>\n", 1)[1]
 
     assert "<presence " in after_clock
     assert "You are in «Zone 42» on Discord." in after_clock

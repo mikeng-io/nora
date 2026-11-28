@@ -1,14 +1,7 @@
-"""Conversation-history pre-fill (R-13, R-15).
-
-Exactly three messages, deterministic. All group-derived text is XML-escaped
-and enclosed in a block that says, in its own opening tag, what it is and that
-it is not an instruction, the same choice the vended AgentSkills plugin makes
-for its own injected XML, with the label replaced by the sentence.
-"""
+"""Render the room floor and framing for engagement passes."""
 
 from __future__ import annotations
 
-import json
 import re
 from collections.abc import Mapping, Sequence
 from datetime import datetime
@@ -20,7 +13,6 @@ from ..domain.blocks import (
     BlockKey,
     ContextBlock,
     assemble,
-    render_bullets,
     render_elements,
     restamp,
     speaker_name,
@@ -42,7 +34,6 @@ from ..language.computer_render import render_computer
 from ..language.documents_render import render_documents
 from ..language.presence_render import render_presence
 from ..language.subagents_render import render_subagents
-from ..obs.tracing import annotate, span
 from .clock import local_now, state_time
 
 # `TAG_HEADER`, `CLOSING_LINE` and the text of the clock line and of the
@@ -54,15 +45,7 @@ from .clock import local_now, state_time
 # loader renders frontmatter into section attributes with the identical rule,
 # and the layer contract runs agent -> doctrine, so the loader cannot import
 # them from here. Re-exported under the names this module uses.
-__all__ = ["TAG_HEADER", "build_prefill", "build_tag_message", "escape", "render_transcript"]
-
-# There is no `_where_line`: where she is arrives as `<presence>`, a row in
-# `_BLOCKS` below that goes through `assemble` like every other block. It
-# states the network, the room, the group's other rooms and whether each is
-# reachable, generated each turn. The platform name table lives in
-# `nora.domain.self_presence.PLATFORM_NAMES` so that other renderers of the
-# block can use it without importing this module.
-
+__all__ = ["TAG_HEADER", "engagement_floor", "engagement_prefill", "escape", "render_transcript"]
 
 def _message(role: str, text: str) -> dict:
     return {"role": role, "content": [{"text": text}]}
@@ -91,89 +74,13 @@ def _now_line(now: datetime | None) -> str:
     return ClockLine(state_time(now)).render()
 
 
-
-#: THE BLOCK TABLE: every block this prefill serves, declared once.
-#:
-#: `order` runs from her own past, to theirs, to the unit's open questions, to
-#: what she already did about them, to her position, to the room: each
-#: widening scope, with the transcript last because it is adjacent to the
-#: message it explains. Source objects sit immediately before the transcript.
-#:
-#: There is no `header` column. Each block says what it is in its own tag,
-#: from its type (`nora.domain.block_types`), so a block is described in one
-#: place and the opening tag cannot disagree with a catalogue. A block that is
-#: absent says nothing.
-#:
-#: `key` is narrower than `global` for every row (they vary per turn, per room
-#: or per person), which is why every one of them is served in the per-turn
-#: message rather than the cached head. `BlockKey`'s docstring argues that
-#: rule and `test_no_block_in_this_table_belongs_in_the_cached_head` pins it.
+# Order and scope for blocks stamped by this module.
 _BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
-    # The tool catalogue. Ahead of `presence`, because it is the steadier of
-    # the two: it varies by the room's tool SCOPE (a Discord room carries the
-    # music verbs, a Signal room does not), never by the turn or the person.
-    # It renders only when tools are deferred (`[llm] defer_tools`); with
-    # every schema resident it would be a second copy of them.
-    ("tool_catalogue", 3, "room"),
-    # WHO IS WHO: this room's listed persons with the names the group calls
-    # them. `room`: it changes only with policy.toml or identity.toml, so it
-    # stays in the steady front of the per-turn message. Never the whole
-    # identity file.
+    ("context_header", 0, "turn"),
     ("members", 4, "room"),
-    # WHERE SHE IS, FIRST. Straight after the clock, so the turn opens on when
-    # and where, then her past, then theirs. `turn`, not `room`: transport
-    # health varies between two turns in the same room, which is why it is
-    # read at turn start and never cached.
-    ("presence", 5, "turn"),
-    ("peer_card", 20, "person"),
-    ("peer_history", 30, "person"),
-    ("people_in_window", 35, "room"),
-    # THE PRE-FETCH (docs/design/cognition/graph.md): what her memory holds
-    # that this message touches, searched by code from its own seeds. Beside
-    # the memory of the people talking it will replace on the graph surface,
-    # and before the unit's open questions. `turn`: it is searched from one
-    # message. Renders only where `TagContext.recalled` is filled.
-    ("recalled", 36, "turn"),
-    # What is on her computer for this room, read fresh at turn start. `turn`:
-    # its ages move every turn. Before `standing` because it is the state of
-    # the machine, and `source_objects` + the transcript are read as the pair «where
-    # I was, what was said since». Renders only in a room using the computer
-    # (`ComputerContextReader`).
-    ("computer", 57, "turn"),
-    # This room's documents with their ids, so a revision asked for in a later
-    # turn can name the document it means. `turn`: its ages move every turn.
-    # Directly after `computer` (both are «what I have made in this room») and
-    # before `source_objects`. Renders only where `[documents]` is on and the room
-    # has one.
-    ("documents", 58, "turn"),
-    # This room's sub-agent jobs (running and finished within a day), read
-    # fresh from the job rows. `turn`: its ages and a running job's progress
-    # move every turn. Tag turn only, and only under `[subagent] enabled` with
-    # a job in the window.
-    ("subagents", 59, "turn"),
-    ("source_objects", 66, "unit"),
     ("transcript", 70, "room"),
-    # HOW THIS TURN REACHED HER, AND HOW HER REPLY WILL. Renders only when the
-    # message she is answering was spoken in a voice channel
-    # (`NormalizedMessage.voice`, set only by `nora/web/voice.py`); a typed
-    # turn renders nothing. Last, so it sits directly before the message it
-    # describes. `turn`: it is a fact about one message. Never in the
-    # doctrine or the header, both cached: a voice turn differs in what it IS,
-    # not in the law.
     ("spoken_turn", 75, "turn"),
 )
-
-#: Rendered by `build_tag_message`, in the message AFTER the prefill, and
-#: declared here with no body because this assembler never emits them. They
-#: are built through `ContextBlock` like every other, so each says what it is
-#: from its type; `<tag_message>` holds a member's verbatim words. Declaring
-#: them here keeps their order data rather than the order of two statements in
-#: `build_tag_message`.
-_TAG_MESSAGE_BLOCKS: tuple[tuple[str, int], ...] = (
-    ("replying_to", 80),
-    ("tag_message", 90),
-)
-
 
 #: `name -> (order, key)`, derived from the table above so a block function
 #: can look up its own row instead of repeating it.
@@ -204,55 +111,10 @@ def _block(
     )
 
 
-def _restamp(block: ContextBlock | None) -> ContextBlock | None:
-    """A block built OUTSIDE this module, stamped with this prompt's `order`
-    and `key` and with nothing else.
-
-    The block type owns its content and description.
-
-    A thin wrapper over `nora.domain.blocks.restamp`: this module's `_ROW` is
-    the only prefill-specific argument. Named here so each call site reads
-    `_restamp(...)` rather than `restamp(..., _ROW)`.
-    """
-    return restamp(block, _ROW)
-
-
-def _declared(rendered: Sequence[ContextBlock | None]) -> list[ContextBlock]:
-    """The block table, with each block's rendered text attached.
-
-    Every block is declared whether or not it rendered. `assemble` drops empty
-    bodies from the body, so the reason is observability:
-    `nora.prefill.blocks_declared` / `blocks_empty` on the `agent.prefill` span
-    say which blocks had nothing to say this turn, which is how a
-    silently-failing read is told apart from a genuinely empty one.
-
-    The blocks whose ABSENCE is meaningful («No block does not mean you know
-    them and it does not mean nothing was ever recorded») say so in their own
-    description, which is where a reader of that block will look.
-    """
-    built = {b.name: b for b in rendered if b is not None}
-    out = [
-        built.get(name) or ContextBlock(
-            name=name, order=order, key=key,
-            body=compose_body(""),
-        )
-        for name, order, key in _BLOCKS
-    ]
-    out += [
-        ContextBlock(name=name, order=order, key="turn",
-                     body=compose_body(""))
-        for name, order in _TAG_MESSAGE_BLOCKS
-    ]
-    return out
-
-
-_PROFILE_REPLACES = frozenset({"peer_card", "peer_history", "people_in_window"})
-
-
 def _context_header(header: str = TAG_HEADER) -> str:
     """Keep the occasion's framing in a stable prefix."""
-    return ContextBlock(name="context_header",
-        body=legacy_composed(ContextHeader(header).render())).render()
+    block = _block("context_header", body=legacy_composed(ContextHeader(header).render()))
+    return assemble((block,), sep="")
 
 
 def _label(row: TranscriptRow, display_name: str) -> str:
@@ -484,75 +346,6 @@ def _transcript_block(
     )
 
 
-def _peer_card_block(ctx: TagContext) -> ContextBlock | None:
-    """Who the person talking IS, as far as her own memory has it.
-
-    Its contents are a model-authored distillation of what people have
-    said, so the block must not read as durable, verified truth: a remembered
-    fact about somebody is not an order from them. `_peer_history_block`'s
-    docstring calls the card "the hedge the card does not need"; that is a
-    judgement about CERTAINTY (an identity fact is not an inference about
-    intent), not about this other axis.
-
-    It hedges itself for the same reason `<transcript>` does (everything
-    in it traces back to text people typed), in the type's own words rather
-    than with `untrusted="true"`, whose definition lived in a doctrine file
-    this prompt's audience is one of six to load.
-    """
-    if not ctx.peer_card:
-        return None
-    return _block(
-        "peer_card",
-        attrs=(("person", ctx.tagger.name if ctx.tagger else "them"),),
-        body=compose_body(render_bullets(ctx.peer_card)),
-    )
-
-
-def _peer_history_block(ctx: TagContext) -> ContextBlock | None:
-    """What happened with the person talking: episodes, beside their card.
-
-    `peer_card` and this are the two halves of one person and are deliberately
-    not merged: the card is who they are («Name: Miles Novak», «Aliases: …»),
-    this is what has happened with them («asked what to eat for dinner»,
-    dated). They are written to hold different things, so a reader seeing both is
-    seeing two views rather than one thing twice.
-
-    The `note` carries the hedge the card does not need. These conclusions are
-    a model's distillation of messages Nora witnessed: inferred, unverified,
-    and occasionally wrong about intent in a way an identity fact is not. She
-    is told she may be wrong about them, because the failure mode this block
-    invites is confidently telling somebody what they think.
-
-    Situation-tier, below every authored file: conclusions distilled from
-    what was said are a record, at the same authority as the transcript, and
-    nothing verified them.
-
-    **The note carries a clause saying every line is undated and none of it is
-    a standing instruction.** The conclusions arrive with their leading
-    timestamp stripped, so a line reads as a timeless fact:
-
-        stored:   [<timestamp>] nora agreed to speak all Chinese after
-                  miles_novak requested.
-        injected: - nora agreed to speak all Chinese after miles_novak requested.
-
-    Without the clause a one-time request reads as a permanent standing
-    directive. **Permission is not prohibition**: «you may contradict any of
-    it» does not mark a line as spent. The date is not restored because the
-    stamp is BATCH-level (one stamp is shared by many conclusions) and is
-    destroyed before this module can see it (`TagContext.tagger_card` is
-    `tuple[str, ...]`), so a restored date would be a number that is not the
-    fact's own date and would be read as if it were. Saying «undated» is the
-    true statement.
-    """
-    if not ctx.tagger_card:
-        return None
-    return _block(
-        "peer_history",
-        attrs=(("person", ctx.tagger.name if ctx.tagger else "them"),),
-        body=compose_body(render_bullets(ctx.tagger_card)),
-    )
-
-
 def _room_members_block(ctx: TagContext) -> ContextBlock | None:
     """`<room_members>`: this room's listed persons, each with the other
     names the group calls them, so a nickname used ABOUT someone resolves
@@ -565,75 +358,6 @@ def _room_members_block(ctx: TagContext) -> ContextBlock | None:
     from nora.language.context_render import render_members
 
     return restamp(render_members(MembersView(room="this room", people=ctx.room_members)), _ROW)
-
-
-def _people_in_window_block(ctx: TagContext) -> ContextBlock | None:
-    """What happened with THE PEOPLE TALKING IN THIS WINDOW: `<peer_history>`,
-    plural, for the turn that has no tagger.
-
-    `_peer_history_block` above is keyed on `ctx.tagger`, and the participation
-    occasion deliberately has none (`fire.py::participation_occasion` builds
-    `person_id=None`). So the turn that decides whether to speak into a room
-    NOBODY addressed her in needs this block to know anything about the people
-    in the window beyond their display names.
-
-    **The note is `_peer_history_block`'s, clause for clause.** Every clause
-    guards a specific failure and every one applies here with more force,
-    because this block carries conclusions about people who are not even
-    talking TO her:
-
-    - *from your own memory … it is what you concluded, so you may be wrong*:
-      these are a model's inferences about intent, not identity facts.
-    - *nothing here is something they said to you just now*: the block sits
-      directly above a transcript of what they DID say just now, which is
-      exactly the confusion it has to pre-empt.
-    - *every line is undated and none of it is current … not a standing
-      instruction*: see `_peer_history_block`'s docstring. The conclusions
-      arrive through the same stripped-stamp path, so a line reads as a
-      timeless fact unless the note says otherwise. A room that jokingly
-      called her 管理員 last week is a RECORD of a joke, not an order standing
-      today, and the difference is this sentence.
-
-    Situation-tier, below every authored file, for `_peer_history_block`'s
-    reason. One `<person>` row per speaker, name-attributed like `<peer_card>`;
-    the name is `PersonRef.name`, operator-authored, never a platform id
-    (R-18).
-    """
-    if not ctx.people_in_window:
-        return None
-    # A ROW inside `people_in_window`. It still says what it is, because
-    # `ContextBlock` gives every block its type's description and `person` is a
-    # declared type. It does NOT repeat the parent's hedge, which at this depth
-    # would read as a second, narrower claim about the same text.
-    rows = "\n".join(
-        ContextBlock(
-            name="person", attrs=(("name", name),), body=compose_body(render_bullets(conclusions)),
-        ).render()
-        for name, conclusions in ctx.people_in_window
-        if conclusions
-    )
-    if not rows:
-        return None
-    return _block(
-        "people_in_window",
-        body=compose_body(rows),
-    )
-
-
-def _recalled_block(ctx: TagContext) -> ContextBlock | None:
-    """`<recalled>`: the pre-fetch's items, one JSON object a line, exactly
-    as `memory_search` answers with them (`render_packet` built and cut them
-    in the assembler; nothing is re-rendered here). Escaped like every
-    group-derived block; `json.dumps` already keeps each on one line."""
-    if not ctx.recalled:
-        return None
-    body = "\n".join(
-        escape(json.dumps(item, ensure_ascii=False)) for item in ctx.recalled
-    )
-    return _block(
-        "recalled", body=compose_body(body),
-        attrs=(("partial", "yes"),) if ctx.recalled_partial else (),
-    )
 
 
 def _presence_block(ctx: TagContext) -> ContextBlock:
@@ -664,193 +388,6 @@ def _spoken_turn_block(ctx: TagContext) -> ContextBlock | None:
     return _block("spoken_turn", body=compose_body(SPOKEN_TURN))
 
 
-def _standing_block(
-    ctx: TagContext, *, now: datetime | None = None,
-) -> ContextBlock | None:
-    """Folded source objects read for this room."""
-    # Ordering and coverage keep gaps in recorded platform state visible.
-    if ctx.source_objects:
-        annotated = {row.id: i for i, row in enumerate(ctx.transcript, 1)
-                     if row.reactions is not None}
-        reaction_targets = {e.handle: annotated[e.target_message_id]
-                            for e in ctx.source_events if e.kind == "reaction"
-                            and e.target_message_id in annotated}
-        index_of = {row.id: i for i, row in enumerate(ctx.transcript, 1)}
-        # One expanded target per assembly: a `<source_event>` in the
-        # transcript already carrying `target_*` owns it for the handle —
-        # the object repeats the state, never the words.
-        event_targets = {e.handle for e in ctx.source_events
-                         if e.target is not None}
-
-        def _target_shown(e: Any) -> bool:
-            return (e.target is not None
-                    and e.target_message_id not in index_of
-                    and e.handle not in event_targets)
-
-        objects = render_elements(
-            ctx.source_objects, tag="source_object",
-            attrs=lambda e, _i: (
-                ("kind", e.kind), ("object", e.handle),
-                ("ordering", e.ordering or None),
-                ("coverage", e.coverage or None),
-                ("rev", e.revision or None),
-                # `on` is the numbered transcript row this reaction's tally
-                # annotates — the SAME numbering `replying_to="n"` uses, so a
-                # pointer and the transcript name one message. Absent while the
-                # target is off-window: the row then keeps its plain source
-                # state and no pointer invents a visible target.
-                ("on", f"#{reaction_targets[e.handle]}"
-                 if e.kind == "reaction" and e.handle in reaction_targets
-                 else None),
-                # `observed` is the newest SOURCE time applied — absent
-                # when the source's clock is unknown, with `time` naming
-                # the non-upstream clock and `received` stating the
-                # bridge's own receipt instead.
-                ("time", e.time_quality if e.time_quality != "upstream"
-                        else None),
-                ("observed",
-                 age(e.at_ms, now) if now is not None and e.at_ms > 0
-                 and e.time_quality != "unknown"
-                 else None),
-                ("received",
-                 age(e.received_ms, now)
-                 if now is not None and e.received_ms
-                 and e.time_quality != "upstream"
-                 else None),
-                # The affected message, as the `<source_event>` elements
-                # carry it — only when the transcript does not show it and
-                # no interleaved event already expanded this handle.
-                ("target_author", e.target.author if _target_shown(e) else None),
-                ("target_at", age(e.target.at_ms, now)
-                 if _target_shown(e) and now is not None
-                 and e.target.at_ms > 0 else None),
-                ("target_text", e.target.text if _target_shown(e) else None),
-                ("target_edited", age(e.target.edited_ms, now)
-                 if _target_shown(e) and now is not None
-                 and e.target.edited_ms else None),
-                ("target_was", e.target.was if _target_shown(e) else None),
-                ("target_deleted", "yes"
-                 if _target_shown(e) and e.target.deleted else None),
-                ("target_unresolved", "yes"
-                 if (e.target_message_id is not None
-                     and e.target_message_id not in index_of
-                     and e.target is None) else None),
-            ),
-            # The tally rides once, on the visible target row — `on` naming
-            # it is the pointer, so the row's own body then repeats nothing.
-            # Off-window there is nowhere else the state shows, and the row
-            # keeps its plain `state`/`summary`.
-            body=lambda e: (
-                None if e.kind == "reaction" and e.handle in reaction_targets
-                else e.state or e.summary),
-        )
-        if ctx.source_objects_more:
-            objects = (f"{objects}\n<source_objects_more "
-                       f"count=\"{ctx.source_objects_more}\"/>")
-        return ContextBlock(name="source_objects", body=legacy_composed(objects))
-    return None
-
-
-def build_prefill(
-    ctx: TagContext, *, display_name: str, context_window: int,
-    now: datetime | None = None, header: str = TAG_HEADER,
-    catalogue: str = "",
-    profiles: tuple[ContextBlock, ...] = (),
-) -> list[dict]:
-    """The three prefill messages. **There is deliberately no roster block.**
-
-    `header` is the situation paragraph (`_context_header`'s first argument
-    after the window). It is a parameter rather than a second `build_*_prefill`
-    because R-13/R-13b escaping is pinned to THIS function by
-    `test_prefill_escapes_angle_brackets` and `test_forged_closing_tag_is_escaped`
-    (`tests/test_acceptance_rules.py`): a hand-rolled prefill for the heartbeat,
-    rendering the same group-authored transcript, would sit outside both named
-    tests while looking correct.
-
-    There is no roster parameter. A roster fed from the whole of
-    `identity.toml` (Nora's address book across every room) would list people
-    who were never members of the group, and R-18 cannot block it: by the time
-    text exists the disclosure is already authorised, so scope has to be
-    enforced where the answer is assembled. An unscoped roster seam, even
-    defaulted to `()`, would pass every test while doing nothing until
-    somebody wired it back up. `group_members` (`nora.agent.tools`) answers
-    the same question from THIS conversation's own membership list, and only
-    when it is asked.
-    """
-    # ONE root per prefill, so which blocks were built, from which reads, at
-    # what size is traced, and a turn that times out or errors INSIDE this
-    # assembly (a block that raises, a slow `_peer_history_block` read) leaves
-    # evidence it started.
-    # Un-rooted deliberately: `build_prefill` is called from both the tag path
-    # (under `engagement`'s root) and the fire path (under its own
-    # `occasion.kind` root, `nora.app.fire`) and from a few offline callers
-    # with no root open at all (`announce`). `span` with no declared
-    # `nora.trace_kind` nests under whichever root is current and, for the
-    # callers with none, is exported as a root of its own (R-76's fail-open
-    # default), never silently dropped.
-    with span("agent.prefill", **{"nora.tag_id": ctx.tag_id}):
-        # ONE read of the clock for the whole prefill, so the time she is told
-        # it is and the time the transcript's ages are measured against come
-        # from the same read: everything below computes on one fixed model of
-        # now.
-        clock = now or local_now()
-        # RENDER first, DECLARE second, ASSEMBLE third. The order the blocks
-        # reach her comes from `_BLOCKS`, so a block cannot be served without
-        # an entry, and an entry cannot survive a block that stopped rendering.
-        # Profile blocks take the place of their legacy context blocks.
-        switched = bool(profiles)
-        declared = _declared([
-            # `ToolSurface.prompt_catalogue`: the SAME admitted set the turn's
-            # tools were built from, so it cannot name a tool this turn cannot
-            # load. A parameter rather than a `TagContext` field: it is a fact
-            # about the tools, which are built beside the prefill, not about
-            # what the context assembler read.
-            restamp(render_tool_catalogue(catalogue), _ROW) if catalogue else None,
-            _room_members_block(ctx),
-            _restamp(_presence_block(ctx)),
-            None if switched else _peer_card_block(ctx),
-            None if switched else _peer_history_block(ctx),
-            None if switched else _people_in_window_block(ctx),
-            _restamp(render_computer(ctx.computer)),
-            _restamp(render_documents(ctx.documents)),
-            _restamp(render_subagents(ctx.subagents)),
-            _restamp(_standing_block(ctx, now=clock)),
-            _transcript_block(ctx, display_name, clock, context_window),
-            _spoken_turn_block(ctx),
-            _recalled_block(ctx),
-        ])
-        if switched:
-            declared = [
-                b for b in declared if b.name not in _PROFILE_REPLACES
-            ] + list(profiles)
-        # Report the blocks selected by `assemble`, including empty blocks
-        # that opt into self-closing. Size counts body characters only.
-        rendered = [b for b in declared if b.body or b.when_empty != "drop"]
-        annotate(**{
-            "nora.prefill.blocks_declared": len(declared),
-            "nora.prefill.blocks_rendered": ",".join(b.name for b in rendered),
-            "nora.prefill.blocks_empty": ",".join(
-                b.name for b in declared if not b.body
-            ),
-            "nora.prefill.size_chars": sum(len(b.body.text) for b in rendered),
-        })
-        return [
-            _message("user", _context_header(header)),
-            _message(
-                "user",
-                # The clock leads the VOLATILE block, not the header: see
-                # `_context_header`'s docstring for the cache reason. It is
-                # still the first thing after the static instructions.
-                #
-                # THE ORDER OF THE BLOCKS BELOW IS `_BLOCKS`, not this
-                # expression; the argument for the sequence is the `order`
-                # column and the comment above that table.
-                _now_line(clock) + assemble(declared),
-            ),
-            _message("assistant", CLOSING_LINE),
-        ]
-
-
 def _replying_to_block(ctx: TagContext, display_name: str) -> ContextBlock | None:
     """R-20: the quoted text shown to the model is the RESOLVED PARENT ROW's
     text, or nothing.
@@ -876,29 +413,10 @@ def _replying_to_block(ctx: TagContext, display_name: str) -> ContextBlock | Non
     parent = _by_ts(ctx.transcript).get(quote.quoted_ts)
     if parent is None:
         return None
-    # CLASS 1: a member's own words, quoted from her record of them (R-20).
-    # It says what it is by going through the injector; see
-    # `build_tag_message`.
     return ContextBlock(
         name="replying_to", attrs=(("author", _label(parent, display_name)),),
         body=legacy_composed(escape(render_file_links(parent.body or ""))),
     )
-
-
-def build_tag_message(ctx: TagContext, *, tagger_name: str, display_name: str) -> str:
-    """The message or fire-occasion body, attributed.
-
-    `also_known_as` carries the other names the GROUP uses for this person
-    (阿Miles, 米高, a handle) so Nora understands a reference to them in the
-    transcript instead of treating it as a stranger. It is an attribute of the
-    person the platform already authenticated, never a way of deciding WHO
-    sent something: sender identity comes from the platform id alone, because
-    a name is spoofable and these are not checked against anything.
-    """
-    quoted = _replying_to_block(ctx, display_name)
-    return _tag_block(
-        ctx, tagger_name, f"{quoted.render()}\n" if quoted is not None else "",
-    ).render()
 
 
 def _tag_block(ctx: TagContext, tagger_name: str, quote: str = "") -> ContextBlock:

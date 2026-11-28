@@ -398,7 +398,7 @@ async def test_the_clock_line_states_the_injected_clock():
     does and as the `now` tool does, so a turn frozen at a past instant (an
     eval sandbox) states one time everywhere.
 
-    Revert `now=` on the pipeline's `build_prefill` call and this goes RED."""
+    Revert `now=` on the pipeline's `engagement_floor` call and this goes RED."""
     frozen = datetime(2026, 10, 11, 1, 5, tzinfo=UTC)
     pipeline, _metrics, _audit, background = _build_pipeline(
         turn_clock=lambda: frozen,

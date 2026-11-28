@@ -49,8 +49,6 @@ from nora.domain.observations import (
     SourceScope,
     TargetContext,
     coverage_label,
-    handle_of,
-    head_summary,
     object_handle,
     observation_summary,
     revision_label,
@@ -74,9 +72,7 @@ from nora.policy import Policy
 
 log = logging.getLogger(__name__)
 
-#: The folded object heads the Standing presentation shows at most — a
-#: bound on the most recently observed objects, not "every open poll
-#: forever" and not an arbitrary first-N of the scope.
+#: The bounded head page used when resolving transcript event targets.
 _SOURCE_OBJECT_MAX = 12
 
 #: Distinct affected messages one assembly resolves — one batched Record
@@ -140,9 +136,8 @@ class TranscriptInjection:
         self._rosters = rosters or {}
         self._self_ids = self_ids
         # The typed platform-observation Record (`ObservationStore`): the
-        # room's source events for the transcript window and its folded
-        # object heads for the standing slot. `None` on a harness that
-        # wires none renders neither — never a guessed source line.
+        # room's source events for the transcript window and heads for
+        # resolving their poll labels and affected messages.
         self._observations = observations
         self._audit = audit
         # The graph's one clock (`build_dependencies`' `clock`), so a harness
@@ -212,14 +207,13 @@ class TranscriptInjection:
             )
 
         shown = self._shown(transcript, msg)
-        events, objects, failed, more, objects_more = observations
+        events, failed, more = observations
         return TagContext(
             tag_id=request.tag_id, message=msg, tagger=ref, transcript=shown,
             lookup_transcript=tuple(transcript) if len(shown) < len(transcript) else (),
-            peer_card=(), started_at=time.perf_counter(), presence=presence,
+            started_at=time.perf_counter(), presence=presence,
             computer=computer, documents=documents, subagents=subagents,
-            source_events=events, source_objects=objects, source_reads_failed=failed,
-            source_events_more=more, source_objects_more=objects_more,
+            source_events=events, source_reads_failed=failed, source_events_more=more,
             room_members=await self._room_members(msg),
         )
 
@@ -362,34 +356,15 @@ class TranscriptInjection:
 
     async def _observation_reads(
         self, msg: NormalizedMessage,
-    ) -> tuple[
-        tuple[SourceEvent, ...], tuple[SourceEvent, ...], bool, int, int,
-    ]:
-        """`(events, objects, failed, events_more, objects_more)` of THIS
-        room — the scoped source read of docs/design/platform/observations.md
-
-        `recent` is bounded by the prompt window; `heads` by
-        `_SOURCE_OBJECT_MAX` of the objects OBSERVED NEWEST first (an old
-        object's state is not pinned forever; a poll the room just voted
-        on outranks a stale one). Both read through the room's boundary
-        (`account_key=""` — the turn already passed the allowlist for
-        this room, and a row of another room never resolves). Fail-soft
-        and counted (`stage="observations"`), like `_standing`: a thinner
-        prompt beats no reply — but a failed read SAYS it failed
-        (`failed`), never an empty list dressed as "nothing recorded";
-        an unwired store is `unavailable`, not nothing."""
+    ) -> tuple[tuple[SourceEvent, ...], bool, int]:
+        """Recent source events, read failure, and the overflow count for this room."""
         if self._observations is None:
-            return (), (), False, 0, 0
+            return (), False, 0
         scope = SourceScope(platform=msg.platform, account_key="",
                             conversation_id=msg.conversation_id)
         limit = self._prompt_window or self._context_window
         try:
-            # Both reads take ONE row past what they show — the sentinel
-            # that makes `*_more` an honest count instead of a silently
-            # complete-looking page. `heads` answers recency-ordered
-            # (`updated_at` — the object most recently touched first), so
-            # the page IS the freshest and `objects_more` is a real count
-            # of unshown heads, up to the page bound.
+            # Read one extra event to detect overflow. Heads resolve poll labels.
             rows, heads = await asyncio.gather(
                 traced_read(
                     "observations", "recent",
@@ -402,10 +377,7 @@ class TranscriptInjection:
             log.exception("observation reads failed; continuing without them")
             self._metrics.inc(
                 "nora_errors_total", stage="observations", platform=msg.platform)
-            return (), (), True, 0, 0
-
-        # `observation_summary`/`head_summary` are sync renderers — file-mode
-        # names only, never a stale managed answer (`_obs_actor_name`).
+            return (), True, 0
 
         # A vote's option ref resolves to the definition's label through
         # the object's OWN head (matched on ref + its account/thread —
@@ -451,16 +423,7 @@ class TranscriptInjection:
             )
             for r in rows[:limit]
         )
-        # Current state, most-recently-observed first — relevance is
-        # recency, not all-open-polls-forever: an object the room has not
-        # touched in a while yields its slot to one it just did, and the
-        # bound says how many older heads were not shown. A head's own
-        # clock stays honest: `observed_ms` is the newest SOURCE time the
-        # fold applied, `observed_quality` says which clock that is, and
-        # `received_ms` is the newest receipt — never presented as the
-        # source's own time. Recency ranks on whichever clock exists.
-        # Preserve the store's last-write order; source clocks can be late
-        # or wrong and must not evict a freshly changed object.
+        # Preserve the recency bound for resolving event targets.
         heads = [h for h in heads if h.applied > 0]
         shown = heads[: _SOURCE_OBJECT_MAX]
         # The affected messages the shown events and heads name, resolved
@@ -468,53 +431,19 @@ class TranscriptInjection:
         # event's `target` says what it acted on when that message is not
         # in the transcript window (its words and author as labelled
         # context, never the reactor's).
-        targets, head_targets = await self._observation_targets(
+        targets = await self._observation_targets(
             msg, scope, rows[:limit], [h.head_id for h in shown])
         events = tuple(
             replace(e, target=targets.get(e.target_message_id)
                     if e.target_message_id is not None else None)
             for e in events)
-        # Each shown head carries its newest applied row's affected
-        # message — the SAME resolved context the events carry.
-        head_ctx = {
-            hid: targets.get(mid) for hid, mid in head_targets.items()}
-        objects = tuple(
-            SourceEvent(
-                # `head_id` IS the newest applied row's id — naming the
-                # head by `platform_observation:<id>` makes it the SAME
-                # ref an event row carries, so an object whose newest
-                # change is already shown as an `<source_event>` is
-                # recognisably the same thing, not a second fact.
-                ref=f"platform_observation:{h.head_id}",
-                kind=h.kind, operation="state",
-                at_ms=h.observed_ms or 0,
-                time_quality=h.observed_quality,
-                actor=None, actor_status="not_applicable",
-                handle=handle_of(h),
-                summary="", ordering=h.ordering,
-                state=head_summary(
-                    h, name_of=lambda ref: self._obs_actor_name(msg.platform, ref)),
-                received_ms=h.received_ms,
-                revision=revision_label(h.position, h.scope),
-                coverage=coverage_label(h.coverage),
-                target_message_id=head_targets.get(h.head_id),
-                target=head_ctx.get(h.head_id),
-            )
-            for h in shown
-        )
-        return (
-            events, objects, False,
-            max(0, len(rows) - len(events)),
-            max(0, len(heads) - len(objects)),
-        )
-
+        return events, False, max(0, len(rows) - len(events))
 
     async def _observation_targets(
         self, msg: NormalizedMessage, scope: SourceScope,
         rows: Sequence[Any], head_ids: Sequence[int],
-    ) -> tuple[dict[int, TargetContext], dict[int, int]]:
-        """The shown events'/heads' affected messages — `(target context by
-        message id, target id by newest applied row id)`.
+    ) -> dict[int, TargetContext]:
+        """The shown events' and heads' affected messages, keyed by message ID.
 
         TWO bounded reads, both inside the room's own boundary:
         `observations.by_ids` maps each shown head's newest applied row to
@@ -535,7 +464,7 @@ class TranscriptInjection:
             wanted.update(r.target_message_id for r in head_rows)
             wanted.discard(None)
             if not wanted:
-                return {}, {}
+                return {}
             found, gone = await traced_read(
                 "record", "targets",
                 self._audit.by_ids(
@@ -544,22 +473,17 @@ class TranscriptInjection:
             named = await self._access.name_transcript(
                 list(found.values()), platform=msg.platform,
                 scope=self._room_scope(msg))
-            targets = {
+            return {
                 mid: target_context(
                     row, deleted=mid in gone,
                     author=(self._display_name or row.sender_name or "you")
                     if row.is_nora else row_speaker(row))
                 for mid, row in zip(found, named, strict=True)
             }
-            return (
-                targets,
-                {r.id: r.target_message_id for r in head_rows
-                 if r.target_message_id is not None},
-            )
         except Exception:
             log.exception(
                 "observation target read failed; continuing without it")
             self._metrics.inc(
                 "nora_errors_total", stage="observations",
                 platform=msg.platform)
-            return {}, {}
+            return {}

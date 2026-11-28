@@ -315,7 +315,7 @@ async def test_the_window_it_searches_is_the_one_the_prefill_rendered(persons, t
         tag_id="t1",
         message=NormalizedMessage("signal", CONV, "group", "+85290000101", "Miles",
                                   5_000, "邊個話收隊", {}),
-        tagger=None, transcript=WINDOW, peer_card=(), started_at=0.0,
+        tagger=None, transcript=WINDOW, started_at=0.0,
     )
     # `.render()` — `_transcript_block` returns the declared block, and
     # `ContextBlock.render()` is the only thing that turns one into text.

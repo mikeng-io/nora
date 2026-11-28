@@ -27,9 +27,6 @@ _INITIAL_LEGACY = frozenset(
     {
         "nora.agent.prefill:_context_header",
         "nora.agent.prefill:_replying_to_block",
-        "nora.agent.prefill:_standing_block",
-        "nora.agent.prefill:build_prefill",
-        "nora.agent.prefill:build_tag_message",
         "nora.agent.speech_format:render_input",
         "nora.ingest.relevance_gate:render_context",
         "nora.subject.context_selector_render:selector_prompt",

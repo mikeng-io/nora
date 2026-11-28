@@ -3,7 +3,7 @@
 `tests/architecture/test_assembler_parity.py` for the structural half of this
 guarantee) actually reach the model-visible prompt, not just that they are
 accepted as parameters and silently dropped somewhere on the way to
-`nora.agent.prefill.build_prefill` (via the `pre_fill` `invoke.run` already
+`EngagementGraph.prompt` (via the `pre_fill` `invoke.run` already
 hands the runner).
 
 Drives one real message through a real `Dispatcher` built by

@@ -24,7 +24,7 @@ import pytest
 
 from nora.agent.dreamer import AdaptorBudget
 from nora.agent.lineage import LineagePolicy
-from nora.agent.prefill import build_prefill
+from nora.agent.prefill import engagement_floor
 from nora.agent.room import Room as AgentRoom
 from nora.agent.tools import build_tools
 from nora.app.cognition_agent_runner import CognitionRunResult
@@ -152,12 +152,12 @@ async def _say(audit: FakeRecordStore, n: int) -> None:
             timestamp=NOW_MS - (n - i) * MIN, body=f"message {i}", raw={}))
 
 
-def _prompt(ctx: Any) -> str:
-    return "\n".join(
-        block["text"]
-        for message in build_prefill(
-            ctx, display_name="Nora", context_window=40, now=NOW)
-        for block in message["content"] if "text" in block)
+def _prompt(ctx: Any, *, display_name: str = "Nora") -> str:
+    blocks = engagement_floor(
+        ctx, display_name=display_name, tagger_name="Ada", context_window=40,
+        now=NOW, catalogue="",
+    )
+    return next(block.render() for block in blocks if block.name == "transcript")
 
 
 class _NoRecord:
@@ -191,8 +191,7 @@ async def _call(tools: dict[str, Any], name: str, **args: Any) -> dict:
 
 async def test_old_poll_pushed_beyond_40_messages_still_surfaces():
     """The acceptance case: a poll created 41+ messages ago leaves the
-    message window, but its typed source event and its folded head still
-    reach the turn — bounded evidence, not a permanent pin."""
+    message window, but its typed source event still reaches the transcript."""
     audit, store = FakeRecordStore(), FakeObservationStore()
     await _seed(store)
     await _say(audit, 41)
@@ -206,12 +205,9 @@ async def test_old_poll_pushed_beyond_40_messages_still_surfaces():
                   if e.kind == "poll" and e.operation == "create")
     assert create.at_ms < ctx.transcript[0].ts  # older than the window
     assert create.actor == "Ada"
-    heads = {o.kind for o in ctx.source_objects}
-    assert "poll" in heads and "pin" in heads
 
     prompt = _prompt(ctx)
     assert "<source_event" in prompt and 'kind="poll"' in prompt
-    assert "<source_object " in prompt and "closed" in prompt
     assert "p1" not in prompt
     assert "room-a" not in prompt and "acct" not in prompt
 
@@ -230,6 +226,18 @@ async def test_vote_and_close_with_no_new_human_message_still_render():
                  if e.operation == "revise" and e.kind == "poll")
     assert close.revision == revision_label(3, "rev")
     assert "rev" not in close.revision.split(":")[0]
+    prompt = _prompt(ctx)
+    assert "poll revise: state closed, 1 votes" in prompt
+
+
+async def test_engagement_floor_resolves_the_poll_option_label():
+    audit, store = FakeRecordStore(), FakeObservationStore()
+    await _seed(store)
+    ctx = await _assembler(audit, store).assemble(request=_request())
+
+    prompt = _prompt(ctx)
+    assert "poll vote add: a member on ramen" in prompt
+    assert " on option:" not in prompt
 
 
 async def test_a_failed_source_read_is_unavailable_not_empty():
@@ -418,9 +426,7 @@ async def test_the_wire_contract_refuses_a_wrong_scope_and_a_malformed_row():
 
 
 async def test_high_cardinality_reads_mark_their_overflow():
-    """Bounded reads never pretend to be the whole: a 50-event window read
-    returns `source_more` and 16 folded objects return `source_objects_more`
-    — exact counts below the fetch page, lower bounds above it."""
+    """The sentinel counts an omitted event when the transcript window fills."""
     audit, store = FakeRecordStore(), FakeObservationStore()
     await _say(audit, 3)
     for i in range(50):  # one pin SET, fifty pin events
@@ -430,29 +436,15 @@ async def test_high_cardinality_reads_mark_their_overflow():
                 payload=PinPayload(message=EditTarget(message_id=f"m-{i}")),
                 ago=200 - i, actor="+852111", actor_status="known"),
             event_id=f"cap-{i}", source_digest=f"cap-{i}")
-    for i in range(15):  # fifteen artifact objects
-        await store.append(
-            observation=_obs(
-                kind="artifact", ref=f"art-{i}", op="create",
-                payload=ArtifactPayload(artifact_kind="post"),
-                ago=10 + i * 0.01),
-            event_id=f"art-{i}", source_digest=f"art-{i}")
-
     ctx = await _assembler(audit, store).assemble(request=_request())
 
     assert len(ctx.source_events) == 40 and ctx.source_events_more == 1
-    assert len(ctx.source_objects) == 12 and ctx.source_objects_more == 4
     prompt = _prompt(ctx)
     assert 'source_more="1"' in prompt
-    assert '<source_objects_more count="4"/>' in prompt
 
 
-async def test_revision_and_head_ref_agree_across_prompt_and_tools():
-    """One revision label everywhere: the prompt event, the Standing
-    source_object and `record_query`'s detail carry the same opaque
-    `digest:position`, and the folded head's ref is the newest applied
-    event's own `platform_observation:` id — event and current views
-    deduplicate on it."""
+async def test_revision_and_event_ref_agree_across_prompt_and_tools():
+    """The transcript event and tool detail name the same applied revision."""
     audit, store = FakeRecordStore(), FakeObservationStore()
     ids = await _seed(store)
     for i in range(3):
@@ -467,11 +459,7 @@ async def test_revision_and_head_ref_agree_across_prompt_and_tools():
 
     close = next(e for e in ctx.source_events
                  if e.kind == "poll" and e.operation == "revise")
-    pin_head = next(o for o in ctx.source_objects if o.kind == "pin")
-    poll_head = next(o for o in ctx.source_objects if o.kind == "poll")
-    assert pin_head.revision == revision_label(12, "discord-sess-9f8c")
-    assert poll_head.ref == f"platform_observation:{ids['close']}"
-    assert close.ref == poll_head.ref
+    assert close.ref == f"platform_observation:{ids['close']}"
 
     listed = await _call(tools, "poll_list")
     handle = listed["polls"][0]["object"]
@@ -480,7 +468,7 @@ async def test_revision_and_head_ref_agree_across_prompt_and_tools():
 
     prompt = _prompt(ctx)
     assert f'rev="{close.revision}"' in prompt
-    assert f'rev="{pin_head.revision}"' in prompt
+    assert f'rev="{revision_label(12, "discord-sess-9f8c")}"' in prompt
     assert "discord-sess" not in prompt
     assert "sess-9f8c" not in json.dumps(detail)
 
@@ -502,18 +490,12 @@ async def test_unknown_source_time_never_dresses_up_as_upstream():
     (event,) = [e for e in ctx.source_events if e.kind == "pin"]
     assert event.time_quality == "unknown"
     assert event.at_ms == event.received_ms  # ordered by receipt, honestly
-    (head,) = [o for o in ctx.source_objects if o.kind == "pin"]
-    assert head.time_quality == "unknown" and head.received_ms
 
     prompt = _prompt(ctx)
     ev_line = next(ln for ln in prompt.splitlines()
                    if ln.startswith("<source_event"))
     assert 'time="unknown"' in ev_line and "received=" in ev_line
     assert "at=" not in ev_line
-    obj_line = next(ln for ln in prompt.splitlines()
-                    if ln.startswith("<source_object "))
-    assert 'time="unknown"' in obj_line and "received=" in obj_line
-    assert "observed=" not in obj_line
 
     found = await _call(tools, "record_query", kind="pin")
     assert found["status"] == "ok" and found["objects"][0]["time"] == "unknown"
@@ -538,18 +520,12 @@ async def test_clockless_update_does_not_inherit_the_previous_source_clock():
             payload=PinPayload(message=EditTarget(message_id="m-1")),
             ago=1, unknown=True),
         event_id="clockless-remove", source_digest="clockless-remove")
-    ctx = await _assembler(audit, store).assemble(request=_request())
-    head = next(o for o in ctx.source_objects if o.kind == "pin")
-    assert head.time_quality == "unknown" and head.at_ms == 0
-    assert head.received_ms > 0 and head.ordering == "arrival"
-    detail = await _call(_tools(audit, store), "record_query", object=head.handle)
+    handle = object_handle("pin", "pins", account_key=SCOPE.account_key)
+    detail = await _call(_tools(audit, store), "record_query", object=handle)
     assert detail["status"] == "ok"
     assert "observed_ms" not in detail["detail"]
     assert detail["detail"]["time_quality"] == "unknown"
-    assert detail["detail"]["received_ms"] == head.received_ms
-    line = next(line for line in _prompt(ctx).splitlines()
-                if line.startswith("<source_object ") and 'kind="pin"' in line)
-    assert 'time="unknown"' in line and "observed=" not in line
+    assert detail["detail"]["received_ms"] == NOW_MS - MIN + 5
 
 
 async def test_mixed_share_member_pin_poll_journey_all_surfaces():
@@ -587,8 +563,6 @@ async def test_mixed_share_member_pin_poll_journey_all_surfaces():
     seen = {(e.kind, e.operation) for e in ctx.source_events}
     assert {("artifact", "create"), ("membership", "add"),
             ("pin", "add"), ("poll", "revise")} <= seen
-    heads = {o.kind for o in ctx.source_objects}
-    assert {"artifact", "membership", "pin", "poll"} <= heads
     prompt = _prompt(ctx)
     assert 'kind="artifact"' in prompt and 'kind="membership"' in prompt
     assert "private-artifact-origin" not in prompt and "+999000" not in prompt
@@ -763,7 +737,7 @@ async def test_unsupported_platform_kind_is_unavailable_never_empty():
 
 
 @pytest.mark.parametrize("outside_window", [False, True])
-async def test_old_target_reaction_union_reaches_standing_and_real_tools(outside_window):
+async def test_old_target_reaction_reaches_the_transcript_and_tools(outside_window):
     audit = FakeRecordStore()
     store = FakeObservationStore(records=audit)
     audit.observations = store
@@ -800,51 +774,32 @@ async def test_old_target_reaction_union_reaches_standing_and_real_tools(outside
     ctx = await _assembler(audit, store).assemble(request=_request())
     assert (mid not in {row.id for row in ctx.transcript}) == outside_window
     prompt = _prompt(ctx)
-    line = next(line for line in prompt.splitlines()
-                if line.startswith("<source_object ") and 'kind="reaction"' in line)
+    ev = next(line for line in prompt.splitlines()
+              if line.startswith("<source_event") and 'kind="reaction"' in line)
     # The pointer is the typed `on` attribute — the SAME row numbering
     # `replying_to="n"` uses — present only while the target is visible, so no
     # pointer invents a target the transcript does not show.
-    assert ('on="#' in line) != outside_window
+    assert (' on="' in ev) != outside_window
     if outside_window:
-        # Off-window the row keeps the plain source state in Standing.
-        assert "on=" not in line
-        # …and the affected message's OWN words and author still reach the
-        # turn: labelled `target_*` context on the interleaved event —
-        # the target's author ("Ada"), never the reactor's actor field
-        # (this clear names none), and ONE expansion per assembly (the
-        # Standing object repeats the state, not the words).
-        ev = next(ln for ln in prompt.splitlines()
-                  if ln.startswith("<source_event")
-                  and 'kind="reaction"' in ln)
         assert 'target_author="Ada"' in ev
         assert 'target_text="an old target"' in ev
-        assert "target_author" not in line
     else:
-        # In-window the tally annotates the target row ONCE: the row it is on
-        # repeats no `reactions: …` text of its own, and the event carries
-        # the `on` link, not a second copy of the words.
-        assert "reactions: 👍=1" not in prompt
-        ev = next(ln for ln in prompt.splitlines()
-                  if ln.startswith("<source_event")
-                  and 'kind="reaction"' in ln)
         assert "target_author" not in ev
-    head = next(obj for obj in ctx.source_objects if obj.kind == "reaction")
-    assert "👍=1" in head.state
-    assert ("👍=1" in line) == outside_window
+        assert prompt.count("an old target") == 1
+    handle = object_handle("reaction", "msg:old-target", account_key=SCOPE.account_key)
     tools = _tools(audit, store)
-    detail = await _call(tools, "record_query", object=head.handle)
+    detail = await _call(tools, "record_query", object=handle)
     assert detail["status"] == "ok" and detail["detail"]["counts"] == {"👍": 1}
     # The SAME affected message through the detail read — its current
     # words and its author's roster name, never the reactor's.
     target = detail["detail"]["target"]
     assert target["sender"] == "Ada" and target["body"] == "an old target"
-    hist = await _call(tools, "record_query", object=head.handle, history=True)
+    hist = await _call(tools, "record_query", object=handle, history=True)
     assert any(e.get("target", {}).get("body") == "an old target"
                for e in hist["events"])
     # `at_id` is source history, not a historical message read: no target
     # text attaches, and the note says so when the object names one.
-    asof = await _call(tools, "record_query", object=head.handle,
+    asof = await _call(tools, "record_query", object=handle,
                        at_id=clear_id)
     assert asof["status"] == "ok" and "target" not in asof
     assert "as-of" in asof["note"] and "current text" in asof["note"]
@@ -1003,6 +958,42 @@ async def test_repeated_and_over_bound_targets_stay_bounded_and_explicit():
                for e in hist["events"])
 
 
+async def test_head_target_budget_preserves_store_recency_order():
+    audit, store = FakeRecordStore(), FakeObservationStore()
+    message = _request().message
+    older = await audit.append(message=dataclasses.replace(
+        message, timestamp=NOW_MS - 240 * MIN, body="head-only target"))
+    targets = [
+        await audit.append(message=dataclasses.replace(
+            message, timestamp=NOW_MS - (200 - i) * MIN, body=f"event target {i}"))
+        for i in range(_OBSERVATION_TARGET_MAX)
+    ]
+    await _say(audit, 41)
+
+    # The store last wrote this head first. Its receipt clock sorts it first
+    # only if assembly reorders the bounded head page by source clocks.
+    older_pin = _obs(kind="pin", ref="head-only", op="add",
+                     payload=PinPayload(message=EditTarget(message_id="legacy")),
+                     ago=120)
+    await store.append(
+        observation=dataclasses.replace(older_pin, received_ms=NOW_MS + MIN),
+        event_id="head-only", source_digest="head-only", target_message_id=older,
+    )
+    for i in range(41):
+        await store.append(
+            observation=_obs(kind="pin", ref=f"recent-{i}", op="add",
+                             payload=PinPayload(message=EditTarget(message_id=f"p-{i}")),
+                             ago=45 - i),
+            event_id=f"recent-{i}", source_digest=f"recent-{i}",
+            target_message_id=targets[i % len(targets)],
+        )
+
+    ctx = await _assembler(audit, store).assemble(request=_request())
+    prompt = _prompt(ctx)
+    assert f'target_text="event target {len(targets) - 1}"' in prompt
+    assert 'target_unresolved="yes"' not in prompt
+
+
 # ---------------------------------------------------------------------------
 # The retained lane (blocker5, metadata-standing-continuity): an open note's
 # curated `object_refs` resolve beside the bounded page, in BOTH assemblies.
@@ -1106,10 +1097,7 @@ async def test_an_off_window_target_uses_the_markdown_self_name(example_config_p
         clock=lambda: NOW,
     ).assemble(request=_request())
     assert mid not in {row.id for row in ctx.transcript}
-    prompt = "\n".join(
-        block["text"] for message in build_prefill(
-            ctx, display_name=cfg.doctrine.display_name, context_window=40, now=NOW)
-        for block in message["content"] if "text" in block)
+    prompt = _prompt(ctx, display_name=cfg.doctrine.display_name)
     expected = "AgentAlpha" if own else "PreviousLabel"
     assert f'target_author="{expected}"' in prompt
     assert 'target_text="an older message"' in prompt

@@ -506,7 +506,7 @@ def create_agent(
         ),
         system_prompt=system_prompt,
         tools=tools,
-        # pre_fill/messages are plain dicts end-to-end (build_prefill in
+        # pre_fill/messages are plain dicts end-to-end (engagement_prefill in
         # nora.agent.prefill through nora.engagement's stages/pipeline, none of
         # which import strands; see
         # tests/test_boundaries.py::test_strands_import_boundary). Strands'

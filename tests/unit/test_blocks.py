@@ -288,24 +288,6 @@ def test_a_record_with_a_newline_in_it_is_one_bullet_not_two():
     assert render_bullets(["a"], mark="  · ") == "  · a"
 
 
-def test_every_memory_block_renders_one_conclusion_as_one_line():
-    """The live callers, pinned where they are read.
-
-    Some blocks in the tag prefill and two in the proactive prompt render a
-    record per line. Asserted through `build_prefill` rather than per function,
-    so a site nobody enumerated is still caught.
-    """
-    from nora.agent.prefill import _peer_card_block
-
-    class _Ctx:
-        peer_card = ("likes espresso\nowes Grant $500",)
-        tagger = None
-
-    card = _peer_card_block(_Ctx())
-    assert card is not None
-    assert card.body.text == "- likes espresso owes Grant $500"
-
-
 # --- the block itself ------------------------------------------------------
 
 def test_the_one_thing_no_row_style_expresses_is_a_clip():
@@ -537,8 +519,7 @@ def test_the_reply_mark_is_collapsed_like_everything_else():
 
 
 def test_restamp_carries_the_row_the_name_maps_to():
-    """The pattern `order, key = _ROW[name]; replace(...)`, written once.
-    `nora.agent.prefill._restamp` is a one-line wrapper over this."""
+    """An assembly can give a shared block its own order and scope."""
     block = ContextBlock(name="notes", body=compose_fixture("- one open thing"))
     stamped = restamp(block, {"notes": (55, "unit")})
     assert stamped is not None

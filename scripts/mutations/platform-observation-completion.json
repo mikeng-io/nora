@@ -32,14 +32,7 @@
     "file": "nora/engagement/context.py",
     "old": "        heads = [h for h in heads if h.applied > 0]",
     "new": "        heads = sorted((h for h in heads if h.applied > 0), key=lambda h: max(h.observed_ms or 0, h.received_ms), reverse=True)",
-    "target": "tests/unit/test_platform_observation_wired.py::test_old_target_reaction_union_reaches_standing_and_real_tools"
-  },
-  {
-    "name": "visible reaction tally has one presentation owner",
-    "file": "nora/agent/prefill.py",
-    "old": "                None if e.kind == \"reaction\" and e.handle in reaction_targets",
-    "new": "                None if False",
-    "target": "tests/unit/test_platform_observation_wired.py::test_old_target_reaction_union_reaches_standing_and_real_tools[False]"
+    "target": "tests/unit/test_platform_observation_wired.py::test_head_target_budget_preserves_store_recency_order"
   },
   {
     "name": "typed query does not mislabel current-room data as all rooms",
