@@ -103,7 +103,8 @@ def _delivery(*, delivery_acts=None):
     return delivery, sink, metrics
 
 
-async def test_delivery_act_refusal_reaches_the_tool_before_reservation():
+@pytest.mark.parametrize("reflection", ["debrief", "wake", "wake_history", "review"])
+async def test_only_engagement_can_compose_a_delivery(reflection):
     store = create_autospec(ActStore, instance=True, spec_set=True)
     store.reserve.side_effect = lambda act: act.identity.executor == "platform.reply"
     scope = SimpleNamespace(
@@ -118,7 +119,7 @@ async def test_delivery_act_refusal_reaches_the_tool_before_reservation():
         room=Room(platform="signal", conversation_id="room", roster_source=None, persons=persons),
         transit_source=None,
     )}
-    with act_event("pass-1", _authority("wake")):
+    with act_event("pass-1", _authority(reflection)):
         assert await tools["send_reply"](text=PUBLIC) == "unavailable"
     store.reserve.assert_not_awaited()
     assert sink.sent == []

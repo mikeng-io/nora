@@ -96,8 +96,10 @@ async def test_only_the_named_done_act_closes_its_intention(engine, verdict):
     await _intention(engine, "unrelated", "act_event", {"act_id": "generated-other"})
     await _health(engine, "signal", "up")
     assert await store.reserve(act)
-    await store.observe(act, Outcome(cast(Verdict, verdict)))
     matcher = condition_matcher(engine)
+    await matcher.run_once()
+    assert await _endings(engine) == {"waiting": None, "unrelated": None}
+    await store.observe(act, Outcome(cast(Verdict, verdict)))
     await matcher.run_once()
     await matcher.run_once()
     expected = "achieved" if verdict == "done" else None
