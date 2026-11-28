@@ -422,6 +422,10 @@ class _Admission:
         if isinstance(proposal, Revise):
             if getattr(proposal.replacement, "kind", None) != base.kind:
                 raise _RefusalError("illegal_transition", "kind")
+            if isinstance(proposal.replacement, CreateClaim) and (
+                proposal.replacement.part != base.part
+            ):
+                raise _RefusalError("illegal_transition", "part")
             if isinstance(proposal.replacement, CreateIntention) and (
                 proposal.replacement.form != base.form
             ):

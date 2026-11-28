@@ -75,7 +75,7 @@ AGG = RowFacts(
     source="interval",
     dependencies=("item",),
 )
-CLAIM = RowFacts("old-claim", "claim", "inferred", "live", "primary")
+CLAIM = RowFacts("old-claim", "claim", "inferred", "live", "primary", part="fact")
 INTENTION = RowFacts("old-intention", "intention", "committed", "open", "primary", form="achieve")
 ENTITY = RowFacts("old-entity", "entity", "inferred", "admitted", "primary")
 SURVIVOR = replace(ENTITY, id="survivor")
@@ -243,6 +243,12 @@ def test_revision_obeys_the_kind_lifecycle(base, replacement, terminal) -> None:
         "illegal_transition",
         "base",
     )
+
+
+def test_a_lesson_cannot_be_revised_into_a_fact() -> None:
+    lesson = replace(CLAIM, part="lesson")
+    proposal = Revise(base=lesson.id, replacement=NEW_CLAIM)
+    assert _one(proposal, extra=(lesson,)) == Refusal("illegal_transition", "part")
 
 
 def test_intention_endings_follow_its_form() -> None:

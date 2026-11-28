@@ -263,7 +263,7 @@ async def test_operator_retirement_hides_graph_lesson_and_sets_evidence_floor(
     assert not isinstance(candidate, Refusal)
     conversion = Revise(base="existing-fact", replacement=candidate)
     result = await svc.admit((conversion,), WAKE, (*ids, "existing-fact", "nora-pointer"))
-    assert result.outcomes == (Refusal("relearn", "content"),)
+    assert result.outcomes == (Refusal("illegal_transition", "part"),)
 
     for id_, offset in (("same-time", 0), ("new-verdict", 1)):
         await intention(scenario, id_, state="ended", ending="achieved",
