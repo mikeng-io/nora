@@ -75,5 +75,26 @@
     "old": "        if current != checked_law:\n            raise AdmissionWriteRefusedError(refusal)\n",
     "new": "",
     "target": "tests/infra/test_lesson_admission.py::test_lesson_write_refuses_law_changed_since_the_judge"
+  },
+  {
+    "name": "The labelled doctrine script consumes the returned verdict",
+    "file": "scripts/doctrine_check_labelled.py",
+    "old": "        got = []\n        for _ in range(samples):\n            verdict, _rules = await check.judge(case[\"lesson\"])\n            got.append(verdict)\n",
+    "new": "        got = [await check.judge(case[\"lesson\"]) for _ in range(samples)]\n",
+    "target": "tests/unit/test_doctrine_check.py::test_labelled_cases_count_the_checkers_verdict"
+  },
+  {
+    "name": "An act reserved without an outcome cannot close its intention",
+    "file": "nora/memory/adapters/condition_matcher.py",
+    "old": "        if row is None or row[\"verdict\"] == \"uncertain\":\n            return Evaluation(\"unknown\")\n",
+    "new": "        if row is None:\n            return Evaluation(\"true\", Witness(intention[\"id\"], intention[\"asserted_at\"], intention))\n        if row[\"verdict\"] == \"uncertain\":\n            return Evaluation(\"unknown\")\n",
+    "target": "tests/infra/test_condition_matcher.py::test_only_the_named_done_act_closes_its_intention"
+  },
+  {
+    "name": "Only engagement model passes can compose a delivery act",
+    "file": "nora/memory/app/act_scope.py",
+    "old": "        if context is not None and context.occasion in {\n            \"debrief\", \"wake\", \"wake_history\", \"review\",\n        }:\n            raise ActRefused(\"non_engagement_pass\")\n",
+    "new": "",
+    "target": "tests/unit/test_engagement_egress.py::test_only_engagement_can_compose_a_delivery"
   }
 ]
