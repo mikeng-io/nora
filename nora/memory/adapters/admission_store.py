@@ -10,6 +10,7 @@ import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import distinct_on
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
+from nora.domain.doctrine_check import LawRule
 from nora.domain.graph_registration import Exposure, InputScope, inherited_scope
 from nora.domain.graph_stimuli import GraphStimulus
 from nora.domain.lineage import Lineage
@@ -36,6 +37,7 @@ from nora.memory.domain.admission import Admitted, Refusal, fields
 from nora.memory.domain.admission_ports import (
     AdmissionUnavailableError,
     AdmissionWriteRefusedError,
+    LessonChecker,
     Stored,
 )
 from nora.memory.domain.admission_proposals import (
@@ -55,10 +57,12 @@ from nora.memory.domain.lesson_admission import LessonInventory, lesson_inventor
 class SqlAdmissionStore:
     def __init__(
         self, rows: SqlAdmissionRows, graph: SqlCognitiveGraph, engine: AsyncEngine,
+        *, lesson_checker: LessonChecker | None = None,
     ) -> None:
         self._rows = rows
         self._graph = graph
         self._engine = engine
+        self._lesson_checker = lesson_checker
         self._matcher = ConditionMatcher()
 
     async def read(self, unit: str, ids: frozenset[str]) -> Mapping[str, RowFacts]:
@@ -89,8 +93,21 @@ class SqlAdmissionStore:
             raise AdmissionUnavailableError(commit_uncertain=committing) from exc
         return Stored(intention)
 
+    def _current_lesson_law(self, checked_law: tuple[LawRule, ...] | None) -> tuple[LawRule, ...]:
+        refusal = Refusal("check_unavailable", "content")
+        if self._lesson_checker is None or checked_law is None:
+            raise AdmissionWriteRefusedError(refusal)
+        try:
+            current = self._lesson_checker.rules()
+        except Exception as exc:
+            raise AdmissionWriteRefusedError(refusal) from exc
+        if current != checked_law:
+            raise AdmissionWriteRefusedError(refusal)
+        return checked_law
+
     async def persist_admitted_proposal(
         self, decision: Admitted, context: PassContext, stored: Stored,
+        *, checked_law: tuple[LawRule, ...] | None = None,
     ) -> None:
         row, edges = _serialize(decision, context)
         topics = tuple(
@@ -123,8 +140,9 @@ class SqlAdmissionStore:
             )))
             if isinstance(data, CreateClaim) and isinstance(data.content, str):
                 inventory = await _lesson_inventory(conn, context.unit)
+                law = self._current_lesson_law(checked_law) if is_lesson else ()
                 reason = lesson_inventory_refusal(
-                    data.content, inventory, (), decision.held_lesson,
+                    data.content, inventory, law, decision.held_lesson,
                     decision.lesson_evidence_at,
                 )
                 if reason is not None:

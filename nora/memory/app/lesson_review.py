@@ -2,7 +2,7 @@
 
 from datetime import UTC, datetime
 
-from nora.domain.doctrine_check import Tension
+from nora.domain.doctrine_check import LawRule, Tension
 from nora.memory.domain.admission import Refusal
 from nora.memory.domain.admission_ports import AdmissionStore, LessonChecker, TensionWriter
 from nora.memory.domain.admission_proposals import PassContext
@@ -17,7 +17,7 @@ class LessonReview:
     async def review(
         self, store: AdmissionStore, body: str, citations: tuple[str, ...],
         base: str | None, evidence_at: datetime | None, context: PassContext,
-    ) -> Refusal | None:
+    ) -> Refusal | tuple[LawRule, ...]:
         inventory = await store.lesson_inventory(context.unit)
         try:
             law = self._checker.rules()
@@ -26,11 +26,13 @@ class LessonReview:
         if reason := lesson_inventory_refusal(body, inventory, law, base, evidence_at):
             return Refusal(reason, "content")
         try:
-            verdict = await self._checker.judge(body)
+            verdict, checked_law = await self._checker.judge(body)
         except Exception:  # noqa: BLE001 - checker errors fail closed
             return Refusal("check_unavailable", "content")
+        if checked_law != law:
+            return Refusal("check_unavailable", "content")
         if verdict.outcome == "consistent":
-            return None
+            return checked_law
         if verdict.outcome != "conflict" or verdict.rule is None:
             return Refusal("check_unavailable", "content")
         rule = verdict.rule

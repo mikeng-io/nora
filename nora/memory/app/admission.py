@@ -209,21 +209,26 @@ class AdmissionService:
             )
             if any(_unsafe_page(ref) for ref in references):
                 return Refusal("unsafe_page_reference", "source_ref"), ()
+            checked_law = None
             if isinstance(data, CreateClaim) and data.part == "lesson":
                 if self._lesson_review is None or not isinstance(data.content, str):
                     return Refusal("check_unavailable", "content"), ()
-                if refusal := await self._lesson_review.review(
+                result = await self._lesson_review.review(
                     self._store, data.content, data.citations,
                     choice.held_lesson, choice.lesson_evidence_at, context,
-                ):
-                    return refusal, ()
+                )
+                if isinstance(result, Refusal):
+                    return result, ()
+                checked_law = result
             stored = Stored(
                 choice.row.id, choice.base.id if choice.base is not None else None,
                 tuple(extra.row.id for extra in choice.deliveries),
             )
             related = tuple(Stored(topic.row.id, topic.base.id if topic.base else None)
                             for topic in choice.topics)
-            await self._store.persist_admitted_proposal(choice, context, stored)
+            await self._store.persist_admitted_proposal(
+                choice, context, stored, checked_law=checked_law,
+            )
         except AdmissionWriteRefusedError as exc:
             return exc.refusal, ()
         except StaleBaseError:

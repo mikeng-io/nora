@@ -112,9 +112,24 @@ def _check(answer: object, metrics: Metrics | None = None,
 
 
 async def test_the_check_reads_only_the_law_that_reaches_a_units_turns():
-    check, client = _check('{"verdict": "consistent"}')
-    assert (await check.judge(LESSON)).outcome == "consistent"
+    law = list(ALL_LAW)
+
+    class ReloadingClient(_Client):
+        async def complete(self, *, system: str, prompt: str) -> _Answer:
+            response = await super().complete(system=system, prompt=prompt)
+            law.pop(0)
+            return response
+
+    client = ReloadingClient('{"verdict": "consistent"}')
+    check = DoctrineCheck(
+        client=client, law=lambda: tuple(law), instruction=lambda: "judge it", timeout_seconds=1,
+    )
+    verdict, rules = await check.judge(LESSON)
+    assert verdict.outcome == "consistent"
+    assert rules == RULES
+    assert check.rules() == RULES[1:]
     (prompt,) = client.prompts
+    assert prompt == render_check_input(lesson=LESSON, rules=rules)
     assert "core/constraints.md" in prompt and "rooms/conduct.md" in prompt
     assert "public/" not in prompt and "instruments/" not in prompt
 
@@ -123,9 +138,11 @@ async def test_a_failed_slow_or_unread_check_is_an_error_and_counted():
     m = Metrics()
     for answer in (RuntimeError("down"), "hang", "not json"):
         check, _ = _check(answer, metrics=m)
-        assert (await check.judge(LESSON)).outcome == "error"
+        verdict, _ = await check.judge(LESSON)
+        assert verdict.outcome == "error"
     empty, _ = _check('{"verdict": "consistent"}', metrics=m, instruction="  ")
-    assert (await empty.judge(LESSON)).outcome == "error"
+    verdict, _ = await empty.judge(LESSON)
+    assert verdict.outcome == "error"
     assert m.get("nora_doctrine_check_total", outcome="error") == 4
 
 

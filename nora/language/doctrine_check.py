@@ -115,19 +115,24 @@ class DoctrineCheck:
             if r.file.startswith(LAW_SURFACES)
         )
 
-    async def judge(self, lesson: str) -> CheckVerdict:
-        verdict = await self._judge(lesson)
+    async def judge(self, lesson: str) -> tuple[CheckVerdict, tuple[LawRule, ...]]:
+        try:
+            rules = self.rules()
+        except Exception as exc:
+            log.exception("doctrine check: could not read the law")
+            verdict, rules = CheckVerdict("error", why=type(exc).__name__), ()
+        else:
+            verdict = await self._judge(lesson, rules)
         if verdict.outcome == "error":
             log.warning("doctrine check: error (%s); the lesson is refused", verdict.why)
         self._count(verdict.outcome)
-        return verdict
+        return verdict, rules
 
-    async def _judge(self, lesson: str) -> CheckVerdict:
+    async def _judge(self, lesson: str, rules: tuple[LawRule, ...]) -> CheckVerdict:
         try:
-            rules = self.rules()
             system = self._instruction().strip()
-        except Exception as exc:  # a doctrine that will not classify, a missing file
-            log.exception("doctrine check: could not read the law or its instruction")
+        except Exception as exc:  # a missing or unreadable instruction
+            log.exception("doctrine check: could not read its instruction")
             return CheckVerdict("error", why=type(exc).__name__)
         if not rules or not system:
             return CheckVerdict("error", why="no law or no instruction to check against")

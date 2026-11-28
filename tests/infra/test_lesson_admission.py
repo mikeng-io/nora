@@ -48,12 +48,13 @@ class LessonChecker:
 
     async def judge(self, lesson):
         self.calls.append(lesson)
+        law = self.rules()
         if lesson == CONFLICT:
-            return CheckVerdict("conflict", LAW, "Silence cannot establish permission.")
+            return CheckVerdict("conflict", law[0], "Silence cannot establish permission."), law
         if lesson == ERROR:
             raise TimeoutError
         if lesson == BODY:
-            return CheckVerdict("consistent")
+            return CheckVerdict("consistent"), law
         raise AssertionError(f"Unexpected lesson: {lesson}")
 
 
@@ -120,6 +121,31 @@ async def test_a_person_addressing_nora_can_supply_the_correction_floor(scenario
     outcome = await admit(svc, ("correction",))
     assert isinstance(outcome, Stored)
     assert checker.calls == [BODY]
+
+
+async def test_lesson_write_refuses_law_changed_since_the_judge(scenario):
+    class ReloadingChecker(LessonChecker):
+        law = (LAW,)
+
+        def rules(self):
+            return self.law
+
+        async def judge(self, lesson):
+            checked = await super().judge(lesson)
+            self.law = (replace(LAW, text="Check the audience before quoting a private message."),)
+            return checked
+
+    await scenario.entity("nora-pointer", pointer_kind="nora", pointer_ref="nora")
+    await correction(scenario)
+    checker = ReloadingChecker()
+    svc = service(scenario, checker)
+
+    assert await admit(svc, ("correction",)) == Refusal("check_unavailable", "content")
+    assert await _rows(scenario.engine, CLAIM) == {}
+    retry = await admit(svc, ("correction",))
+    assert isinstance(retry, Stored)
+    assert (await _rows(scenario.engine, CLAIM))[retry.id]["content"] == BODY
+    assert checker.calls == [BODY, BODY]
 
 
 @pytest.mark.parametrize(("reason", "body", "target", "aimed", "own"), [
