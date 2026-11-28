@@ -296,8 +296,16 @@ def _retired_surface_reason(corpus: str, name: str) -> str | None:
         return "The cases seed legacy notes or room Standing before a proactive pass."
     if corpus == "relevance_gate" and name == "real-commitment-in-standing":
         return "The relevance gate reads the transcript without a Standing input."
-    if corpus == "participation" and name.endswith(("-known", "-unknown")):
-        return "The legacy knowledge-cut pair needs equivalent graph seeds."
+    if corpus == "participation" and name in {
+        "stalled-question-known", "stalled-question-unknown",
+        "planning-context-known", "planning-context-unknown",
+        "commitment-followup-known",
+    }:
+        return "The case depends on a retired legacy note or Standing premise."
+    if corpus == "conversational_recall" and name in {
+        "j2_tomorrows_plan", "j2_next_plan_after_a_revision",
+    }:
+        return "The recall judge names a retired note identifier as its evidence."
     return None
 
 
