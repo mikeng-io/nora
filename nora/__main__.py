@@ -181,17 +181,17 @@ class App:
         started_at = time.time()
         health_app = self.health_app(started_at=started_at)
         register_web_routes(
-            health_app, store=deps.audit, reminders=deps.reminders,
+            health_app, store=deps.audit,
             persons=deps.persons, started_at=started_at,
             presence=deps.presence, presence_circles=tuple(deps.presence_circles),
             mobility=deps.mobility,
-            skills_dir=deps.skills_dir, events=deps.events,
+            skills_dir=deps.skills_dir,
             doctrine_store=deps.doctrine_store,
             workspaces_of=deps.workspaces_of,
             profile=deps.profile_portal, profile_screen=deps.profile_screen,
             profile_scopes_of=deps.profile_scopes_of,
             documents=deps.documents, rooms_of=deps.rooms_of,
-            room_event_shown=deps.room_event_shown, blobs=deps.blobs,
+            blobs=deps.blobs,
             room_label=deps.room_label, artifacts=deps.artifacts,
         )
         # OTP routes require the configured bearer token.

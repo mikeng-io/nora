@@ -288,12 +288,33 @@ _NO_PRODUCTION_CALLER: dict[tuple[str, str], _Pin] = {
         "lane reads it this stage: the context and grounding reads take "
         "recent/heads/by_ids/head_for_handle only.",
     ),
+    **{
+        (module, name): _Pin(
+            "scheduled_removal",
+            "The legacy agenda runtime reader is retired. The SQL methods remain with "
+            "the legacy tables until their removal.",
+        )
+        for module, name in (
+            ("gatherings.py", "without_venue_area"),
+            ("reminders.py", "all_pending"),
+            ("reminders.py", "delivered_subject"),
+            ("reminders.py", "due"),
+            ("reminders.py", "pending_for"),
+            ("reminders.py", "pending_of"),
+            ("reminders.py", "recent_in"),
+        )
+    },
+    ("notes.py", "append_revision"): _Pin(
+        "scheduled_removal",
+        "The legacy eval reminder screen was the last writer. The method stays with "
+        "the note store until its own removal.",
+    ),
     ("reminders.py", "in_rooms"): _Pin(
         "operator_script",
         "Every reminder row in the unit's rooms, every state — the ledger "
         "half of the unit state dump `scripts/cognition_loop/state.py` "
         "builds, which is the operator's tool outside `nora/` and outside "
-        "`_call_sites`' scan. `all_pending` serves the pending work queue.",
+        "`_call_sites`' scan.",
     ),
 }
 

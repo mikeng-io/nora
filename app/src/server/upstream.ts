@@ -1,17 +1,12 @@
 // The allowlist of Nora API reads the browser may make, and how each one
 // reaches her :9100 API. One table instead of one route file per endpoint:
-// the old portal had thirty near-identical proxies, and the two that had to
-// differ (memory, events: scoped to the viewer) were each argued for in a
-// comment in their own file. Here the difference is a column.
-//
 // Rules the table enforces, each tested in upstream.test.ts:
 //   - GET only; a path not in the table is a 404, never forwarded.
 //   - Only the query parameters a route names are forwarded; anything else
 //     the browser sends is dropped.
 //   - `scope: "self"` routes get `personId` from the SESSION, and a
 //     `personId` the browser sends is ignored: memory is the viewer's own,
-//     and events are the ones the viewer created or answered
-//     (nora/web/memory.py, nora/web/gatherings.py); presence is only the
+//     (nora/web/memory.py); presence is only the
 //     circles the viewer is in (nora/web/api.py _viewer_circles).
 //   - A path parameter must look like an id (no slashes, no dots-only, a
 //     bounded charset) and is re-encoded before it reaches the upstream URL.
@@ -30,9 +25,6 @@ export interface RouteSpec {
   params?: Record<string, RegExp>;
 }
 
-// An event id is a UUID (nora/web/api.py events_detail parses it with
-// Python's UUID and answers 400 otherwise); anything else cannot be a plan.
-const UUID = /^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|[0-9a-fA-F]{32})$/;
 // A document is opened by its id or by the 12-hex handle a link carries (the handle is not a
 // UUID, so a reply may carry it); Nora resolves it among what the viewer may read.
 const DOCUMENT_REF = /^(?:[0-9a-f]{12}|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|[0-9a-fA-F]{32})$/;
@@ -51,8 +43,6 @@ export const ROUTES: RouteSpec[] = [
   { pattern: ["memory"], scope: "self" },
   { pattern: ["persons"] },
   { pattern: ["persons", ":personId"] },
-  { pattern: ["events"], scope: "self" },
-  { pattern: ["events", ":id"], scope: "self", params: { id: UUID } },
   // Documents (ADR 0020): what the viewer created plus what was made in a room that
   // names them. `scope: "self"` because the viewer decides what is visible, never
   // the browser; Nora answers "not visible" exactly as "no such document".

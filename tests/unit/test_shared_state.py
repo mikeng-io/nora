@@ -9,14 +9,12 @@ citation-set match), an unread source is `unavailable` never
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from types import SimpleNamespace
 
 from nora.agent.shared_state import read_shared
 from nora.domain.cognition_remind import PendingRemind, RemindContext, check_remind
-from nora.domain.reminders import Reminder, ReminderState
 from nora.language.shared_render import render_shared_state
-from nora.testing.reminders import FakeReminderStore
 
 T0_MS = 1_780_000_000_000
 T0 = datetime.fromtimestamp(T0_MS / 1000, UTC)
@@ -114,19 +112,6 @@ def test_an_unresolved_new_row_falls_back_to_the_legacy_room_rule():
     assert refusal is not None and refusal.reason == "duplicate_pending"
 
 
-def _reminder(**kw) -> Reminder:
-    base = {
-        "id": uuid.uuid4(), "requester_person_id": "nora", "platform": "signal",
-        "conversation_id": "room-a", "conversation_type": "group",
-        "text": "the thing to raise",
-        "created_at": T0 - timedelta(minutes=10),
-        "due_at": T0 - timedelta(minutes=5), "state": ReminderState.FAILED,
-        "fired_at": T0 - timedelta(minutes=5), "outcome": "failed_error",
-        "kind": "proactive",
-        "payload": {"subject_kind": "note", "subject_id": "n-1", "action": "tell"},
-    }
-    base.update(kw)
-    return Reminder(**base)
 
 
 def _send(message_id: int, at_ms: int, text: str = "already said it"):
@@ -143,57 +128,10 @@ def _send(message_id: int, at_ms: int, text: str = "already said it"):
     )
 
 
-async def test_a_pending_act_appears_once_when_history_contains_the_same_row():
-    store = FakeReminderStore()
-    row = _reminder(state=ReminderState.PENDING, fired_at=None, outcome=None)
-    await store.create(row)
-    view = await read_shared(
-        unit="u1", rooms=ROOMS, ai_peer="nora", now_ms=T0_MS,
-        reminders=store,
-    )
-    assert [(e.id, e.status) for e in view.entries if e.kind == "act"] == [
-        (str(row.id), "pending"),
-    ]
 
 
-async def test_an_old_act_stays_visible_through_claim_and_delivery():
-    store = FakeReminderStore()
-    row = _reminder(
-        created_at=T0 - timedelta(days=30), due_at=T0,
-        state=ReminderState.PENDING, fired_at=None, outcome=None,
-    )
-    await store.create(row)
-    for status in ("pending", "firing", "sent"):
-        if status == "firing":
-            assert await store.claim(row.id, now=T0)
-        elif status == "sent":
-            assert await store.mark(row.id, ReminderState.DONE, fired_at=T0, outcome="sent")
-        view = await read_shared(
-            unit="u1", rooms=ROOMS, ai_peer="nora", now_ms=T0_MS, reminders=store,
-        )
-        assert [(e.id, e.status) for e in view.entries if e.kind == "act"] == [
-            (str(row.id), status),
-        ]
-    assert view.entries[0].delivery == "sent"
 
 
-async def test_an_old_pending_act_cancelled_now_is_visible_without_a_send():
-    store = FakeReminderStore()
-    now = datetime.now(UTC)
-    row = _reminder(
-        created_at=now - timedelta(days=30), due_at=now,
-        state=ReminderState.PENDING, fired_at=None, outcome=None,
-    )
-    await store.create(row)
-    assert await store.cancel(row.id, conversation_id=row.conversation_id)
-    view = await read_shared(
-        unit="u1", rooms=ROOMS, ai_peer="nora", now_ms=int(datetime.now(UTC).timestamp() * 1000),
-        reminders=store,
-    )
-    assert [(e.id, e.status, e.delivery) for e in view.entries] == [
-        (str(row.id), "cancelled", "none"),
-    ]
-    assert view.entries[0].at_ms >= int(now.timestamp() * 1000)
 
 
 class _Sends:
@@ -216,59 +154,21 @@ class _Broken:
         return _boom
 
 
-async def test_a_failed_act_with_a_send_in_the_window_is_unknown():
-    """The sweep marked it `failed` after the process lost the row — but a
-    delivered send exists minutes from `fired_at`. `unknown` is the honest
-    word: the row that would prove it is the row that was lost."""
-    store = FakeReminderStore()
-    await store.create(_reminder())
-    fired_ms = int((T0 - timedelta(minutes=5)).timestamp() * 1000)
-    view = await read_shared(
-        unit="u1", rooms=ROOMS, ai_peer="nora", now_ms=T0_MS,
-        reminders=store,
-        record_query=_Sends([_send(9, fired_ms + 30_000)]),
-    )
-    assert view.status == "ok"
-    act = next(e for e in view.entries if e.kind == "act")
-    assert act.delivery == "unknown"
 
 
-async def test_a_failed_act_with_no_send_near_it_is_none():
-    store = FakeReminderStore()
-    await store.create(_reminder())
-    view = await read_shared(
-        unit="u1", rooms=ROOMS, ai_peer="nora", now_ms=T0_MS,
-        reminders=store, record_query=_Sends(),
-    )
-    act = next(e for e in view.entries if e.kind == "act")
-    assert act.delivery == "none"
 
 
 async def test_a_source_that_raises_is_unavailable_never_nothing_found():
     """An unread premise must not degrade to «the unit is empty»: the
     source's own status names which read failed."""
-    store = FakeReminderStore()
     view = await read_shared(
         unit="u1", rooms=ROOMS, ai_peer="nora", now_ms=T0_MS,
-        reminders=store, ledger=_Broken(),
+        ledger=_Broken(),
     )
     assert view.status == "unavailable"
     assert ("ledger", "unavailable") in view.sources
 
 
-async def test_the_pending_view_is_unit_wide_not_room_wide():
-    """A row waiting for room-b is visible to a read asked about the whole
-    unit — the visibility gap the incident reported."""
-    store = FakeReminderStore()
-    await store.create(_reminder(conversation_id="room-b",
-                                 state=ReminderState.PENDING, fired_at=None,
-                                 outcome=None))
-    view = await read_shared(
-        unit="u1", rooms=ROOMS, ai_peer="nora", now_ms=T0_MS,
-        reminders=store,
-    )
-    act = next(e for e in view.entries if e.kind == "act")
-    assert act.status == "pending" and act.destination == "signal:room-b"
 
 
 def test_the_renderer_names_withheld_entries_and_coverage():

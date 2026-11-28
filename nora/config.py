@@ -1976,31 +1976,7 @@ class SpeechConfig(BaseModel):
 
 
 class HeartbeatConfig(BaseModel):
-    """The background tick that fires due reminders (`nora.app.heartbeat`).
-
-    Optional, defaulted, and INERT by default like `[presence]` and `[search]`:
-    this is Nora's first unprompted-speech path, so it must never turn itself on
-    because a section is missing.
-
-    `timeout_seconds` is deliberately NOT `[llm].timeout_seconds`: that number
-    bounds a turn a human is waiting on. Nobody is waiting on a fire turn, and
-    cutting one short produces silence in a group nobody asked anything in.
-
-    `tick_seconds` is the WAKE INTERVAL and nothing more. It is the BEST case
-    for lateness (a reminder fires on the first tick at or after its `due_at`) and
-    it is NOT an upper bound. Two things exceed it, both by design:
-
-    * one tick runs its turn-groups SEQUENTIALLY and awaits each one, so a tick
-      that finds N groups due can take up to N x `timeout_seconds`;
-    * a group whose conversation slot is held by a tag is not queued or shed but
-      DEFERRED to the next tick entirely, and a busy group can defer the same rows
-      repeatedly; `nora_heartbeat_deferrals_total` is the counter that says it is
-      happening.
-
-    So the statement is "at or after `due_at`, never before".
-    `[reminders].min_lead_seconds` is held above `tick_seconds` on purpose and is
-    enforced by `Config._lead_clears_the_tick`.
-    """
+    """Enable and bound the graph proactive delivery poller."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -2260,46 +2236,6 @@ class OtpConfig(BaseModel):
     max_attempts: int = Field(default=5, gt=0, le=20)
     max_per_hour: int = Field(default=5, gt=0, le=60)
     max_per_day: int = Field(default=10, gt=0, le=200)
-
-
-class RemindersConfig(BaseModel):
-    """The anti-runaway caps on stored reminders, and the zone a recurrence keeps.
-
-    Mirrored by `nora.domain.reminders.ReminderCaps`, which is what the tool
-    layer actually receives — import-linter forbids `nora.agent` from importing
-    `nora.config` at all, so the config type cannot cross that boundary. The
-    composition root builds the domain value from this one; the DEFAULTS on both
-    are the same numbers on purpose, and this is the pair to keep in step.
-    """
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    max_pending_per_requester: int = Field(default=20, ge=1)
-    # Above `[heartbeat].tick_seconds`, so a reminder set with the minimum lead
-    # cannot land in the tick that is already running. ENFORCED, not merely
-    # stated: `Config._lead_clears_the_tick` refuses the pair outright.
-    min_lead_seconds: int = Field(default=120, ge=1)
-    max_horizon_days: int = Field(default=365, ge=1)   # matches ReminderCaps
-    # DEC-85. A recurring reminder is a CHAIN with only one `pending` row at a
-    # time, so `max_pending_per_requester` counts a whole series as one — this
-    # is the cap that bounds the series itself, in occurrences. Every series is
-    # bounded: `RecurrenceRule.count` is required, so «forever» is not a state
-    # the domain can represent, and this is the ceiling a request is clamped to.
-    max_occurrences_per_series: int = Field(default=60, ge=1)
-    # HOW OFTEN a series may repeat, at the fastest. Sub-day recurrence makes 「每分鐘」
-    # expressible, and a room can only run ONE turn at a time: schedule faster than it
-    # can serve and reminders do not arrive faster, they queue and starve interactive
-    # tags.
-    #
-    # `ge=60` is the STRUCTURAL wall, not a taste: `[heartbeat] tick_seconds` is
-    # how often she wakes, so below it the tick cannot deliver at all. Config
-    # may raise this floor and may not lower it past the machine.
-    min_interval_seconds: int = Field(default=300, ge=60)
-    # An IANA zone NAME, never an offset: a recurrence keeps a LOCAL wall clock
-    # («08:00, whatever the offset does that week»), which «+08:00» cannot
-    # express. Validated at series construction — an unknown zone raises
-    # `UnknownRecurrenceZoneError` rather than being guessed at.
-    timezone: str = "Asia/Hong_Kong"
 
 
 class StandingConfig(BaseModel):
@@ -3638,11 +3574,7 @@ class Config(BaseModel):
     # outbound. On, `[speech.stt]` calls the local STT endpoint (`stt:8000`)
     # during the voice-note custody stage.
     speech: SpeechConfig = SpeechConfig()
-    # Optional and defaulted — see `HeartbeatConfig`/`RemindersConfig`. The tick
-    # ships INERT (`enabled = false`); the caps apply the moment a reminder can
-    # be created, whether or not anything is firing them.
     heartbeat: HeartbeatConfig = HeartbeatConfig()
-    reminders: RemindersConfig = RemindersConfig()
     # Optional and defaulted — see `NotesConfig`. Ships INERT
     # (`enabled = false`); off, composition wires `notes=None` into
     # `TranscriptInjection` and the `<notes>` block never renders. On, the
@@ -3824,58 +3756,6 @@ class Config(BaseModel):
                 "enabled = true — the gate decides whether a participation "
                 "turn runs, so with the turn off every GO reaches nothing and "
                 "the gate is inert while looking healthy"
-            )
-        return self
-
-    @model_validator(mode="after")
-    def _lead_clears_the_tick(self) -> Config:
-        """`[reminders].min_lead_seconds` must exceed `[heartbeat].tick_seconds`.
-
-        Otherwise a reminder set with the minimum lead becomes due before the tick
-        that is already running comes round again, and Nora answers 「等陣提你」 to
-        something she will not say until after the moment has passed. The promise
-        she makes at create time is the thing at stake, which is why this refuses
-        rather than warns.
-
-        Checked whatever `[heartbeat] enabled` says. The caps apply the moment a
-        reminder can be CREATED, which is independent of anything firing them —
-        a config that only becomes wrong when someone flips the switch is a
-        config that becomes wrong at the worst moment.
-        """
-        if self.reminders.min_lead_seconds <= self.heartbeat.tick_seconds:
-            raise ValueError(
-                f"[reminders] min_lead_seconds = {self.reminders.min_lead_seconds} "
-                f"must be greater than [heartbeat] tick_seconds = "
-                f"{self.heartbeat.tick_seconds}: a reminder set with the minimum "
-                "lead would come due inside the tick that is already running, and "
-                "would be answered later than she promised."
-            )
-        return self
-
-    @model_validator(mode="after")
-    def _repeat_floor_clears_the_tick(self) -> Config:
-        """`[reminders] min_interval_seconds` must be >= `[heartbeat]
-        tick_seconds`, for the same reason `min_lead_seconds` must clear it.
-
-        The floor's whole justification (in `config.py`, in
-        `ReminderCaps.min_interval_seconds` and in
-        `nora.domain.reminders.MIN_PERIOD_SECONDS`) is that the tick is how
-        often she wakes, so a series faster than it cannot be delivered at all.
-        `tick_seconds` is an operator setting, so the floor is checked against
-        it: 900 with a 300-second floor would make every five-minute series
-        undeliverable at rate, the failure the floor exists to prevent.
-
-        `>=` rather than `>` because a series landing exactly on the tick is
-        deliverable — unlike a minimum LEAD, which must clear the tick already
-        running.
-        """
-        if self.reminders.min_interval_seconds < self.heartbeat.tick_seconds:
-            raise ValueError(
-                f"[reminders] min_interval_seconds = "
-                f"{self.reminders.min_interval_seconds} must be at least "
-                f"[heartbeat] tick_seconds = {self.heartbeat.tick_seconds}: a "
-                "series may not repeat faster than she wakes up to check, or "
-                "occurrences pile up and fire late in clumps."
             )
         return self
 

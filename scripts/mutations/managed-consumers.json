@@ -161,13 +161,6 @@
   "target": "tests/unit/test_scoped_profile.py::test_a_sibling_only_member_is_denied_the_local_scope_profile_edit"
  },
  {
-  "name": "the fire-time (room, person) re-check gates reminder delivery",
-  "file": "nora/app/heartbeat.py",
-  "old": "            if verdict.allowed:",
-  "new": "            if True:",
-  "target": "tests/unit/test_managed_reminders.py::test_a_sibling_only_requesters_due_reminder_fails_the_fire_time_recheck"
- },
- {
   "name": "a complete roster is what authorizes departure",
   "file": "nora/people/app/managed_authority.py",
   "old": "        if payload.complete:",

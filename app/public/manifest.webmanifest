@@ -26,13 +26,6 @@
       "description": "Where everyone is",
       "url": "/map",
       "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" }]
-    },
-    {
-      "name": "Plans",
-      "short_name": "Plans",
-      "description": "What's coming up",
-      "url": "/plans",
-      "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" }]
     }
   ],
   "screenshots": [
@@ -41,7 +34,7 @@
       "sizes": "780x1688",
       "type": "image/webp",
       "form_factor": "narrow",
-      "label": "Today: who is around, what is coming up, and whether Nora is listening"
+      "label": "Today: who is around and whether Nora is listening"
     },
     {
       "src": "/screenshots/today-wide.webp",

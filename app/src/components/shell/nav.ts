@@ -1,6 +1,5 @@
 import {
   BookOpenText,
-  CalendarDays,
   Download,
   FileText,
   FolderOpen,
@@ -12,7 +11,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
-// The portal's map of itself. Seven places for the circle, four for Nora.
+// The portal's map of itself. Six places for the circle, four for Nora.
 // On a phone the bottom bar holds five cells (docs/design/appearance/README.md §7: no raised centre
 // button): four places plus More, which opens a sheet listing everything else
 // — the rest of the circle and the four pages about her. Five cells is the
@@ -23,7 +22,6 @@ export interface NavItem {
     | "today"
     | "map"
     | "people"
-    | "plans"
     | "documents"
     | "artifacts"
     | "downloads"
@@ -57,7 +55,6 @@ export const MAIN_NAV: NavItem[] = [
   { key: "today", href: "/today", icon: Sun, mobile: true },
   { key: "map", href: "/map", icon: MapIcon, mobile: true },
   { key: "people", href: "/people", icon: UsersRound },
-  { key: "plans", href: "/plans", icon: CalendarDays, mobile: true },
   { key: "documents", href: "/documents", icon: FileText, mobile: true },
   // The files Nora sent in your rooms (ADR 0023). On the phone it sits in the More sheet.
   { key: "artifacts", href: "/artifacts", icon: FolderOpen },

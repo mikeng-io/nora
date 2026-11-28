@@ -19,7 +19,6 @@ from nora.domain.managed import (
 )
 from nora.domain.management import Scope, ScopeKind
 from nora.domain.reminders import Reminder, ReminderState
-from nora.obs.metrics import Metrics
 from nora.people.app.managed import ManagedServices
 from nora.testing import FakeRosterSource
 from nora.testing.managed import (
@@ -28,7 +27,6 @@ from nora.testing.managed import (
     FakeLinkRequests,
     FakeTopologySource,
 )
-from nora.testing.reminders import FakeReminderStore
 from tests.unit.test_scoped_engagement_names import (
     _M_PERSON,
     _M_ROOM,
@@ -114,76 +112,3 @@ async def test_a_member_only_of_a_sibling_unit_is_nobody_in_this_room():
     view = await _room(access).members()
     assert [p.person_id for p in view.people] == [_M_PERSON]
     assert view.unnamed == 0 and view.find("Generated Sibling Member") == ()
-
-
-async def test_a_sibling_only_requesters_due_reminder_fails_the_fire_time_recheck():
-    """A real tagger resolution for a member only of the sibling unit: a
-    row journaled under them still fires only under the grant, which is
-    (room, person), so the fire-time re-check is the denial.
-    Their due row resolves `failed_policy` and never fires, while the
-    in-unit member's same due row delivers."""
-    from nora.app.heartbeat import HeartbeatLoop
-    from nora.domain.reminders import ReminderState
-    from nora.engagement.slots import ConversationSlots
-
-    bindings, _ = _managed()
-    backend = FakeAuthorityBackend()
-    access = ManagedServices(bindings, backend, FakeTopologySource(
-        rooms={_M_ROOM.id: (_M_UNIT.id, False), _M_SIBLING.id: (_M_UNIT.id, False),
-               _S_ROOM.id: (_S_UNIT.id, False)},
-        units={_M_UNIT.id: _M_WS.id, _S_UNIT.id: _M_WS.id},
-        workspaces={_M_WS.id}), FakeIdentityRegistry(), FakeLinkRequests()).access
-    await _managed_person(bindings)
-    # Membership publishes its own `member` tuple — the grant the local
-    # member's speak/view standing reads.
-    await backend.put_relation(scope=_M_ROOM, relation="member", person_id=_M_PERSON)
-    await bindings.register(
-        person=ManagedPerson(_S_PERSON, PersonLifecycle.ACTIVE,
-                             display_name="Generated Sibling Member"),
-        account=ManagedAccount(
-            "generated-sibling-binding", _S_PERSON, "signal",
-            frozenset({Identifier("signal", "phone", "+852222")}),
-            AccountState.BOUND),
-        membership=ManagedMembership(
-            _S_PERSON, _S_ROOM, MembershipState.MEMBER, "generated"))
-    # The membership is real — in the sibling unit's room, where it grants.
-    assert [m.person_id for m in await access.members_of(_S_ROOM)] == [_S_PERSON]
-
-    # The REAL resolution path names the bound sender honestly — a sibling
-    # member is a real person even where they hold nothing.
-    tagger = await access.resolve_ref("signal", "+852222", scope=_M_ROOM)
-    assert tagger is not None and tagger.person_id == _S_PERSON
-    member_tagger = await access.resolve_ref("signal", "+852111", scope=_M_ROOM)
-    assert member_tagger is not None and member_tagger.person_id == _M_PERSON
-
-    store = FakeReminderStore()
-    await store.create(_due(tagger.person_id, "generated sibling"))
-    await store.create(_due(member_tagger.person_id, "generated member"))
-    rows = {r.requester_person_id: r for r in await store.pending_for("g1")}
-    assert set(rows) == {_S_PERSON, _M_PERSON}
-
-    fired: list[str] = []
-
-    async def _fire(group):
-        fired.extend(r.requester_person_id for r in group)
-        return "sent"
-
-    loop = HeartbeatLoop(
-        store=store,
-        slots=ConversationSlots(maxlen=16, spawn=lambda c: None),
-        access=access, clock=lambda: _T0 + timedelta(hours=3),
-        metrics=Metrics(), tick_seconds=60.0, fire=_fire)
-    await loop.tick()
-
-    # The denial at the consumer's own (room, person) re-check: the
-    # sibling member's row resolves failed_policy and never fires; the
-    # in-unit member's row delivers.
-    sibling_row = await store.get(rows[_S_PERSON].id)
-    assert sibling_row is not None
-    assert sibling_row.state is ReminderState.FAILED
-    assert sibling_row.outcome == "failed_policy"
-    member_row = await store.get(rows[_M_PERSON].id)
-    assert member_row is not None
-    assert member_row.state is ReminderState.DONE
-    assert member_row.outcome == "sent"
-    assert fired == [_M_PERSON]

@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 from nora.infra.sql.cognitive_graph_schema import (
     EDGE,
     ENTITY,
+    GRAPH_STIMULUS_CLAIM,
     INTENTION,
     NORA_ACT,
     NORA_ACT_OUTCOME,
@@ -22,6 +23,7 @@ from nora.memory.domain.delivery_identity import (
     SubjectEdge,
     resolve_delivery,
 )
+from nora.memory.domain.time_trigger import decode_time_trigger
 
 
 class DeliveryReadError(Exception):
@@ -101,13 +103,13 @@ class SqlDeliveryHistory:
         self._engine = engine
 
     async def read(
-        self, unit: str, intention: str, destination: str,
+        self, unit: str, intention: str, destination: str, *, occurrence: str | None = None,
     ) -> DeliveryEvidence | None:
         async with self._engine.connect() as conn:
             await conn.execution_options(isolation_level="REPEATABLE READ")
             raw = (await conn.execute(sa.select(
                 INTENTION.c.owed_to, INTENTION.c.asserted_at, INTENTION.c.state,
-                INTENTION.c.delivery_mode, INTENTION.c.origin_room,
+                INTENTION.c.delivery_mode, INTENTION.c.origin_room, INTENTION.c.trigger,
             ).where(
                 INTENTION.c.unit == unit, INTENTION.c.id == intention,
             ))).mappings().one_or_none()
@@ -120,7 +122,12 @@ class SqlDeliveryHistory:
             if (raw["state"] != "open" or raw["delivery_mode"] != "choose_moment"
                     or successor is not None):
                 return DeliveryEvidence(False, origin)
-            acts = await _acts(conn, unit, {destination}, firing=False)
+            schedule = decode_time_trigger(raw["trigger"])
+            if occurrence is not None and schedule is not None and schedule.recurrence is not None:
+                separate = _other_occurrence(unit, intention, occurrence)
+            else:
+                separate = sa.false()
+            acts = await _acts(conn, unit, {destination}, firing=False, separate=separate)
             rows = await _include_authorities(conn, unit, {intention: raw}, acts)
             identities = await _identities(conn, unit, rows)
             delivery = identities[intention]
@@ -158,6 +165,7 @@ async def _predecessors(conn: AsyncConnection, unit: str, base: str | None) -> s
 
 async def _acts(
     conn: AsyncConnection, unit: str, destinations: Collection[str | None], *, firing: bool,
+    separate: sa.ColumnElement[bool] | None = None,
 ) -> list[_Prior]:
     act, outcome = NORA_ACT.c, NORA_ACT_OUTCOME.c
     latest = sa.select(outcome.verdict, outcome.asserted_at).where(
@@ -177,7 +185,18 @@ async def _acts(
         act.unit == unit, act.act_kind == "delivery", act.authority_intention.is_not(None),
         relevant,
     ).order_by(act.id)
+    if separate is not None:
+        query = query.where(~separate)
     return [_Prior(*row) for row in (await conn.execute(query))]
+
+
+def _other_occurrence(unit: str, intention: str, occurrence: str) -> sa.ColumnElement[bool]:
+    claim, act = GRAPH_STIMULUS_CLAIM.c, NORA_ACT.c
+    return sa.and_(act.authority_intention == intention, sa.exists().where(
+        claim.unit == unit, claim.graph_id == intention, claim.pass_id == act.trigger_id,
+        claim.claimant == "proactive", claim.kind == "intention_due", claim.state == "closed",
+        claim.occurrence != occurrence,
+    ))
 
 
 async def _include_authorities(

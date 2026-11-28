@@ -48,7 +48,6 @@ from nora.app.composition_fire import (
     build_gate,
     build_recover,
     compute_poller,
-    heartbeat,
     path,
     trigger,
 )
@@ -98,6 +97,7 @@ from nora.app.memory_routing import (
 from nora.app.oauth_keepalive import OAuthKeepalive
 from nora.app.otp import OtpService
 from nora.app.proactive_fire import FireAgent, FireRoom
+from nora.app.proactive_poller import ProactivePoller
 from nora.app.social_expiry import StoryMediaExpiry
 from nora.app.social_perception import SocialPerception
 from nora.app.social_poller import SocialPoller
@@ -119,7 +119,6 @@ from nora.domain.ports import (
     EngagePolicy,
     Speaker,
 )
-from nora.domain.reminders import ReminderStore
 from nora.engagement.graph_context import EngagementGraph
 from nora.engagement.pipeline import EngagementPipeline
 from nora.engagement.self_presence import PresenceReader
@@ -152,9 +151,7 @@ from .dispatch import Dispatcher
 from .fire import (
     FirePath,
 )
-from .gatherings import GatheringService, room_event_shown
 from .participation import ParticipationTrigger
-from .proactive_screen import ProactiveScreen
 from .runtime import BackgroundTasks, ComputerLifecycle
 
 log = logging.getLogger("nora.app.composition")
@@ -221,11 +218,6 @@ class Dependencies:
     documents: DocumentStore
     document_service: DocumentService
     rooms_of: Callable[[str], frozenset[RoomKey]]
-    # Whether a member of a room may see an event of it they neither made nor
-    # answered on the portal's Plans (`nora.app.gatherings.room_event_shown`,
-    # bound to the process's lineage policy AND its trusted room claims, so the
-    # membership grant also checks the event's persisted owner).
-    room_event_shown: Callable[[Any, str, str, str], bool]
     # (platform, conversation_id) -> the room's policy label, for the portal's document
     # rows; "" for a room the policy does not name.
     room_label: Callable[[str, str], str]
@@ -264,10 +256,9 @@ class Dependencies:
     #: The deployed fire path, named for the same reason as `relevance_gate`
     #: above: it is an ENTRY POINT.
     #:
-    #: `FirePath.speak` is what the trigger calls once the gate admits a
-    #: window, what the heartbeat calls when a reminder comes due, and what
-    #: every proactive occasion runs through.
+    #: FirePath.speak handles compute results and the ambient trigger.
     fire_path: FirePath | None
+    proactive_poller: ProactivePoller
     #: The ONE `<presence>` reader the tag path's
     #: assembler and the fire path both hold. Named for the
     #: same reason as the entry points above: reachable without a private.
@@ -277,10 +268,6 @@ class Dependencies:
     #: The clock this graph runs on, named so a harness can ask for it.
     clock: Callable[[], datetime]
 
-    #: The fire-time screen a `kind="proactive"` row passes before it speaks.
-    #: Named for the same reason as the entry points above — it decides whether
-    #: an act turn happens at all.
-    proactive_screen: ProactiveScreen
     adapter: SignalAdapter | BridgeAdapter
     # EVERY built adapter, keyed by platform. `adapter` above stays the concrete
     # Signal one because a handful of call sites are still Signal-specific by
@@ -296,10 +283,6 @@ class Dependencies:
     llm_state: LLMState
     client: AsyncOpenAI
     model_clients: list[AsyncOpenAI]
-    # The reminders store `build_dependencies` already constructs (see
-    # `reminders = SqlReminderStore(engine)` below) — exposed here so
-    # `nora/web/status.py` can read pending rows without a second store.
-    reminders: ReminderStore
     # The SAME `presence_store`/`presence_circles` `Whereis` already reads
     # (below) — exposed here so `nora.web.presence` can serve a map without a
     # second `PresenceStore` over a second engine. `presence` is `None` when
@@ -330,7 +313,6 @@ class Dependencies:
     # an eval subject composed from this graph records no loads of its own.
     revisions: SqlRevisionStore
 
-    events: GatheringService
     # `[speech.tts]`'s speaker, annotated with the
     # port like `audit`/`memory` above. `None` unless `enabled` AND a provider
     # AND its key are all present; callers must behave correctly with `None`.
@@ -446,7 +428,6 @@ async def _compose_dependencies(
     op_clock = operational_clock or clock
     content_checks = cfg.content_checks.enabled
     metrics = Metrics()
-    _agenda_wire = importlib.import_module("nora.agenda").wire
     _computer_wire = importlib.import_module("nora.computer").wire
     _conversation_wire = importlib.import_module("nora.conversation").wire
     _documents_wire = importlib.import_module("nora.documents").wire
@@ -487,14 +468,13 @@ async def _compose_dependencies(
     owner.own_audit(audit)
     _location_stores = _location_wire.stores(engine=engine)
     mobility = _location_stores.mobility
-    _agenda_reminders = _agenda_wire.reminders(engine=engine)
-    reminders = _agenda_reminders.reminders
     _stores_runtime_stores = runtime_stores(engine=engine)
     compute_jobs = _stores_runtime_stores.compute_jobs
     tool_call_log_store = _stores_runtime_stores.tool_call_log_store
     background: BackgroundTasks
     computer_context: Any
     fire_path: FirePath | None
+    proactive_poller: ProactivePoller
     _computer = await build_computer(
         allowlist=allowlist, background=lambda: background, cfg=cfg,
         clock=clock, compute_jobs=compute_jobs,
@@ -656,7 +636,6 @@ async def _compose_dependencies(
         presence_reader=presence_reader,
         quote_window=quote_window,
         registry=registry,
-        reminders=reminders,
         rosters=rosters,
         standing_store=standing_store,
         subagents_context=subagents_context,
@@ -697,11 +676,6 @@ async def _compose_dependencies(
     participation_runner = _models_runners.participation_runner
     proactive_runner = _models_runners.proactive_runner
     summons_runner = _models_runners.summons_runner
-    _agenda_event_store = _agenda_wire.event_store(allowlist=allowlist, engine=engine)
-    event_room_claims = _agenda_event_store.event_room_claims
-    event_store = _agenda_event_store.event_store
-    _agenda_events = _agenda_wire.events(event_store=event_store)
-    events = _agenda_events.events
     _media_describers = _media_wire.describers(
         _spawn=_spawn,
         blobs=blobs,
@@ -962,7 +936,6 @@ async def _compose_dependencies(
         compute_backends=compute_backends,
         compute_jobs=compute_jobs,
         metrics=metrics,
-        reminders=reminders,
     )
     lost_jobs = _fire_recover.lost_jobs
     _fire_path = path(
@@ -1000,18 +973,18 @@ async def _compose_dependencies(
         tool_registry=tool_registry,
     )
     fire_path = _fire_path.fire_path
-    _fire_heartbeat = heartbeat(
-        access=access, allowlist=allowlist, background=background, clock=clock, slots=slots,
-        cfg=cfg, fire_path=fire_path, metrics=metrics, note_store=note_store, reminders=reminders)
+    proactive_poller = build_proactive(
+        _memory_wire, engine, cfg.heartbeat, op_clock, slots,
+        FireRoom(access, audit, persons_view, quote_window, presence_reader, allowlist,
+                 registry.adapters, rosters, preview_source),
+        FireAgent(proactive_runner, tool_registry, doctrine_store, cfg.doctrine.canary,
+                  cfg.doctrine.display_name, cfg.store.context_window, limits,
+                  cfg.llm.defer_tools, cfg.heartbeat.timeout_seconds, metrics,
+                  graph_debrief.revisions, tool_call_log_store, reasoning_strip_store),
+        graph_debrief, lineage,
+    )
     if cfg.heartbeat.enabled:
-        background.spawn(build_proactive(_memory_wire, engine, cfg.heartbeat, op_clock, slots,
-            FireRoom(access, audit, persons_view, quote_window, presence_reader, allowlist,
-                     registry.adapters, rosters, preview_source),
-            FireAgent(proactive_runner, tool_registry, doctrine_store, cfg.doctrine.canary,
-                      cfg.doctrine.display_name, cfg.store.context_window, limits,
-                      cfg.llm.defer_tools, cfg.heartbeat.timeout_seconds, metrics,
-                      graph_debrief.revisions, tool_call_log_store, reasoning_strip_store),
-            graph_debrief, lineage).run())
+        background.spawn(proactive_poller.run())
     _fire_compute_poller = compute_poller(
         allowlist=allowlist,
         background=background,
@@ -1173,7 +1146,6 @@ async def _compose_dependencies(
         documents=documents_store,
         document_service=document_service,
         rooms_of=functools.partial(rooms_named, allowlist),
-        room_event_shown=functools.partial(room_event_shown, lineage, event_room_claims),
         room_label=functools.partial(room_label, allowlist),
         blobs=blobs,
         artifacts=computer_exports,
@@ -1185,9 +1157,9 @@ async def _compose_dependencies(
         participation_trigger=participation_trigger,
         relevance_gate=gate,
         fire_path=fire_path,
+        proactive_poller=proactive_poller,
         self_presence=presence_reader,
         clock=clock,
-        proactive_screen=_fire_heartbeat.proactive_screen,
         account=account,
         doctrine=doctrine,
         doctrine_store=doctrine_store,
@@ -1196,7 +1168,6 @@ async def _compose_dependencies(
         llm_state=llm_state,
         client=client,
         model_clients=extra_model_clients,
-        reminders=reminders,
         presence=presence_store,
         presence_circles=presence_circles,
         mobility=mobility,
@@ -1204,7 +1175,6 @@ async def _compose_dependencies(
         dreamer_instructions=dreamer_instructions,
         dreamer_runtime=dreamer_runtime,
         revisions=SqlRevisionStore(engine),
-        events=events,
         speaker=speaker,
         voice_hub=voice_hub,
         voice_event_consumer=voice_event_consumer,

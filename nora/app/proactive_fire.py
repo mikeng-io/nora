@@ -82,7 +82,7 @@ class RecheckResult(Protocol):
 
 class DeliveryRecheck(Protocol):
     async def recheck(
-        self, intention_id: str, destination: str, now: datetime,
+        self, intention_id: str, destination: str, now: datetime, *, occurrence: str | None = None,
     ) -> RecheckResult: ...
 
 
@@ -137,13 +137,14 @@ class FireAgent:
 class _ReplyAdmission:
     def __init__(
         self, recheck: DeliveryRecheck, acts: ActEnvelope, authority: ActAuthority,
-        target: ConversationTarget, clock: Callable[[], datetime],
+        target: ConversationTarget, clock: Callable[[], datetime], occurrence: str,
     ) -> None:
         self._recheck = recheck
         self._acts = acts
         self._authority = authority
         self._destination = room_key(target.platform, target.conversation_id)
         self._clock = clock
+        self._occurrence = occurrence
         self.withheld = False
 
     async def allowed(self) -> bool:
@@ -152,7 +153,9 @@ class _ReplyAdmission:
         intention = self._authority.intention
         if intention is None:
             raise ValueError("a due reply requires intention authority")
-        result = await self._recheck.recheck(intention, self._destination, self._clock())
+        result = await self._recheck.recheck(
+            intention, self._destination, self._clock(), occurrence=self._occurrence,
+        )
         if result.status == "deliver":
             return True
         if result.status == "unavailable":
@@ -282,7 +285,9 @@ class ProactiveFire:
                           nora_name=agent.display_name)
         if getattr(room.records, "delivery_acts", None) is None:
             raise RuntimeError("a due reply requires a durable act envelope")
-        admission = _ReplyAdmission(self._recheck, self._acts, authority, target, self._clock)
+        admission = _ReplyAdmission(
+            self._recheck, self._acts, authority, target, self._clock, claim.due.occurrence,
+        )
         with act_pass(authority, self._acts):
             assembled = await self._assembler.assemble(
                 "proactive", ProactiveInput(claim.due.intention),

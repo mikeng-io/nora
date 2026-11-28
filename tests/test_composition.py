@@ -18,7 +18,6 @@ from nora.app.composition import (
     build_dependencies,
 )
 from nora.app.fire import FirePath
-from nora.app.heartbeat import HEARTBEAT_NOT_RUNNING
 from nora.app.startup import StartupError
 from nora.config import load
 from nora.domain.models import NormalizedMessage
@@ -171,15 +170,6 @@ async def test_disabling_the_trigger_removes_only_that_path(cfg):
     assert decision.reason == "no_trigger"
 
 
-async def test_dependencies_exposes_the_reminders_store(cfg):
-    """The web API's status route (nora/web/status.py) needs to read pending
-    reminders, and the only reminders store this process builds lives inside
-    build_dependencies() as a local — this pins it onto Dependencies so
-    anything outside composition.py can reach it."""
-    from nora.infra.sql.reminders import SqlReminderStore
-
-    deps = await build_dependencies(cfg)
-    assert isinstance(deps.reminders, SqlReminderStore)
 
 
 
@@ -516,9 +506,11 @@ async def test_media_disabled_is_off_even_with_a_valid_key(cfg, monkeypatch):
     assert deps.ingest._blobs is None
 
 
-async def test_the_heartbeat_is_wired_to_the_real_fire_path(cfg):
+async def test_heartbeat_config_wires_only_the_graph_proactive_poller(cfg):
     """Inspect the spawned fire loops because Dependencies keeps them private."""
-    on = override_config(cfg, {"heartbeat.enabled": True})
+    on = override_config(cfg, {
+        "heartbeat.enabled": True, "heartbeat.tick_seconds": 42, "heartbeat.timeout_seconds": 71,
+    })
     deps = await build_dependencies(on)
     try:
         loops = [
@@ -526,14 +518,14 @@ async def test_the_heartbeat_is_wired_to_the_real_fire_path(cfg):
             for task in deps.background._tasks
             if task.get_coro().__qualname__ == "HeartbeatLoop.run"
         ]
-        assert loops, "the heartbeat loop was not spawned"
-        assert isinstance(loops[0]._fire.__self__, FirePath)
+        assert loops == []
         [poller] = [
             task.get_coro().cr_frame.f_locals["self"]
             for task in deps.background._tasks
             if task.get_coro().__qualname__ == "ProactivePoller.run"
         ]
-        assert poller._slots is loops[0]._slots
+        assert poller._tick_seconds == 42
+        assert poller._bound.total_seconds() == 71
         assert isinstance(poller._proactive._recheck, DeliveryArbitration)
     finally:
         await deps.background.cancel_all()
@@ -636,48 +628,8 @@ def _spawned(deps, qualname: str) -> list:
     ]
 
 
-async def test_boot_recovery_counts_the_rows_it_swept(cfg, clean_pg_url):
-    """The sweep is the only path that resolves reminders with no tick running, and
-    `nora_reminders_fired_total`'s spec says a reminder that vanishes must never vanish
-    from the metrics too. A sweep that only logs a count and increments nothing leaves a
-    crash that ate reminders with no trace on any dashboard.
-
-    This asserts the WIRING, with a real stranded row in the real database: the counting
-    function itself is unit-tested, and a function nobody calls would pass that test.
-    """
-    from nora.domain.reminders import Reminder, ReminderState
-    from nora.infra.sql import create_sql_engine, run_migrations
-    from nora.infra.sql.reminders import SqlReminderStore
-
-    run_migrations(clean_pg_url)
-    store = SqlReminderStore(create_sql_engine(clean_pg_url))
-    now = datetime.now(UTC)
-    await store.create(Reminder(
-        id=uuid.uuid4(), requester_person_id="miles", platform="signal",
-        conversation_id="g1", conversation_type="group", text="洗衫",
-        created_at=now - timedelta(hours=1), due_at=now - timedelta(minutes=5),
-        state=ReminderState.FIRING, fired_at=None, outcome=None,
-    ))
-    await store.aclose()
-
-    deps = await build_dependencies(cfg)
-
-    assert deps.metrics.get(
-        "nora_reminders_fired_total", outcome="failed_error",
-    ) == 1
 
 
-async def test_the_liveness_gauge_is_seeded_even_with_the_heartbeat_off(cfg):
-    """`[heartbeat] enabled = false` SHIPS, so the gauge must also be seeded outside
-    `HeartbeatLoop.__init__`; bound only inside it, on every default deployment the
-    series exports `0.0` forever, which reads exactly like "ticked a moment ago". The one
-    reading an operator must be able to trust is the one it could not give.
-    """
-    deps = await build_dependencies(cfg)
-    assert cfg.heartbeat.enabled is False
-    assert deps.metrics.get(
-        "nora_heartbeat_last_tick_age_seconds",
-    ) == HEARTBEAT_NOT_RUNNING
 
 
 async def test_compute_boot_recovery_sweeps_a_stranded_row_even_when_disabled(cfg, clean_pg_url):
@@ -739,7 +691,7 @@ async def test_compute_enabled_without_an_adapter_boots_and_spawns_no_poller(
     `config.toml` says `[compute] enabled = true` must still BOOT, and the poller must
     not be spawned: it has nothing to poll, so a spawned one would claim `pending` rows
     it cannot answer for. Reaching into `background._tasks` for the same reason
-    `test_the_heartbeat_is_wired_to_the_real_fire_path` does."""
+    `test_heartbeat_config_wires_only_the_graph_proactive_poller` does."""
     on = override_config(cfg, {"compute.enabled": True, "heartbeat.enabled": False})
     deps = await build_dependencies(on)
     try:
@@ -985,6 +937,7 @@ async def test_standing_enabled_wires_the_same_store_to_both_halves(cfg, tmp_pat
     read.assert_any_await(platform="signal", conversation_id="g1")
     assert any(e.kind == "standing" and e.subject == "generated open decision"
                for e in view.entries)
+    assert "acts" not in dict(view.sources)
     assert wiring.max_chars == 1200
     # Read the value from the config under test, not a hardcoded literal: the operator
     # owns fold_batch, and a literal breaks when it is changed.
@@ -1204,32 +1157,6 @@ async def test_a_valid_inherited_effort_still_starts(cfg):
 
 
 
-async def test_the_heartbeat_screens_proactive_rows_and_the_fire_path_can_stay_silent(
-    cfg, tmp_path,
-):
-    """At the root: the heartbeat holds a `ProactiveScreen` over
-    the SAME allowlist and note store, `event_registry` maps the kind, and
-    the fire path holds an auto-runner under `proactive_runner` even with
-    participation off. Reached the way the heartbeat wiring test reaches
-    it: `Dependencies` deliberately exposes neither loop."""
-    from nora.app.proactive_screen import ProactiveScreen
-
-    (tmp_path / "policy.toml").write_text(_HOME_POLICY)
-    deps = await build_dependencies(override_config(cfg, {
-        "notes.enabled": True, "heartbeat.enabled": True,
-        "participation.enabled": False,
-    }))
-    try:
-        (loop,) = _spawned(deps, "HeartbeatLoop.run")
-        assert isinstance(loop._proactive, ProactiveScreen)
-        assert loop._proactive._policy is loop._access._policy
-        path = loop._fire.__self__
-        assert isinstance(path, FirePath)
-        assert "proactive" in path._event_registry
-        assert path._proactive_runner is not None
-        assert path._participation_runner is None
-    finally:
-        await deps.background.cancel_all()
 
 
 
@@ -1245,8 +1172,10 @@ async def test_the_proactive_runner_thinks_at_its_own_effort(cfg, tmp_path):
         "proactive.reasoning_effort": "low",
     }))
     try:
-        (loop,) = _spawned(deps, "HeartbeatLoop.run")
-        path = loop._fire.__self__
+        (poller,) = _spawned(deps, "ProactivePoller.run")
+        path = deps.fire_path
+        assert path is not None
+        assert poller._proactive._agent.runner is path._proactive_runner
         assert path._proactive_runner is not path._participation_runner
         assert path._proactive_runner._models._spec.reasoning_effort == "low"
         assert path._participation_runner._models._spec.reasoning_effort == "none"
@@ -1418,16 +1347,11 @@ async def test_the_documents_block_reaches_both_turn_paths_only_while_documents_
     assert off.assembler._documents_reader is None
     on = await build_dependencies(override_config(cfg, {"documents.enabled": True}))
     assert on.assembler._documents_reader is not None
-    fire = override_config(cfg, {"documents.enabled": True, "heartbeat.enabled": True})
+    fire = override_config(cfg, {"documents.enabled": True, "compute.enabled": True})
     deps = await build_dependencies(fire)
     try:
-        loops = [
-            task.get_coro().cr_frame.f_locals["self"]
-            for task in deps.background._tasks
-            if task.get_coro().__qualname__ == "HeartbeatLoop.run"
-        ]
-        assert loops, "the heartbeat loop was not spawned"
-        assert loops[0]._fire.__self__._documents is deps.assembler._documents_reader
+        assert deps.fire_path is not None
+        assert deps.fire_path._documents is deps.assembler._documents_reader
     finally:
         await deps.background.cancel_all()
 

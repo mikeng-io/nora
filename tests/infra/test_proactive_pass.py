@@ -504,3 +504,86 @@ async def test_a_multi_room_open_still_delivers_to_the_second_room_after_the_fir
     await wire.condition_matcher(scenario.engine).run_once()
     assert (await _rows(scenario.engine, INTENTION))[second]["ending"] == "achieved"
     assert [target.conversation_id for target, _ in sender.sent] == [ROOM, OTHER_ROOM]
+
+
+async def test_a_migrated_legacy_reminder_delivers_once_through_the_graph(scenario):
+    from tests.infra.test_legacy_agenda_migration import legacy_reminder
+
+    async with scenario.engine.begin() as conn:
+        await legacy_reminder(conn)
+    migration = wire.legacy_agenda_migration(scenario.engine, scenario.policy, scenario.persons)
+    assert (await migration.run(review_deadline=NOW + timedelta(days=7)))["reminders"] == 1
+    runner = ScriptedRunner((_SEND,))
+    worker, sender, _ = setup(scenario, runner, [])
+    clock = wire.graph_clock(scenario.engine, lambda: NOW)
+
+    await clock.run_once()
+    await worker.poll()
+    await clock.run_once()
+    await worker.poll()
+
+    assert sender.texts == ["Generated reminder"]
+    [request] = runner.calls
+    assert "Generated appointment" in request["tag_message"]
+    [claim] = await claim_rows(scenario)
+    assert claim["state"] == "closed"
+
+
+@pytest.mark.parametrize("count", [4, None], ids=["count-and-until", "until-only"])
+async def test_migrated_series_delivers_the_remaining_anchored_occurrences(scenario, count):
+    from tests.infra.test_legacy_agenda_migration import (
+        SERIES_ANCHOR,
+        SERIES_END,
+        SERIES_PENDING,
+        migrated_id,
+        recurring_reminder,
+    )
+
+    async with scenario.engine.begin() as conn:
+        source = await recurring_reminder(conn, count=count)
+    migration = wire.legacy_agenda_migration(scenario.engine, scenario.policy, scenario.persons)
+    assert (await migration.run(review_deadline=SERIES_END))["reminders"] == 1
+    graph_id = migrated_id("reminders", source)
+    [intention_row] = (await _rows(scenario.engine, INTENTION)).values()
+    assert intention_row["trigger"] == {
+        "kind": "time", "at": SERIES_PENDING.isoformat(), "zone": "America/New_York",
+        "recurrence": {
+            "every": "monthly", "interval": 2, "until": SERIES_END.isoformat(),
+            "anchor": SERIES_ANCHOR.isoformat(), "offset": 1,
+            **({"count": 3} if count is not None else {}),
+        },
+    }
+
+    sender = SinkSender()
+    matcher = wire.condition_matcher(scenario.engine)
+    for due in (SERIES_PENDING, SERIES_END):
+        await wire.graph_clock(scenario.engine, lambda due=due: due).run_once()
+        runner = ScriptedRunner((_SEND,))
+        worker, _, _ = setup(scenario, runner, [], sender=sender, now=due)
+        await worker.poll()
+        await matcher.run_once()
+        [saved] = (await _rows(scenario.engine, INTENTION)).values()
+        assert saved["state"] == ("open" if due == SERIES_PENDING else "ended")
+        [request] = runner.calls
+        assert "Generated appointment" in request["tag_message"]
+
+    await wire.graph_clock(scenario.engine, lambda: SERIES_END + timedelta(days=90)).run_once()
+    claims = await claim_rows(scenario)
+    assert {row["occurrence"] for row in claims} == {
+        SERIES_PENDING.isoformat(), SERIES_END.isoformat(),
+    }
+    assert {row["graph_id"] for row in claims} == {graph_id}
+    assert sender.texts == ["Generated reminder", "Generated reminder"]
+
+
+async def test_the_graph_clock_does_not_publish_a_future_delivery(scenario):
+    await intention(
+        scenario, "future-reminder", origin_room=f"signal:{ROOM}", delivery_mode="choose_moment",
+        trigger={"kind": "time", "at": DUE.isoformat(), "zone": "UTC"},
+    )
+    claims = SqlProactiveClaims(scenario.engine)
+    await wire.graph_clock(scenario.engine, lambda: DUE - timedelta(seconds=1)).run_once()
+    assert await claims.due_intentions(DUE) == ()
+    await wire.graph_clock(scenario.engine, lambda: DUE).run_once()
+    [due] = await claims.due_intentions(DUE)
+    assert (due.intention, due.eligible_at) == ("future-reminder", DUE)

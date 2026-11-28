@@ -1,20 +1,14 @@
 from pathlib import Path
-from uuid import uuid4
 
 import pytest
 from aiohttp import web
 
 from nora.agent.whereis import Circle
-from nora.app.gatherings import GatheringService
-from nora.domain.gatherings import RSVP, RSVPResponse
 from nora.domain.models import PersonRef
 from nora.domain.presence import PresenceFix, WireState
 from nora.persons import Persons
 from nora.testing import FakeRecordStore
-from nora.testing.gatherings import FakeGatheringStore
-from nora.testing.reminders import FakeReminderStore
 from nora.web.api import register_web_routes
-from tests.builders import make_gathering
 from tests.conftest import build_test_doctrine_store
 from tests.web.test_memory import _claim, _Claims
 
@@ -28,12 +22,6 @@ SAM = PersonRef(person_id="sam", name="Sam")
 NO_SKILLS_DIR = Path("/nonexistent-skills-dir-for-tests")
 
 
-def _fake_events() -> GatheringService:
-    """A minimal, always-`unavailable`-for-venue-suggestion `GatheringService`
-    (`route_source`/`honcho` both `None`) — these fixtures only exercise
-    routes unrelated to Gathering, so the real shape doesn't matter, just that
-    `register_web_routes` receives a real `GatheringService` instance."""
-    return GatheringService(store=FakeGatheringStore())
 
 
 class FakePresenceReader:
@@ -67,13 +55,13 @@ async def client(aiohttp_client):
     register_web_routes(
         app,
         store=FakeRecordStore(),
-        reminders=FakeReminderStore(),
+
         persons=Persons(by_person={"miles": MILES}, index={}),
         started_at=0.0,
         presence=None,
         presence_circles=(),
         skills_dir=NO_SKILLS_DIR,
-        events=_fake_events(),
+
         doctrine_store=build_test_doctrine_store(),
         profile=_Claims({
             ("friends", "miles"): (_claim("m1", "cycles to work"),),
@@ -88,7 +76,7 @@ async def test_status_route_returns_200_with_the_expected_shape(client):
     resp = await client.get("/app/v1/status")
     assert resp.status == 200
     body = await resp.json()
-    assert set(body) == {"uptime_seconds", "store", "reminders"}
+    assert set(body) == {"uptime_seconds", "store"}
 
 
 async def test_doctrine_route_returns_the_shipped_sections_in_order(client):
@@ -225,7 +213,7 @@ async def client_with_presence(aiohttp_client):
     register_web_routes(
         app,
         store=FakeRecordStore(),
-        reminders=FakeReminderStore(),
+
         persons=Persons(
             by_person={"miles": MILES, "ada": ADA, "sam": SAM, "daisy": DAISY}, index={},
         ),
@@ -233,7 +221,7 @@ async def client_with_presence(aiohttp_client):
         presence=reader,
         presence_circles=(circle, other),
         skills_dir=NO_SKILLS_DIR,
-        events=_fake_events(),
+
         doctrine_store=build_test_doctrine_store(),
     )
     return await aiohttp_client(app)
@@ -323,205 +311,7 @@ async def test_presence_places_route_returns_empty_list_when_presence_is_disable
     assert await resp.json() == []
 
 
-@pytest.fixture
-async def client_with_events(aiohttp_client):
-    """Same fixture shape as `client`, but wired with a real `GatheringService`
-    over a NON-empty `FakeGatheringStore` — one seeded event with a real RSVP —
-    so the events routes exercise the actual request -> handler -> service
-    -> store path, not a fixture whose store is always empty regardless of
-    what a test asks for (CLAUDE.md's fake-fidelity rule; FakeGatheringStore's
-    own docstring makes the same commitment for its store-level contract)."""
-    gatherings = FakeGatheringStore()
-    events_service = GatheringService(store=gatherings)
-    event = await gatherings.create(make_gathering(
-        conversation_id="signal:group-1",
-        created_by="miles",
-        title="Dinner",
-    ))
-    await gatherings.add_rsvp(RSVP(
-        event_id=event.id,
-        person_id="daisy",
-        response=RSVPResponse.YES,
-        responded_at=event.created_at,
-    ))
-    app = web.Application()
-    register_web_routes(
-        app,
-        store=FakeRecordStore(),
-        reminders=FakeReminderStore(),
-        persons=Persons(
-            by_person={"miles": MILES, "daisy": DAISY, "sam": SAM},
-            index={},
-        ),
-        started_at=0.0,
-        presence=None,
-        presence_circles=(),
-        skills_dir=NO_SKILLS_DIR,
-        events=events_service,
-        doctrine_store=build_test_doctrine_store(),
-    )
-    web_client = await aiohttp_client(app)
-    return web_client, event
-
-
-async def test_the_events_routes_show_a_member_every_event_of_their_room(aiohttp_client):
-    """The route passes the viewer's rooms and the visibility rule: a room member
-    who neither made nor answered an event sees it in the list and the detail,
-    and someone outside the room sees neither."""
-    from nora.agent.lineage import LineagePolicy
-    from nora.app.gatherings import room_event_shown
-
-    gatherings = FakeGatheringStore()
-    events_service = GatheringService(store=gatherings)
-    event = await gatherings.create(make_gathering(
-        conversation_id="group-1", created_by="cognition:u",
-        title="Saturday dinner",
-    ))
-    app = web.Application()
-    register_web_routes(
-        app, store=FakeRecordStore(), reminders=FakeReminderStore(),
-        persons=Persons(by_person={"miles": MILES, "sam": SAM}, index={}),
-        started_at=0.0, presence=None, presence_circles=(),
-        skills_dir=NO_SKILLS_DIR, events=events_service,
-        doctrine_store=build_test_doctrine_store(),
-        rooms_of=lambda p: frozenset({("signal", "group-1")}) if p == "miles" else frozenset(),
-        room_event_shown=lambda e, v, pl, c: room_event_shown(
-            LineagePolicy(), {"group-1": frozenset({("", "signal")})}, e, v, pl, c,
-        ),
-    )
-    web_client = await aiohttp_client(app)
-    listed = await (await web_client.get("/app/v1/events?personId=miles")).json()
-    assert [e["title"] for e in listed] == ["Saturday dinner"]
-    detail = await web_client.get(f"/app/v1/events/{event.id}?personId=miles")
-    assert detail.status == 200
-    assert await (await web_client.get("/app/v1/events?personId=sam")).json() == []
-    outside = await web_client.get(f"/app/v1/events/{event.id}?personId=sam")
-    assert outside.status == 404
-
-
-async def test_the_events_routes_do_not_show_a_rooms_old_event_after_it_moved_unit(aiohttp_client):
-    """The room membership grant also checks the event's stored owner. When
-    `policy.toml` gives the same room id to another unit, the room's member must
-    not inherit the previous unit's events in the list or the detail — the event
-    keeps the unit that wrote it."""
-    from nora.agent.lineage import LineagePolicy
-    from nora.app.gatherings import room_event_shown
-
-    gatherings = FakeGatheringStore()
-    events_service = GatheringService(store=gatherings)
-    event = await gatherings.create(make_gathering(
-        conversation_id="group-1", created_by="cognition:u",
-        title="Work offsite", unit_id="work",
-    ))
-    app = web.Application()
-    register_web_routes(
-        app, store=FakeRecordStore(), reminders=FakeReminderStore(),
-        persons=Persons(by_person={"miles": MILES, "sam": SAM}, index={}),
-        started_at=0.0, presence=None,
-        presence_circles=(), skills_dir=NO_SKILLS_DIR, events=events_service,
-        doctrine_store=build_test_doctrine_store(),
-        rooms_of=lambda p: frozenset({("signal", "group-1")}) if p == "miles" else frozenset(),
-        room_event_shown=lambda e, v, pl, c: room_event_shown(
-            LineagePolicy(), {"group-1": frozenset({("friends", "signal")})},
-            e, v, pl, c,
-        ),
-    )
-    web_client = await aiohttp_client(app)
-    assert await (await web_client.get("/app/v1/events?personId=miles")).json() == []
-    detail = await web_client.get(f"/app/v1/events/{event.id}?personId=miles")
-    assert detail.status == 404
-
-
-async def test_events_list_route_returns_the_seeded_event(client_with_events):
-    """`miles` created it — creator is always a participant."""
-    web_client, event = client_with_events
-    resp = await web_client.get("/app/v1/events?personId=miles")
-    assert resp.status == 200
-    body = await resp.json()
-    assert len(body) == 1
-    assert body[0]["id"] == str(event.id)
-    assert body[0]["title"] == "Dinner"
-    assert body[0]["status"] == "proposed"
-
-
-async def test_events_list_route_includes_events_ive_only_rsvpd_to(client_with_events):
-    """`daisy` never created anything — she RSVP'd `yes`, which is enough."""
-    web_client, event = client_with_events
-    resp = await web_client.get("/app/v1/events?personId=daisy")
-    assert resp.status == 200
-    body = await resp.json()
-    assert [e["id"] for e in body] == [str(event.id)]
-
-
-async def test_events_list_route_excludes_events_im_not_part_of(client_with_events):
-    """`sam` neither created nor RSVP'd — participant-scoping, not just
-    auth: a valid personId that isn't a participant sees an empty list,
-    not a 400 and not someone else's event."""
-    web_client, _event = client_with_events
-    resp = await web_client.get("/app/v1/events?personId=sam")
-    assert resp.status == 200
-    body = await resp.json()
-    assert body == []
-
-
-async def test_events_list_route_without_person_id_is_400(client_with_events):
-    """No `personId` at all — a caller with no session-resolved identity
-    must not read anything, matching `/app/v1/memory`'s convention."""
-    web_client, _event = client_with_events
-    resp = await web_client.get("/app/v1/events")
-    assert resp.status == 400
-    body = await resp.json()
-    assert body["status"] == "refused"
-
-
-async def test_events_list_route_with_an_unknown_person_id_is_400(client_with_events):
-    """A `personId` that does not resolve to a known person (this
-    deployment's `identity.toml`) is refused exactly like a missing one —
-    an unresolvable identity is not a real, session-backed caller."""
-    web_client, _event = client_with_events
-    resp = await web_client.get("/app/v1/events?personId=not-a-real-person")
-    assert resp.status == 400
-    body = await resp.json()
-    assert body["status"] == "refused"
-
-
-async def test_events_detail_route_returns_the_event_with_rsvps(client_with_events):
-    web_client, event = client_with_events
-    resp = await web_client.get(f"/app/v1/events/{event.id}?personId=miles")
-    assert resp.status == 200
-    body = await resp.json()
-    assert body["id"] == str(event.id)
-    assert body["title"] == "Dinner"
-    assert body["rsvps"] == [{"person_id": "daisy", "response": "yes"}]
-
-
-async def test_events_detail_route_404s_when_im_not_a_participant(client_with_events):
-    """`sam` is a valid, known person — just not part of THIS event. Must
-    read exactly like the event doesn't exist (404), never a distinct
-    "forbidden" that would confirm the id is real."""
-    web_client, event = client_with_events
-    resp = await web_client.get(f"/app/v1/events/{event.id}?personId=sam")
-    assert resp.status == 404
-
-
-async def test_events_detail_route_without_person_id_is_400(client_with_events):
-    """Same personId-required minimum as the list route — this is the
-    route that leaks a specific event's RSVPs (a list of person_ids) to
-    anyone who can guess or enumerate an event id."""
-    web_client, event = client_with_events
-    resp = await web_client.get(f"/app/v1/events/{event.id}")
-    assert resp.status == 400
-    body = await resp.json()
-    assert body["status"] == "refused"
-
-
-async def test_events_detail_route_404s_for_a_missing_event(client_with_events):
-    web_client, _event = client_with_events
-    resp = await web_client.get(f"/app/v1/events/{uuid4()}?personId=miles")
-    assert resp.status == 404
-
-
-async def test_events_detail_route_400s_for_a_malformed_id(client_with_events):
-    web_client, _event = client_with_events
-    resp = await web_client.get("/app/v1/events/not-a-uuid?personId=miles")
-    assert resp.status == 400
+async def test_the_legacy_event_routes_are_removed(client):
+    assert (await client.get("/app/v1/status")).status == 200
+    for path in ("/app/v1/events", "/app/v1/events/00000000-0000-4000-8000-000000000001"):
+        assert (await client.get(path, params={"personId": "miles"})).status == 404

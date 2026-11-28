@@ -376,23 +376,7 @@ class SqlReminderStore:
         return self._decode_due(rows)
 
     def _decode_due(self, rows: Sequence[Any]) -> list[Reminder]:
-        """Rows → `Reminder`s, SKIPPING any single row that cannot be decoded.
-
-        Per-row rather than a comprehension.
-        `_row_to_reminder` raises on a `recurrence_tz` this host's tzdb cannot
-        resolve — the column is free `Text` and no CHECK constraint can validate
-        an IANA name — and that raise escapes `due()` into `HeartbeatLoop.tick`
-        ABOVE its per-group `try`, whose docstring promises that one bad reminder
-        must not strand the others. One unreadable row therefore stopped EVERY
-        reminder firing, in every conversation, on every tick, until repaired by
-        hand — visible only as `nora_errors_total{stage="heartbeat"}`.
-
-        Reachability is conditional today (the tools validate the zone at write
-        time, so it needs an out-of-band edit or a tzdata rename dropping a zone
-        this row was written with), which is exactly the shape of thing that
-        arrives once and is then permanent. Skipping is the fail-closed answer:
-        the bad row never fires, every other row still does, and the operator
-        gets a named log line instead of a dead heartbeat."""
+        """Log and skip undecodable legacy rows independently."""
         out: list[Reminder] = []
         for row in rows:
             try:

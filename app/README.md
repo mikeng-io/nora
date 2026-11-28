@@ -18,7 +18,6 @@ whole portal out of search except the public privacy and terms pages.
 | `/today` | the front page: Nora's state, who is around, what is coming up, a line from her notes about you, the circle |
 | `/map` | everyone on a live map; a person's detail and route window; `?person=` and `?trail=` in the URL |
 | `/people`, `/people/<id>` | the roster; a person with their last day, plans you share, and three pattern tabs: places, a usual week, routes. Your own page adds her memory of you |
-| `/plans`, `/plans/<id>` | plans by week and by month; a plan's venue, who is coming, add to calendar, open in maps, share |
 | `/documents`, `/documents/<id>` | what Nora has written up for the rooms you are in, newest first; one document drawn from its stored spec in the portal theme. Pictures come through `/api/v1/documents/<id>/media/<sha>` (raster only) |
 | `/downloads` | the circle's media shelf: paste URLs (one per line), the server runs yt-dlp on them, finished files play or download from the list. One shared library — a job says who asked for it |
 | `/nora`, `/nora/memory`, `/nora/doctrine`, `/nora/abilities` | about her and her status; her memory of you; her doctrine as a reader; her tools and skills |
@@ -29,7 +28,7 @@ cell that opens a sheet with everywhere else — People, Artifacts,
 Downloads and the four pages about her (docs/design/appearance/README.md §7: five cells, no raised
 centre button). ⌘K or `/` opens a search over everything;
 `g` then `t`, `m`, `p`, `l` or `n` jumps to a page. The first portal's
-URLs (`/status`, `/memory`, `/doctrine`, `/tools`, `/events`) redirect to where their content lives now (`next.config.ts`).
+URLs (`/status`, `/memory`, `/doctrine`, `/tools`) redirect to where their content lives now (`next.config.ts`).
 
 ## How it reaches Nora
 

@@ -100,10 +100,10 @@ test("the tab title follows the page across client navigation and is never left 
   // not the document's and not the section the document was reached from.
   await page.getByRole("list", { name: "Documents" }).getByRole("link").first().click();
   await expect(page).toHaveTitle("Lisbon in December · Nora");
-  await page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "Plans" }).click();
-  await expect(page).toHaveURL(/\/plans$/);
+  await page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "Map" }).click();
+  await expect(page).toHaveURL(/\/map$/);
   await page.waitForTimeout(400);
-  await expect(page).toHaveTitle("Plans · Nora");
+  await expect(page).toHaveTitle("Map · Nora");
 });
 
 test("the delete panel takes focus, gives it back on Escape, and a finished delete says how to undo it", async ({

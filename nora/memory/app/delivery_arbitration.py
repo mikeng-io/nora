@@ -21,7 +21,7 @@ class DeliveryArbitration:
         self._policy = policy
 
     async def recheck(
-        self, intention_id: str, destination: str, now: datetime,
+        self, intention_id: str, destination: str, now: datetime, *, occurrence: str | None = None,
     ) -> DeliveryRecheck:
         """Check recorded outcomes and current eligibility at the send boundary."""
         platform, conversation_id = split_room(destination)
@@ -32,7 +32,9 @@ class DeliveryArbitration:
             if room is None:
                 return DeliveryRecheck("withhold", "room_not_allowed")
             canonical = room_key(platform, room.primary_id)
-            evidence = await self._history.read(room.unit, intention_id, canonical)
+            evidence = await self._history.read(
+                room.unit, intention_id, canonical, occurrence=occurrence,
+            )
             current_room = self._policy.conversation(platform, conversation_id)
             if (
                 current_room is None or current_room.unit != room.unit

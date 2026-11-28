@@ -390,4 +390,3 @@ def test_the_declared_world_keeps_production_cadence_and_lanes(tmp_path):
     assert cfg.heartbeat.tick_seconds == 60
     assert cfg.cognition.tick_seconds == 30
     assert cfg.cognition.cue_quiet_seconds == 120
-    assert cfg.reminders.min_lead_seconds == 120

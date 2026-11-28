@@ -56,7 +56,7 @@ class AnchorRead:
     review_due: tuple[str, ...] = ()
     review_evidence: tuple[tuple[str, str], ...] = ()
     review_next: ReviewCursor | None = None
-    review_since: datetime | None = None
+    required_since: datetime | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -68,7 +68,7 @@ class _Seeds:
     review_due: tuple[str, ...] = ()
     review_evidence: tuple[tuple[str, str], ...] = ()
     review_next: ReviewCursor | None = None
-    review_since: datetime | None = None
+    required_since: datetime | None = None
 
 
 class SqlPassAnchors:
@@ -163,7 +163,7 @@ class SqlPassAnchors:
             id_for(("room", room_ref), ""), dm_rooms, scope.concerns | frozenset(people),
             _collective(room_ref, room.unit, pointers), people_subjects, names,
             review_due=seeds.review_due, review_evidence=seeds.review_evidence,
-            review_next=seeds.review_next, review_since=seeds.review_since,
+            review_next=seeds.review_next, required_since=seeds.required_since,
         )
 
     async def _identity_people(
@@ -239,10 +239,15 @@ class _AnchorQueries:
             r.kind == "edge", r.state == "live", r.image["src_id"].astext == data.intention,
             r.image["type"].astext.in_(("rests_on", "serves")),
         ).order_by(r.image["type"].astext, r.image["dst_id"].astext))
+        ids = (data.intention, *links)
+        since = await self._conn.scalar(sa.select(sa.func.min(r.event_time)).where(
+            r.graph_id.in_(ids),
+        )) if row is not None else None
         return _Seeds(
-            (data.intention, *links),
+            ids,
             (row[0] or self._scope.room,) if row is not None else (self._scope.room,),
             tuple(person for person in row[1] if person) if row is not None else (),
+            required_since=since,
         )
 
     async def wake(self, data: WakeInput) -> _Seeds:
@@ -324,7 +329,7 @@ class _AnchorQueries:
             self._conn, self._graph, self._scope.unit, data, now, aliases,
         )
         return _Seeds((*due, *(ref for ref, _ in evidence)), review_due=due,
-                      review_evidence=evidence, review_next=cursor, review_since=since)
+                      review_evidence=evidence, review_next=cursor, required_since=since)
 
     async def pointers(
         self, rooms: tuple[str, ...], people: tuple[str, ...],

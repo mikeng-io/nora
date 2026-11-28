@@ -1,5 +1,5 @@
 """The operator control plane: the read-only commands (`nora groups`,
-`nora persons pending`, `nora presence members`, `nora reminders list`) and
+`nora persons pending`, `nora presence members`) and
 the config write surface (`nora config set/get/unset/validate` — see
 `nora.app.config_cli`). Most of this module's commands only READ the record
 store; each one that writes says so where it is registered. Among them:
@@ -70,9 +70,7 @@ from nora.infra.sql import (
     create_sql_engine,
     snapshot_at,
 )
-from nora.infra.sql.gatherings import SqlGatheringStore
 from nora.infra.sql.geocode_cache import SqlGeocodeCacheStore
-from nora.infra.sql.reminders import SqlReminderStore
 from nora.infra.sql.tension import SqlTensionStore
 from nora.persons import Persons, PersonsError, load_persons
 from nora.platform.discord import directory as discord_directory
@@ -93,7 +91,6 @@ DEFAULT_SCAN_LIMIT = 5000
 # per row to a terminal. `max_pending_per_requester` is 20 (design spec §9), so
 # 500 is a whole household's worth of backlog several times over — a listing
 # longer than this is the runaway itself, and the truncation notice says so.
-DEFAULT_REMINDER_LIMIT = 500
 
 #: How far back `nora measure participation` reads by default. Seven days
 #: because that is what Prometheus retains, and the refusal-side measures
@@ -139,28 +136,6 @@ def add_subcommands(
         help=f"unattributed audit rows to scan (default {DEFAULT_SCAN_LIMIT})",
     )
     pending.set_defaults(func=cmd_pending)
-
-    reminders = subparsers.add_parser(
-        "reminders", parents=[parent], help="reminders the heartbeat is still holding",
-    )
-    reminders_sub = reminders.add_subparsers(dest="reminders_command", required=True)
-    # `list` and NOTHING ELSE. A `cancel` subcommand would break both of this
-    # module's guarantees at once: the engine is opened through
-    # `create_readonly_sql_engine` (`default_transaction_read_only=on`) and, in
-    # the deployment, as a `GRANT SELECT`-only role — so the write would not
-    # merely be discouraged, it would raise at the server. The operator's kill
-    # switch is `[heartbeat] enabled = false` plus a restart, which stops all
-    # firing rather than one row; cancelling ONE of her own rows is the Cognition
-    # session's job (`remind_cancel`).
-    reminders_list = reminders_sub.add_parser(
-        "list", parents=[parent],
-        help="every reminder still pending, soonest first, with what is overdue",
-    )
-    reminders_list.add_argument(
-        "--limit", type=int, default=DEFAULT_REMINDER_LIMIT,
-        help=f"pending rows to list (default {DEFAULT_REMINDER_LIMIT})",
-    )
-    reminders_list.set_defaults(func=cmd_reminders_list)
 
     # `measure` — the four measures that grade the ambient path against
     # something other than its own opinion. READ ONLY, and
@@ -279,12 +254,9 @@ def add_subcommands(
         help="memory maintenance (operator only)",
     )
     memory_sub = memory.add_subparsers(dest="memory_command", required=True)
-    # `memory backfill-places`: WRITES the events (through
-    # `GatheringStore.update`) and the geocode cache, and asks the geocoder,
-    # only with --apply. See `nora.app.place_backfill`.
     places = memory_sub.add_parser(
         "backfill-places", parents=[parent],
-        help="give event venues and cached geocodes resolved before 0118 their "
+        help="give cached geocodes their "
              "district and city (a dry run unless --apply); idempotent",
     )
     places.add_argument(
@@ -597,53 +569,6 @@ async def cmd_presence_members(args: argparse.Namespace) -> int:
     return 0
 
 
-async def cmd_reminders_list(args: argparse.Namespace) -> int:
-    """`nora reminders list` — what the heartbeat is still holding, READ ONLY.
-
-    The one operator question the metrics cannot answer: which rows are waiting,
-    for whom, in which conversation, and whether any of them are overdue. It
-    opens the same read-only engine `nora persons pending` does, and there is no
-    sibling subcommand that writes (see `add_subcommands`).
-    """
-    cfg = _config(args)
-    limit = int(args.limit)
-    if limit <= 0:
-        # `check_limit` inside the store raises `ValueError` for this, which
-        # would reach the operator as a traceback. Refused here, in the same
-        # sentence-not-a-stack-trace shape `cmd_pending` uses.
-        raise CliError(f"--limit must be positive; got {limit}")
-    url = _database_url(cfg)
-    store = readonly_reminder_store(url)
-    try:
-        # `limit + 1`, and the extra row is dropped below. The store answers at
-        # most what it is asked for, so `len(rows) == limit` is the SAME shape
-        # for a listing that happens to hold exactly `limit` rows and one that
-        # was cut off — and `>= limit` called both of them truncated. That sent
-        # an operator whose database holds precisely `--limit` reminders back to
-        # re-run with a larger one, for nothing. One extra row is what makes the
-        # two distinguishable at all.
-        rows = list(await store.all_pending(limit=limit + 1))
-    except Exception as exc:  # one readable line, never a traceback
-        raise CliError(
-            f"could not read the reminders in {_redacted(url)}: "
-            f"{type(exc).__name__}: {exc}. Is nora-db up, and has Nora run "
-            "against this config yet?"
-        ) from exc
-    finally:
-        await store.aclose()
-    truncated = len(rows) > limit
-    rows = rows[:limit]
-
-    for line in report.render_reminders(
-        reminders=rows,
-        now=datetime.now(UTC),
-        source=_redacted(url),
-        truncated=truncated,
-    ):
-        print(line)
-    return 0
-
-
 def _profile_tracing(cfg: Config) -> None:
     """Use the daemon's existing trace destination for explicitly requested model work."""
     if cfg.obs.tracing.enabled:
@@ -667,29 +592,26 @@ def _profile_tracing(cfg: Config) -> None:
 async def cmd_memory_backfill_places(args: argparse.Namespace) -> int:
     """`nora memory backfill-places [--apply] [--per-second N] [--limit N]`
     (`nora.app.place_backfill`). A WRITABLE engine, like `assess
-    run-nightly`. Venue areas come from the Geocoding API with the route
-    key, cached geocodes' from the configured reverse geocoder. Prints counts
+    run-nightly`. Cached areas come from the configured reverse geocoder. Prints counts
     only. Exit 1 when a lookup or a write failed."""
     from nora.app.composition_readers import reverse_geocoder
-    from nora.infra.geocode import CachingBilingualGeocoder, GoogleGeocoder
+    from nora.infra.geocode import CachingBilingualGeocoder
 
     cfg = _config(args)
-    route_key = cfg.credentials.get(cfg.route.api_key_env, "") if cfg.route.enabled else ""
-    places = GoogleGeocoder(api_key=route_key) if route_key else None
     found = reverse_geocoder(cfg, cfg.credentials, cache_store=None)
     geocoder = found if isinstance(found, CachingBilingualGeocoder) else None
     engine = create_sql_engine(_database_url(cfg))
     try:
         result = await backfill_places(
-            events=SqlGatheringStore(engine), cache=SqlGeocodeCacheStore(engine),
-            places=places, geocoder=geocoder, content_checks=cfg.content_checks.enabled,
+            cache=SqlGeocodeCacheStore(engine), geocoder=geocoder,
+            content_checks=cfg.content_checks.enabled,
             apply=bool(args.apply), per_second=float(args.per_second), limit=int(args.limit),
         )
     finally:
         await engine.dispose()
     for line in render_place_backfill(result):
         print(line)
-    return 1 if result.venues.failed or result.geocodes.failed else 0
+    return 1 if result.geocodes.failed else 0
 
 
 
@@ -1015,23 +937,6 @@ def readonly_store(url: str) -> SqlRecordStore:
     issues only SELECTs changes no bytes either way.
     """
     return SqlRecordStore(create_readonly_sql_engine(url))
-
-
-def readonly_reminder_store(url: str) -> SqlReminderStore:
-    """The ONE place this package opens the reminders table.
-
-    Public and named for the reason `readonly_store` is: a test can hold the
-    actual object `nora reminders list` uses and prove a write through it is
-    refused. `cancel` is the write that matters here — it is the one this
-    module could plausibly grow a subcommand for, and design spec §7.4 says it
-    must not, so the driver refusing it is what keeps a future edit honest.
-
-    Its own engine, unlike the daemon (which shares one pool between the record
-    store, the presence reader and the reminders store): the CLI is a
-    short-lived process running ONE command, `aclose()` disposes exactly what
-    that command opened, and there is nothing else alive to share with.
-    """
-    return SqlReminderStore(create_readonly_sql_engine(url))
 
 
 async def _unattributed(url: str, *, limit: int) -> list[UnattributedRow]:

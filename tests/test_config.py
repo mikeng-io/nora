@@ -595,37 +595,23 @@ def test_the_analytics_section_is_optional_and_ships_inert(toml_path):
     assert cfg.analytics.metrics_port == 9103
 
 
-def test_the_heartbeat_and_reminders_sections_are_optional_and_ship_inert(toml_path):
-    """Both sections deleted from the example must keep loading, and the
-    heartbeat default is INERT (enabled = false): Nora's first
-    unprompted-speech path must never turn on because a section is MISSING
-    from a config.toml written before it existed. `extra="forbid"` is what
-    makes that a real constraint rather than a courtesy.
-
-    The values asserted are the class defaults, so this fails if one silently
-    changes — including the `min_lead_seconds > tick_seconds` relation the two
-    sections are chosen together for."""
+def test_the_heartbeat_defaults_to_an_inert_graph_poller(toml_path):
     text = toml_path.read_text()
     head, _, tail = text.partition("[heartbeat]\n")
-    assert tail, "config.example.toml no longer declares [heartbeat]"
-    # [reminders] is the very next section, so cutting from [heartbeat] to the
-    # section after it removes both.
-    remainder = tail.split("\n[", 2)
-    assert len(remainder) > 2, "config.example.toml no longer declares [reminders]"
-    toml_path.write_text(head + "[" + remainder[2])
+    toml_path.write_text(head + "[" + tail.split("\n[", 1)[1])
 
     cfg = load(toml_path)
-
     assert cfg.heartbeat.enabled is False
     assert cfg.heartbeat.tick_seconds == 60.0
     assert cfg.heartbeat.timeout_seconds == 120.0
-    assert cfg.reminders.max_pending_per_requester == 20
-    assert cfg.reminders.min_lead_seconds == 120
-    # The code default MATCHES the shipped config: a drift would make the eval
-    # harness measure a horizon production does not have (`nora.app.offline`
-    # builds `ToolRegistry()` with no caps). This assertion keeps the two equal.
-    assert cfg.reminders.max_horizon_days == 365
-    assert cfg.reminders.min_lead_seconds > cfg.heartbeat.tick_seconds
+
+
+def test_the_legacy_reminders_section_is_refused_by_name(toml_path):
+    load(toml_path)
+    with toml_path.open("a") as config:
+        config.write("\n[reminders]\nmin_lead_seconds = 120\n")
+    with pytest.raises(ConfigError, match=r"(?m)^reminders$"):
+        load(toml_path)
 
 
 def test_the_notes_section_is_optional_and_ships_inert(toml_path):
@@ -654,34 +640,6 @@ def test_the_notes_section_is_optional_and_ships_inert(toml_path):
         "the note index is uncapped by design (§5.1) — a render cap here "
         "would make a note silently invisible"
     )
-
-
-def test_a_minimum_lead_inside_the_tick_is_refused(toml_path):
-    """The tick/lead relation is a rule, not a comment.
-
-    An operator who lengthens the tick past the minimum lead gets a reminder
-    that becomes due inside the tick already running — so Nora answers 「等陣提
-    你」 to something she will not say until after the moment has gone. The
-    promise made at create time is what is at stake, so this refuses to start
-    rather than warning; `policy.toml`'s deny-by-default refusal (R-5) is the
-    precedent for a config that stops the process rather than degrading.
-    """
-    text = toml_path.read_text()
-    toml_path.write_text(text.replace("tick_seconds = 60", "tick_seconds = 600"))
-
-    with pytest.raises(ConfigError, match="min_lead_seconds"):
-        load(toml_path)
-
-
-def test_a_lead_equal_to_the_tick_is_refused_too(toml_path):
-    """`>`, not `>=`. Equal is the boundary the relation exists to exclude: a
-    row due exactly one tick out races the tick that is already running, and
-    which side it lands on is decided by scheduling rather than by config."""
-    text = toml_path.read_text()
-    toml_path.write_text(text.replace("min_lead_seconds = 120", "min_lead_seconds = 60"))
-
-    with pytest.raises(ConfigError, match="min_lead_seconds"):
-        load(toml_path)
 
 
 def test_presence_config_carries_no_ids(toml_path):

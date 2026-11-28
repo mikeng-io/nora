@@ -1,12 +1,5 @@
 [
   {
-    "name": "standing-does-not-project-pending-history-twice",
-    "file": "nora/agent/shared_state.py",
-    "old": "                if r.id in pending_ids:",
-    "new": "                if False:",
-    "target": "tests/unit/test_shared_state.py::test_a_pending_act_appears_once_when_history_contains_the_same_row"
-  },
-  {
     "name": "proactive-gate-uses-the-reader-coverage-name",
     "file": "nora/app/fire.py",
     "old": "_REQUIRED_ACTION_SOURCES = (\"acts\", \"turns\", \"sends\")",
@@ -117,12 +110,5 @@
     "old": "self._put(replace(row, state=ReminderState.CANCELLED, fired_at=datetime.now(UTC)))",
     "new": "self._put(replace(row, state=ReminderState.CANCELLED))",
     "target": "tests/contract/test_reminder_store_contract.py::test_recent_in_keeps_a_new_cancellation_of_an_old_row"
-  },
-  {
-    "name": "review3-cancellation-is-not-delivery",
-    "file": "nora/agent/shared_state.py",
-    "old": "elif r.state.value == \"cancelled\" or not fired_ms or (",
-    "new": "elif not fired_ms or (",
-    "target": "tests/unit/test_shared_state.py::test_an_old_pending_act_cancelled_now_is_visible_without_a_send"
   }
 ]

@@ -2,31 +2,28 @@
 
 import { useMemo } from "react";
 import { useLocale, useTranslations } from "next-intl";
-import { ArrowRight, BellRing, ChevronRight, MapPin } from "lucide-react";
+import { ArrowRight, ChevronRight, MapPin } from "lucide-react";
 import { Link } from "@/i18n/routing";
 import { PageFrame } from "@/components/shell/app-shell";
 import { useRegisterTitle } from "@/components/shell/page-title";
 import { useViewer } from "@/components/shell/viewer";
 import { useNoraState } from "@/components/shell/nora-presence";
 import { NoraAvatar, PersonAvatar } from "@/components/ui/avatar";
-import { Badge, Dot } from "@/components/ui/badge";
+import { Dot } from "@/components/ui/badge";
 import { Panel, PanelHeader, Rows } from "@/components/ui/panel";
 import { Skeleton } from "@/components/ui/skeleton";
 import { RefreshNote } from "@/components/ui/refresh-note";
 import { EmptyState, UnavailableState } from "@/components/ui/states";
 import { PresenceIcon, PresenceMeta, usePresenceWords } from "@/components/presence/presence-text";
-import { PlanDate } from "@/components/plans/plan-date";
 import {
   useDerivedPlaces,
-  usePlans,
   useRoster,
   useSavedPlaces,
   useStatus,
 } from "@/lib/queries";
 import type { PresenceEntry } from "@/lib/api/presence";
-import { formatDuration, formatLongDate, formatRelative, formatTime, partOfDay } from "@/lib/format";
+import { formatDuration, formatLongDate, partOfDay } from "@/lib/format";
 import { isLive, presenceKind, sortPresence } from "@/lib/presence";
-import { upcomingPlans } from "@/lib/plans";
 import { personStyle } from "@/lib/person";
 import { cn } from "@/lib/cn";
 import { usePresenceNow } from "@/hooks/use-presence";
@@ -34,7 +31,7 @@ import { useNow } from "@/hooks/use-now";
 
 // Today: the portal's front page, and the one new thing the first portal
 // never had. A single glance at the circle: who is where,
-// what is coming, and whether Nora is listening. Every panel links to the
+// and whether Nora is listening. Every panel links to the
 // page that holds the whole of it.
 export function TodayView() {
   const t = useTranslations("today");
@@ -64,7 +61,6 @@ export function TodayView() {
         <div className="stagger grid gap-5 lg:gap-6">
           <NoraStrip />
           <AroundNow />
-          <ComingUp />
         </div>
         <div className="stagger grid gap-5 lg:gap-6">
           <Circle />
@@ -81,9 +77,6 @@ function NoraStrip() {
   const locale = useLocale();
   const state = useNoraState();
   const status = useStatus();
-  const now = useNow();
-  const r = status.data?.reminders;
-  const next = r?.next_due_at ? Date.parse(r.next_due_at) : null;
 
   return (
     <Link
@@ -95,18 +88,9 @@ function NoraStrip() {
         <p className="text-[1rem] font-semibold text-ink">{t(`state.${state}`)}</p>
         <p className="mt-0.5 flex flex-wrap gap-x-2 text-meta text-ink-muted tnum">
           {status.data ? (
-            <>
-              <span>{t("awake", { duration: formatDuration(status.data.uptime_seconds * 1000, locale) })}</span>
-              <span aria-hidden="true">·</span>
-              <span>
-                {r && r.count > 0 && next
-                  ? t("reminders", {
-                      count: r.count,
-                      when: now ? formatRelative(next, locale, now) : formatTime(next, locale),
-                    })
-                  : t("noReminders")}
-              </span>
-            </>
+            <span>{t("awake", {
+              duration: formatDuration(status.data.uptime_seconds * 1000, locale),
+            })}</span>
           ) : status.isPending ? (
             <Skeleton className="h-3.5 w-48" />
           ) : (
@@ -226,90 +210,6 @@ function AroundRow({
         <ChevronRight className="size-4 shrink-0 text-ink-muted sm:hidden" aria-hidden="true" />
       </Link>
     </li>
-  );
-}
-
-// -------------------------------------------------------------- coming up
-
-function ComingUp() {
-  const t = useTranslations("today.coming");
-  const locale = useLocale();
-  const plans = usePlans();
-  const status = useStatus();
-  const now = useNow();
-  const upcoming = useMemo(() => upcomingPlans(plans.data ?? [], now || Date.now()).slice(0, 4), [plans.data, now]);
-  const reminders = status.data?.reminders;
-
-  return (
-    <Panel aria-labelledby="coming-title">
-      <PanelHeader
-        id="coming-title"
-        title={t("title")}
-        action={
-          <Link
-            href="/plans"
-            className="inline-flex h-9 items-center gap-1.5 rounded-control px-2.5 text-meta font-semibold text-denim transition-colors hover:bg-hoodie"
-          >
-            {t("allPlans")}
-            <ArrowRight className="size-4" aria-hidden="true" />
-          </Link>
-        }
-      />
-      {plans.isPending ? (
-        <div className="grid gap-3 px-4 pb-4 sm:px-5">
-          <Skeleton className="h-14 w-full" />
-          <Skeleton className="h-14 w-full" />
-        </div>
-      ) : plans.isError && !plans.data ? (
-        <UnavailableState compact onRetry={() => plans.refetch()} />
-      ) : upcoming.length === 0 ? (
-        <EmptyState compact art="notebook">
-          {t("empty")}
-        </EmptyState>
-      ) : (
-        <Rows className="border-t border-hairline">
-          {upcoming.map((p) => (
-            <li key={p.id}>
-              <Link
-                href={`/plans/${p.id}`}
-                className="flex items-center gap-4 px-4 py-3 transition-colors duration-100 hover:bg-hoodie/60 sm:px-5"
-              >
-                <PlanDate when={p.when} />
-                <span className="grid min-w-0 flex-1 gap-0.5">
-                  <span className="truncate text-[0.9375rem] font-semibold text-ink">{p.title}</span>
-                  <span className="truncate text-meta text-ink-muted">
-                    {[
-                      p.when ? formatTime(Date.parse(p.when), locale) : null,
-                      p.venue.name ?? p.venue.text,
-                    ]
-                      .filter(Boolean)
-                      .join(" · ") || t("details")}
-                  </span>
-                </span>
-                {p.status === "proposed" ? <Badge>{t("proposed")}</Badge> : p.status === "staged" ? <Badge>{t("staged")}</Badge> : null}
-              </Link>
-            </li>
-          ))}
-        </Rows>
-      )}
-      {reminders && reminders.count > 0 ? (
-        <Link
-          href="/nora#reminders"
-          className="flex items-center gap-3 border-t border-hairline px-4 py-3 text-meta text-ink-soft transition-colors hover:bg-hoodie/60 sm:px-5"
-        >
-          <BellRing className="size-4 shrink-0 text-ink-muted" aria-hidden="true" />
-          <span className="flex-1">
-            {t("reminders", {
-              count: reminders.count,
-              when: reminders.next_due_at
-                ? formatRelative(Date.parse(reminders.next_due_at), locale, now || Date.now())
-                : "",
-            })}
-          </span>
-          <ChevronRight className="size-4 text-ink-muted" aria-hidden="true" />
-        </Link>
-      ) : null}
-    </Panel>
   );
 }
 

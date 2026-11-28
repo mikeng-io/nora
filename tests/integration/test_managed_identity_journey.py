@@ -50,7 +50,6 @@ from nora.platform.signal.consent import SignalLinkConsent, SignalLinkDelivery
 from nora.policy import load_policy
 from nora.testing import FakeRecordStore
 from nora.testing.fakes import FakeAdapter
-from nora.testing.reminders import FakeReminderStore
 from nora.web.api import register_web_routes
 from nora.web.holder_links import register_holder_routes
 from nora.web.managed_viewer import register_managed_viewer
@@ -65,7 +64,7 @@ from nora.web.management_sessions import register_session_routes
 from nora.web.otp import register_otp_routes
 from tests.conftest import build_test_doctrine_store
 from tests.integration.managed_ory import ory as ory
-from tests.web.test_api import NO_SKILLS_DIR, _fake_events
+from tests.web.test_api import NO_SKILLS_DIR
 
 EXCHANGE = "/app/v1/management/auth/exchange"
 CHECK = "/app/v1/management/auth/check"
@@ -357,10 +356,10 @@ async def world(pg_module_url, ory, aiohttp_client, tmp_path):
             app = web.Application()
             register_web_routes(
                 app, store=FakeRecordStore(),
-                reminders=FakeReminderStore(),
+
                 persons=Persons(by_person={}, index={}),
                 started_at=0.0, presence=None, presence_circles=(),
-                skills_dir=NO_SKILLS_DIR, events=_fake_events(),
+                skills_dir=NO_SKILLS_DIR,
                 doctrine_store=doctrine, documents=documents,
                 rooms_of=lambda pid: rooms_named(policy, pid))
             verifier = AuthenticationVerifier([GATEWAY])

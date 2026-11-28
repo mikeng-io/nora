@@ -101,12 +101,12 @@ async def test_obtain_returns_the_production_graph(spec, clean_pg_url, cognition
         "dream_adaptors", "dream_schedule_clock", "dream_schedules", "language_scopes",
         "language_store", "memory", "profile_cited", "unit_scopes", "wake_evaluator",
         "wake_tick_seconds", "graph_batches", "cognition_runner", "cognition_shutdown",
+        "reminders", "events", "proactive_screen", "room_event_shown",
     }
     assert added | {"access", "managed_services", "managed_session"} <= fields
     assert retired.isdisjoint(fields), retired & fields
-    assert len(fields) == 75, (
-        "index_state removed for the legacy memory wiring; reconcile the production subject."
-    )
+    assert "proactive_poller" in fields
+    assert len(fields) == 72
     assert isinstance(subject.deps.wake_poller, WakePoller)
     assert subject.deps.wake_poller._review is not None
     assert not requests

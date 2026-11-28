@@ -23,14 +23,13 @@ from nora.testing.managed import (
     FakeIdentityRegistry,
     FakeTopologySource,
 )
-from nora.testing.reminders import FakeReminderStore
 from nora.web.api import register_web_routes
 from nora.web.managed_viewer import register_managed_viewer
 from nora.web.management_auth import AuthenticationVerifier
 from nora.web.management_sessions import register_session_routes
 from tests.conftest import build_test_doctrine_store
 from tests.unit.test_management_authentication import ISSUER, claims, signed
-from tests.web.test_api import NO_SKILLS_DIR, _fake_events
+from tests.web.test_api import NO_SKILLS_DIR
 from tests.web.test_documents_api import JO, KEN, MEI, _seed, _World
 from tests.web.test_management_sessions import sign_in
 from tests.web.test_memory import _claim, _Claims
@@ -79,10 +78,10 @@ async def surface(aiohttp_client, request):
     app["test_write_started"] = entered
     app["test_authority"] = backend
     register_web_routes(app, store=FakeRecordStore(),
-        reminders=FakeReminderStore(), persons=Persons(by_person={"ken": KEN, "mei": MEI, "jo": JO},
+        persons=Persons(by_person={"ken": KEN, "mei": MEI, "jo": JO},
                                                      index={}), started_at=0.0,
         presence=None, presence_circles=(Circle("generated-circle", frozenset({"ken", "jo"})),),
-        skills_dir=NO_SKILLS_DIR, events=_fake_events(),
+        skills_dir=NO_SKILLS_DIR,
         doctrine_store=build_test_doctrine_store(), documents=world.store, rooms_of=world.rooms_of,
         profile=_Claims({
             (unit, "ken"): (_claim("l-" + unit, "cycles to work"),)
