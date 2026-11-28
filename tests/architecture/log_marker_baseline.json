@@ -66,7 +66,7 @@
   "nora/app/cli.py": 5,
   "nora/app/cognition_agent_runner.py": 5,
   "nora/app/composition.py": 8,
-  "nora/app/composition_agent.py": 3,
+  "nora/app/composition_agent.py": 2,
   "nora/app/composition_fire.py": 5,
   "nora/app/composition_media.py": 2,
   "nora/app/composition_models.py": 2,

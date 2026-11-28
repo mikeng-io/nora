@@ -45,7 +45,6 @@ DISCORD_ONLY_TOOLS: frozenset[str] = frozenset({
 #: Tools used by the Cognition session.
 #:
 #: `rollup_read` is also a tag-path tool (`TAG_READABLE_LOOP_TOOLS`, below).
-#: `standing_read` is an ordinary read: ledger budgets point every occasion to it.
 #: `social_read` reads the social stream's recorded items; the tag path keeps
 #: the live `instagram_*` reads instead (design/cognition-loop/observation.md).
 #: It is not a tag-path tool, so a reply neither pays its prompt nor can route

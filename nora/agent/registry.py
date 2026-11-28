@@ -328,9 +328,6 @@ class ToolRegistry:
         # turn's own `conversation_id`. `None` answers `unavailable`.
         record: RecordQuerySource | None = None,
         lineage: LineagePolicy | None = None,
-        # `rollup_read`'s Rollup read and `standing_read`'s Standing head: both
-        # Dreamer-only tools (`nora.agent.surface.DREAMER_ONLY_TOOLS`), and each
-        # withheld from every surface while its read is not wired.
         rollup: RollupReadSource | None = None,
         # Scoped graph profiles for room_list.
         graph_profiles: GraphProfileReader | None = None,
@@ -638,8 +635,7 @@ class ToolRegistry:
         return frozenset(name for name, spec in NATIVE_TOOLS.items() if spec.terminal)
 
     def cacheable_tools(self) -> frozenset[str]:
-        """The tools whose successful result may be logged to `tool_call_log`
-        and later replayed by `recall_lookups`.
+        """Tools whose successful results may be registered in the graph log.
 
         A `frozenset`, the same shape `terminal_tools()` returns and for the
         same reason: membership is the whole question, and there is no
@@ -796,7 +792,7 @@ class ToolRegistry:
 
         FIRST SENTENCE, not a separate authored field: the first sentences
         already discriminate between confusable siblings
-        (`find_parking`/`parking_status`, `note_read`/`note_search`), so a repair
+        (`find_parking`/`parking_status`), so a repair
         belongs in the docstring, one source of truth per tool.
 
         `hot` marks the tools whose full schema is already resident, so the

@@ -353,7 +353,7 @@ def build_tool_specs(
     # never an empty list that reads as «no such objects».
     observations: Any = None,
     lineage: LineagePolicy | None = None,
-    # `rollup_read`'s Rollup read and `standing_read`'s Standing head.
+    # Current Rollup rows.
     # `None` (offline, eval, every tag
     # path) answers `unavailable`; both tools are Dreamer-only besides.
     rollup: RollupReadSource | None = None,

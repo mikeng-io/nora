@@ -1,13 +1,4 @@
-"""The tool-recall log port. One row per
-successful call to a `cacheable=True` tool (`nora.agent.tools.NativeTool`),
-scoped to one conversation — read back only by `recall_lookups`, itself
-scoped to the same conversation. Never cross-conversation, ever.
-
-Every datetime crossing this port is UTC-aware, the same rule
-`nora.domain.compute`'s module docstring states for `ComputeJobStore` — a
-separate local rule/helper here, not imported from that module, since the
-two ports are independent even though the rule is identical.
-"""
+"""Successful cacheable tool calls recorded as conversation-scoped graph items."""
 
 from __future__ import annotations
 
@@ -37,8 +28,7 @@ class ToolCallLogEntry:
     row, you can find which turn produced it, bounded by however long that
     turn's own row survives `messages`'s own pruning.
     `tool_input`/`tool_result` are the tool's own arguments and return
-    value; `recall_lookups` hands them back to the model exactly
-    as stored, never re-summarised.
+    value as stored.
     """
 
     id: UUID
@@ -68,8 +58,5 @@ class ToolCallLogStore(Protocol):
         self, *, conversation_id: str, since: datetime, limit: int,
     ) -> list[ToolCallLogEntry]:
         """The last `limit` entries for `conversation_id` with `created_at
-        >= since`, newest first. `since` is the caller's job to compute
-        (`recall_lookups` passes `now() - 7 days`) — this port
-        takes an absolute timestamp, never a relative window, so a fake
-        clock in a test needs no special-casing here."""
+        >= since`, newest first. `since` is an absolute timestamp."""
         ...

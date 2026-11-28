@@ -22,18 +22,12 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-import sqlalchemy as sa
-from sqlalchemy.ext.asyncio import AsyncEngine
-
 import nora.memory as memory
 from nora.domain.media import MediaBlob
 from nora.domain.models import NormalizedMessage
-from nora.domain.note_body import citations_in
-from nora.domain.notes import Note
 from nora.domain.rollup import room_key
 from nora.infra.sql import create_sql_engine
 from nora.infra.sql.lessons import SqlLessonStore
-from nora.infra.sql.schema import NOTE, NOTE_REVISION
 
 from .obtain import Subject
 
@@ -549,55 +543,6 @@ async def last_row_id(
     _, conversation_id = room or subject.room
     rows = await subject.deps.audit.recent(conversation_id=conversation_id, limit=1)
     return rows[-1].id if rows else 0
-
-
-async def _seed_note_with_id(
-    engine: AsyncEngine, *, note: Note, body: str, established_by: str, written_at: int,
-) -> None:
-    """Insert ONE note and its first revision under `note.id`, exactly as
-    seeded — a SEED-ONLY primitive, independent of `nora.infra.sql.notes`.
-
-    `SqlNoteStore.create` is the production write path and always assigns a
-    fresh `uuid4`; it takes no id parameter, reasonably, since production
-    never has one to give it. A note seeded FROM a real snapshot (`nora.
-    subject.sandbox._note_seed`) already has one — the id every reminder
-    seeded alongside keeps in its payload (`_reminder_seed` copies `payload`
-    verbatim). Assigning a different id here would leave the sandbox
-    internally inconsistent: the reminder and the note would disagree about
-    what got inserted.
-
-    Same two inserts, same columns, as `SqlNoteStore._create_on_conn` (there
-    is one schema; this does not invent a second one) — kept as an
-    independent statement here rather than a call into that (private)
-    method, so this file's seeding path does not couple to its internals.
-
-    `note`'s own `__post_init__` (`nora.domain.notes`) has already run by
-    construction — it is a real `Note`, not a bag of fields — so the same
-    refusals `SqlNoteStore.create` would raise (no anchor, an over-long
-    index entry, a blank closing condition) raise here too, before either
-    insert.
-
-    `note.head_revision_id` is the CALLER's to set (it must, to construct a
-    valid `Note` at all) and is reused verbatim as the revision's own `id` —
-    one value, never generated twice, so the note's pointer and the
-    revision's identity cannot disagree.
-    """
-    async with engine.begin() as conn:
-        await conn.execute(sa.insert(NOTE).values(
-            id=note.id, unit=note.unit, title=note.title,
-            description=note.description, uncertainty=note.uncertainty,
-            closing_condition=note.closing_condition,
-            anchor_date=note.anchor_date,
-            anchor_entity_ids=list(note.anchor_entity_ids),
-            established_in=note.established_in, created_at=note.created_at,
-            head_revision_id=note.head_revision_id, revisit_at=note.revisit_at,
-        ))
-        await conn.execute(sa.insert(NOTE_REVISION).values(
-            id=note.head_revision_id, note_id=note.id, body=body,
-            parent_revision_id=None, written_at=written_at,
-            established_by=established_by, instruction_sha256=None, model=None,
-            citations=list(citations_in(body)),
-        ))
 
 
 async def know(

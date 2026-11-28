@@ -242,7 +242,7 @@ def _memory_tool_args(
     lineage: Any,
     graph_retrieval: Any,
 ) -> Any:
-    """The memory tier's tools: index search, graph verbs, standing, ledger."""
+    """Graph tools and the current Rollup read."""
     import nora.memory as memory_area
 
     return {
@@ -251,13 +251,9 @@ def _memory_tool_args(
         # the engagement turn always reads the graph whose IDs the tool takes.
         "memory_intake": memory_area.wire.memory_intake(engine),
         "lineage": lineage,
-        # The current Rollup build's rows and the Standing head. SELECTs, so no flag. The
-        # Standing head is Dreamer-only (`DREAMER_ONLY_TOOLS`); the Rollup read is also a tag
-        # turn's (`TAG_READABLE_LOOP_TOOLS`), under the same lineage as the session's.
         "rollup": SqlRollupRead(engine),
         # Room profiles are read through the turn's graph scope.
         "graph_profiles": graph_profiles,
-        # `memo_read` (DEC-306): the memo store, unit-resolved like the note reads.
     }
 
 
@@ -284,9 +280,6 @@ def _record_tool_args(
         "fetched_pages": SqlFetchedPageStore(
             engine, horizon_days=cfg.memory.retention.horizon_days.get("fetched_pages"),
         ),
-        # The third consumer of `tool_call_log_store` (the first two are
-        # EngagementPipeline/FirePath, via `deliver.build`) —
-        # `recall_lookups`'s own collaborator.
     }
 
 
