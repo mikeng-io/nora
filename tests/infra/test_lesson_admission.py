@@ -74,11 +74,12 @@ def proposal(citations, *, context=WAKE, body=BODY, target="nora-pointer"):
     )
 
 
-async def correction(scenario, id_="correction", *, aimed=True, own=False):
+async def correction(scenario, id_="correction", *, aimed=True, own=False, occurrence=""):
     await scenario.item(id_, is_nora=int(own))
     if aimed:
         await SqlGraphStimuli(scenario.engine).append(GraphStimulus(
             UNIT, "strong_cue", id_, AT, "messages", ROOM, PERSON, ("addresses_nora",),
+            occurrence=occurrence,
         ))
 
 
@@ -117,9 +118,18 @@ async def test_three_distinct_verdicts_admit_a_checked_lesson(scenario, lesson_s
 
 async def test_a_person_addressing_nora_can_supply_the_correction_floor(scenario, lesson_setup):
     svc, checker = lesson_setup
-    await correction(scenario)
-    outcome = await admit(svc, ("correction",))
-    assert isinstance(outcome, Stored)
+    await correction(scenario, "fixture-direct-correction")
+    await correction(scenario, "fixture-other-cue", occurrence="fixture-occurrence")
+    stimuli = await SqlGraphStimuli(scenario.engine).read(UNIT)
+    assembled = await _assembler(scenario).assemble("wake", WakeInput(stimuli), (), SCOPE, NOW)
+    blocks = {block.name: block.body.text for block in assembled.blocks}
+    agenda, evidence = blocks["agenda"], blocks["lesson_evidence"]
+
+    assert "fixture-direct-correction" in agenda and "fixture-other-cue" in agenda
+    assert "fixture-direct-correction" in evidence
+    assert "fixture-other-cue" not in evidence
+    assert await admit(svc, ("fixture-other-cue",)) == Refusal("thin_evidence", "citations")
+    assert isinstance(await admit(svc, ("fixture-direct-correction",)), Stored)
     assert checker.calls == [BODY]
 
 
