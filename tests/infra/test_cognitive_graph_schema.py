@@ -129,18 +129,20 @@ async def test_edge_has_an_index_leading_on_each_endpoint(engine) -> None:
 async def test_every_row_and_edge_carries_the_planes(engine) -> None:
     async with engine.connect() as conn:
         rows = (await conn.execute(sa.text(
-            "SELECT table_name, column_name, udt_name "
+            "SELECT table_name, column_name, udt_name, is_nullable "
             "FROM information_schema.columns WHERE table_name IN "
             "('entity', 'claim', 'intention', 'edge')"
         ))).all()
-    columns: dict[str, dict[str, str]] = {}
-    for table, name, udt in rows:
-        columns.setdefault(table, {})[name] = udt
+    columns: dict[str, dict[str, tuple[str, str]]] = {}
+    for table, name, udt, nullable in rows:
+        columns.setdefault(table, {})[name] = (udt, nullable)
     assert set(columns) == set(EXTRAS)
     for table, cols in columns.items():
         assert set(cols) == PLANES | EXTRAS[table], table
         for plane in PLANES:
             assert cols[plane] == columns["entity"][plane], (table, plane)
+        for plane in ("basis", "unit", "exposure"):
+            assert cols[plane] == ("text", "NO"), (table, plane)
 
 
 @pytest.mark.asyncio

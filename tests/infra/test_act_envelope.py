@@ -94,7 +94,9 @@ async def test_act_commits_before_the_call_and_refuses_its_identity_twice(acts, 
     assert await envelope.invoke(act, send) is None
     assert calls == ["fixture text"]
     row, = await _rows(engine, NORA_ACT)
-    outcome, = await _rows(engine, NORA_ACT_OUTCOME)
+    outcomes = await _rows(engine, NORA_ACT_OUTCOME)
+    assert len(outcomes) == 1
+    outcome, = outcomes
     registered = {r["id"]: (r["kind"], r["unit"]) for r in await _rows(engine, REGISTRY)}
     for item in (row, outcome):
         assert registered[item["graph_id"]] == ("item", "unit-1")

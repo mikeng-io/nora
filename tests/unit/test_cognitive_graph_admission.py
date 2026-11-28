@@ -147,11 +147,12 @@ def _one(proposal: Proposal, **kwargs) -> Admitted | Refusal:
 
 
 def test_claim_cites_only_shown_observed_or_computed_evidence() -> None:
-    accepted = _one(NEW_CLAIM)
-    assert isinstance(accepted, Admitted)
-    assert tuple((link.type, link.target) for link in accepted.links) == (("cites", ITEM.id),)
+    for row in (ITEM, AGG):
+        accepted = _one(replace(NEW_CLAIM, citations=(row.id,)))
+        assert isinstance(accepted, Admitted)
+        assert tuple((link.type, link.target) for link in accepted.links) == (("cites", row.id),)
     assert _one(NEW_CLAIM, hidden=(ITEM.id,)) == Refusal("citation_not_shown", "citations")
-    for row in (CLAIM, INTENTION):
+    for row in (ENTITY, CLAIM, INTENTION):
         assert _one(replace(NEW_CLAIM, citations=(row.id,))) == Refusal(
             "unrooted_citation",
             "citations",

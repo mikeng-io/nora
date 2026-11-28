@@ -2335,8 +2335,8 @@
     }
   },
   "tests/test_acceptance_rules.py": {
-    "file_lines": 870,
-    "comment_blocks": 32,
+    "file_lines": 869,
+    "comment_blocks": 31,
     "internal_docstrings": 1
   },
   "tests/test_affected_tests.py": {

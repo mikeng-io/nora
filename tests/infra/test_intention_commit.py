@@ -336,7 +336,7 @@ async def test_wake_open_links_a_new_topic_and_rediscover_returns_it(scenario):
     assert ["entity", new_topic["id"]] in commitment["neighbourhood"]["keys"]
 
 
-async def test_a_called_revision_carries_only_live_inferred_about_and_derives_people(scenario):
+async def test_decide_writes_committed_rows_and_indexes_about_by_derivation(scenario):
     from tests.infra.test_graph_debrief import CONTEXT, opening
     from tests.infra.test_graph_propose import about, topic
     from tests.infra.test_retrieval_scope import PERSON as MEMBER
@@ -359,16 +359,31 @@ async def test_a_called_revision_carries_only_live_inferred_about_and_derives_pe
     tool = adapt(_spec("intention_commit", _make_intention_commit(SimpleNamespace(
         intention_admission=service(scenario, slots(scenario)), metrics=Metrics(),
     ))))
-    with act_pass(ActAuthority(context.unit, pass_context=context), shown=frozenset({base})):
-        revised = await _call(tool, operations=[opening(op="revise", base=base, owed_to=MEMBER)])
+    before = set(await _rows(scenario.engine, REGISTRY))
+    with act_pass(
+        ActAuthority(context.unit, pass_context=context),
+        shown=frozenset({base, "observed-source"}),
+    ):
+        revised = await _call(tool, operations=[
+            opening(op="revise", base=base, owed_to=MEMBER, citations=["observed-source"]),
+        ])
     assert revised["status"] == "ok", revised
     new_id = revised["operations"][0]["id"]
     assert await _inferred_topics(scenario, new_id) == {live}
-    async with scenario.engine.connect() as conn:
-        targets = list(await conn.scalars(sa.select(EDGE.c.dst_id).where(
-            EDGE.c.src_id == new_id, EDGE.c.type == "about", EDGE.c.basis == "computed",
-        )))
-    assert targets == ["fixture-person-pointer"]
+    registered = await _rows(scenario.engine, REGISTRY)
+    written = registered.keys() - before
+    edges = (await _rows(scenario.engine, EDGE)).items()
+    new_edges = {id_: edge for id_, edge in edges if id_ in written}
+    assert written == {new_id, *new_edges}
+    assert (await _rows(scenario.engine, INTENTION))[new_id]["basis"] == "committed"
+    assert {
+        (edge["src_id"], edge["type"], edge["dst_id"], edge["basis"])
+        for edge in new_edges.values()
+    } == {
+        (new_id, "cites", "observed-source", "committed"),
+        (new_id, "about", live, "inferred"),
+        (new_id, "about", "fixture-person-pointer", "computed"),
+    }
 
 
 async def test_graph_propose_claim_revision_carries_subject_unless_explicitly_replaced(scenario):
