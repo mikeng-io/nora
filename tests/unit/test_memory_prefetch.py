@@ -101,7 +101,7 @@ def _search(index: FakeMemoryIndex, metrics: Metrics) -> MemorySearch:
 async def _assemble(
     index: FakeMemoryIndex | None, msg: NormalizedMessage, *,
     audit: FakeRecordStore | None = None, metrics: Metrics | None = None,
-    persons: Persons = _PERSONS, clock: Any = None, shared: Any = None,
+    persons: Persons = _PERSONS, clock: Any = None,
 ) -> TagContext:
     metrics = metrics or Metrics()
     policy = _policy()
@@ -109,7 +109,7 @@ async def _assemble(
         audit=audit or FakeRecordStore(), # type: ignore[arg-type]
         persons=persons, context_window=10, metrics=metrics, policy=policy,
         lineage=LineagePolicy.from_policy(policy),
-        clock=clock, shared=shared,
+        clock=clock,
     )
     return await assembler.assemble(request=_request(msg))
 
@@ -123,7 +123,7 @@ def _texts(ctx: TagContext) -> list[str]:
 # --- the tag path ---------------------------------------------------------------
 
 
-async def test_the_honcho_surface_reads_nothing_and_renders_no_block() -> None:
+async def test_transcript_assembly_leaves_recall_to_its_graph_pass() -> None:
     ctx = await _assemble(None, _msg())
     assert ctx.recalled == () and not ctx.recalled_partial
     body = build_prefill(ctx, display_name="Nora", context_window=10)[1]["content"][0]["text"]

@@ -220,10 +220,10 @@
     "internal_docstrings": 4
   },
   "nora/agent/registry.py": {
-    "file_lines": 1231,
+    "file_lines": 1227,
     "comment_blocks": 26,
     "functions": {
-      "ToolRegistry.__init__": 360
+      "ToolRegistry.__init__": 357
     },
     "internal_docstrings": 5
   },
@@ -485,7 +485,7 @@
     "comment_blocks": 2
   },
   "nora/domain/block_types.py": {
-    "file_lines": 833,
+    "file_lines": 820,
     "comment_blocks": 16,
     "internal_docstrings": 1
   },
@@ -1642,7 +1642,7 @@
     "functions": {
       "know": 131
     },
-    "internal_docstrings": 3
+    "internal_docstrings": 2
   },
   "nora/subject/lexical_seed.py": {
     "internal_docstrings": 1
@@ -2511,8 +2511,8 @@
     "comment_blocks": 2
   },
   "tests/test_skill_content.py": {
-    "file_lines": 1143,
-    "comment_blocks": 10,
+    "file_lines": 1123,
+    "comment_blocks": 9,
     "internal_docstrings": 5
   },
   "tests/test_social_bridge_client.py": {
@@ -2686,7 +2686,7 @@
     "internal_docstrings": 2
   },
   "tests/unit/test_engagement_context.py": {
-    "comment_blocks": 3,
+    "comment_blocks": 1,
     "internal_docstrings": 1
   },
   "tests/unit/test_engagement_deliver.py": {
@@ -2774,9 +2774,6 @@
   },
   "tests/unit/test_judge_source_names_speakers.py": {
     "comment_blocks": 1
-  },
-  "tests/unit/test_lineage.py": {
-    "internal_docstrings": 1
   },
   "tests/unit/test_link_owners.py": {
     "comment_blocks": 1,

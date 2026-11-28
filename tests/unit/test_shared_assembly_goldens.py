@@ -48,7 +48,7 @@ def _blocks() -> list[ContextBlock]:
     return [
         ContextBlock(name="notes", body=compose_fixture("n body"), order=20),
         ContextBlock(name="today", body=compose_fixture("2026-10-01 Thu"), order=10),
-        ContextBlock(name="memos", body=compose_fixture(""), order=15),
+        ContextBlock(name="recalled", body=compose_fixture(""), order=15),
         ContextBlock(name="standing", body=compose_fixture("a & b <c>\nline2"), order=40),
     ]
 
@@ -89,7 +89,7 @@ def test_ordering_by_order_holds_with_a_separator():
     rendered = assemble(blocks, sep="\n\n")
     positions = [rendered.index(f"<{name} ") for name in ("today", "notes", "standing")]
     assert positions == sorted(positions)
-    assert "<memos" not in rendered
+    assert "<recalled" not in rendered
     assert assemble(list(reversed(blocks)), sep="\n\n") == rendered
 
 

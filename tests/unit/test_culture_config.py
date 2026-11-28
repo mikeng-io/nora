@@ -1,4 +1,4 @@
-"""Startup validation of the Culture compatibility settings."""
+"""Startup refusal of the retired Culture section."""
 
 import tomllib
 
@@ -14,5 +14,5 @@ def test_an_unknown_culture_key_is_refused(example_config_path, monkeypatch):
     data.setdefault("culture", {})["unknown_culture_key"] = True
     example_config_path.write_text(tomli_w.dumps(data))
 
-    with pytest.raises(ConfigError, match=r"culture\.unknown_culture_key"):
+    with pytest.raises(ConfigError, match=r"\[culture\] has been removed"):
         load(example_config_path)

@@ -20,7 +20,6 @@ from nora.testing.causal_protocol import (
     FOLLOWUP,
     INITIAL,
     QUESTION,
-    TITLE,
 )
 
 _POLICY = (
@@ -122,7 +121,7 @@ def _drive_first_turn(protocol):
                 protocol,
                 _body(
                     protocol.cfg.dreamer.model,
-                    '{"status":"ok","note_id":"n1"}',
+                    '{"status":"ok","note_id":"n1","revision_id":"rev1"}',
                     tools=("remind",),
                     role="tool",
                 ),
@@ -139,7 +138,7 @@ def _drive_first_turn(protocol):
 
 
 def _drive(protocol):
-    """The whole V1 plan through phase 10, asserting each phase's own answer."""
+    """The whole V1 plan through phase 9, asserting each phase's own answer."""
     _drive_first_turn(protocol)
     fold = _serve(
         protocol,
@@ -153,37 +152,15 @@ def _drive(protocol):
         )
     )
     assert (name, args["text"]) == ("send_reply", QUESTION)
-    assert (
-        _call(
-            _serve(
-                protocol,
-                _body(
-                    protocol.cfg.dreamer.model,
-                    f"n1 {CORRECTION}",
-                    tools=("note_revise", "note_read"),
-                ),
-            )
-        )[0]
-        == "note_read"
-    )
     name, args = _call(
         _serve(
             protocol,
-            _req(
-                protocol.cfg.dreamer.model,
-                [
-                    {
-                        "role": "tool",
-                        "content": '{"status":"ok","revision_id":"rev1","body":"old",'
-                        f'"title":"{TITLE}"}}',
-                    },
-                    {"role": "user", "content": f'<m n="42">{CORRECTION}</m>'},
-                ],
-                tools=("note_revise",),
-            ),
+            _body(protocol.cfg.dreamer.model, f'<m n="42">n1 {CORRECTION}</m>',
+                  tools=("note_revise",)),
         )
     )
     assert name == "note_revise" and args["note_id"] == "n1"
+    assert args["parent_revision_id"] == "rev1"
     assert "retained" in _content(
         _serve(
             protocol,
@@ -210,13 +187,13 @@ def _drive(protocol):
 
 
 def test_every_scenario_phase_gets_its_own_production_contract(protocol):
-    """The 11-call plan answers tool calls against the offered schemas,
+    """The 10-call plan answers tool calls against the offered schemas,
     text on the close calls, `items` on the unit folds and `operations` on
     the tag debrief."""
     _drive(protocol)
-    assert protocol.phase == 11 and not protocol.errors
-    assert len(protocol.requests) == 11
-    assert protocol.occasions == {"cognition": 6, "turn": 2, "fold_unit": 2, "debrief": 1}
+    assert protocol.phase == 10 and not protocol.errors
+    assert len(protocol.requests) == 10
+    assert protocol.occasions == {"cognition": 5, "turn": 2, "fold_unit": 2, "debrief": 1}
 
 
 def test_an_interleaved_background_pass_cannot_consume_scenario_progress(protocol):
@@ -291,7 +268,7 @@ def test_wrong_schema_unknown_and_exhausted_requests_are_named_errors(protocol):
     _drive(protocol)
     # Exhausted: the plan is spent; an extra call names its phase.
     refused(_body(protocol.cfg.dreamer.model, "x"), "exhausted")
-    assert len(protocol.requests) == 17
+    assert len(protocol.requests) == 16
 
 
 def _judge_body(payload, model="generated-a"):
@@ -384,7 +361,6 @@ def test_the_declared_world_keeps_production_cadence_and_lanes(tmp_path):
     cfg = plan._declared_config("sqlite://", tmp_path)
     assert cfg.obs.metrics.port == 0
     assert cfg.heartbeat.enabled
-    assert cfg.culture.enabled and cfg.standing.enabled
     assert cfg.llm.model == "nora" and cfg.dreamer.model == "nora-dreamer"
     assert cfg.relevance_gate.model == "nora-gate"
     assert cfg.heartbeat.tick_seconds == 60

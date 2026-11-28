@@ -595,16 +595,16 @@ def test_an_event_is_rendered_in_the_deployments_timezone_with_its_distance() ->
 
 
 def test_a_self_closed_block_never_swallows_the_next_one() -> None:
-    """A `when_empty="self_close"` block (`<memos .../>`) must not match as an
+    """A `when_empty="self_close"` block (`<standing .../>`) must not match as an
     opening tag and swallow through the next same-name block's close."""
     from evals.backbone import _CONTEXT_BLOCK
 
-    text = '<memos kind="x"/>\n\n<notes kind="y">\nbody &lt;b&gt;x&lt;/b&gt;\n</notes>'
+    text = '<standing kind="x"/>\n\n<notes kind="y">\nbody &lt;b&gt;x&lt;/b&gt;\n</notes>'
     names = [m.group(1) for m in _CONTEXT_BLOCK.finditer(text)]
     assert names == ["notes"]
-    doubled = '<memos a="1"/>\n\n<memos a="2">\nreal\n</memos>'
+    doubled = '<standing a="1"/>\n\n<standing a="2">\nreal\n</standing>'
     [only] = list(_CONTEXT_BLOCK.finditer(doubled))
-    assert only.group(0).startswith('<memos a="2">')
+    assert only.group(0).startswith('<standing a="2">')
 
 
 @pytest.mark.parametrize("corpus", ["tool_selection", "tool_selection_cognition"])

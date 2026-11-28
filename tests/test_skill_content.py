@@ -1028,15 +1028,7 @@ def test_the_self_account_says_the_build_is_asked_not_inferred(self_account):
 
 def test_the_self_account_does_not_assert_a_deployment_it_cannot_read(
         self_account, example_config_path):
-    """The ambient half and what carries between turns are BOTH config-gated,
-    this file is baked into the image (`COPY nora/` — `nora/skills` is not a
-    bind-mount the way `nora/doctrine` is), and the flags live in a
-    per-deployment `config.toml` the file does not travel with.
-
-    Grounded on the SHIPPED posture rather than on one live machine: under
-    `config.example.toml` every one of those flags is off, so an unconditional
-    sentence is false on a fresh deployment and nothing reports it. That is
-    `identity.md`'s capability-list rot one layer out."""
+    """The baked-in doctrine cannot read the deployment's participation setting."""
     import tomllib
 
     assert _flat(
@@ -1044,16 +1036,6 @@ def test_the_self_account_does_not_assert_a_deployment_it_cannot_read(
         "the half of you that speaks unasked, is a setting you cannot read"
     ) in _flat(self_account)
 
-    # The absence-proves-nothing caveat, the second half of the same sentence:
-    # presence of a block proves ON, absence proves NOTHING, so wording like
-    # «only your own turns say what is on» would invite reading an absence as
-    # "off" — the fail-open direction. Grounded on the renderer: with nothing
-    # standing it emits a declared empty index. Missing input is still not
-    # evidence that a deployment disabled the tier.
-    from nora.language.note_render import render_notes
-
-    assert render_notes(()).body.text == ""
-    assert render_notes(()).when_empty == "self_close"
     assert _flat(
         "only your own turns say what is on, never what is missing from one"
     ) in _flat(self_account)
@@ -1062,8 +1044,6 @@ def test_the_self_account_does_not_assert_a_deployment_it_cannot_read(
     # If one of these ever ships ON the caveat is still true (it says "whether"),
     # but the reason it was written stops being visible — so the read is pinned.
     assert shipped["participation"]["enabled"] is False
-    assert shipped["notes"]["enabled"] is False
-    assert shipped["standing"]["enabled"] is False
 
     compose = (ROOT / "docker-compose.yml").read_text()
     assert "./nora/doctrine:/app/nora/doctrine:ro" in compose

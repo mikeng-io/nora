@@ -381,6 +381,3 @@ def test_resolve_positions_maps_each_position_to_the_row_it_showed():
             assert refused.rule == "unknown_id"
         else:
             raise AssertionError(bad)
-
-
-# ---- the memo body (DEC-306): the same line grammar --------------------------

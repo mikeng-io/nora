@@ -74,7 +74,6 @@ RULES: frozenset[str] = frozenset({
     "bad_date", "unknown_rollup_key", "unknown_turn",
     # A memo body's `## Superseded` written by the model (`nora.domain.memo`):
     # code renders it from the revision chain.
-    "code_written",
 })
 
 _WEEKDAYS: tuple[str, ...] = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")

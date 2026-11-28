@@ -142,6 +142,7 @@ class CausalProtocol:
         self.errors: list[tuple[str, str]] = []
         self.phase = 0
         self.note_id = None
+        self.note_revision_id = None
         self.first_id = None
         self.background = 0
         self.dream_model = cfg.endpoint("dreamer", cfg.dreamer_model())[2]
@@ -233,6 +234,7 @@ class CausalProtocol:
                 if row.get("status") == "ok" and row.get("note_id")
             )
             self.note_id = created["note_id"]
+            self.note_revision_id = created["revision_id"]
             at = datetime.now(UTC) + timedelta(seconds=7)
             return "cognition", self.tool(
                 request,
@@ -254,7 +256,7 @@ class CausalProtocol:
             return "cognition", completion(
                 request["model"], "Generated question is retained.", stream=True
             )["response"]
-        if self.phase in {3, 8}:
+        if self.phase in {3, 7}:
             assert not tools and request["model"] == self.standing_model
             return self._fold(request, text)
         if self.phase == 4:
@@ -262,30 +264,20 @@ class CausalProtocol:
             return "turn", self.tool(request, "send_reply", {"text": QUESTION})
         if self.phase == 5:
             assert "note_revise" in tools and self.note_id in text and CORRECTION in text
-            raise AssertionError("The legacy note reader was retired with the notebook")
-        if self.phase == 6:
-            head = next(
-                row
-                for row in objects(request["messages"])
-                if row.get("status") == "ok"
-                and row.get("revision_id")
-                and row.get("body")
-                and row.get("title") == TITLE
-            )
             mid = self.source(text, CORRECTION)
             return "cognition", self.tool(
                 request,
                 "note_revise",
                 {
                     "note_id": self.note_id,
-                    "parent_revision_id": head["revision_id"],
+                    "parent_revision_id": self.note_revision_id,
                     "body": (
                         f"## Decided\n- The generated venue is Cedar Hall (Miles) [{mid}]\n"
                         f"## Open\n- Which generated time? [{self.first_id}]"
                     ),
                 },
             )
-        if self.phase == 7:
+        if self.phase == 6:
             assert any(
                 row.get("status") == "ok" and row.get("revision_id")
                 for row in objects(request["messages"])
@@ -293,7 +285,7 @@ class CausalProtocol:
             return "cognition", completion(
                 request["model"], "Generated correction is retained.", stream=True
             )["response"]
-        if self.phase == 9:
+        if self.phase == 8:
             # The tagged follow-up's own turn: its model call must carry the
             # question, the settled correction it answers on, and the real
             # delivery tool — the reply it returns rides the durable send.
@@ -402,8 +394,8 @@ class CausalProtocol:
         if other := self._other_occasion(body):
             occasion, response = other
             scenario = (
-                (occasion in {"fold_unit", "fold_room"} and self.phase in {3, 8})
-                or (occasion == "debrief" and self.phase == 10)
+                (occasion in {"fold_unit", "fold_room"} and self.phase in {3, 7})
+                or (occasion == "debrief" and self.phase == 9)
             )
             return scenario, occasion, response
         if model in self.turn_models | {self.dream_model, self.standing_model}:

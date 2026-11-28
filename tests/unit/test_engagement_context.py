@@ -14,7 +14,6 @@ from nora.domain.models import (
     PersonRef,
     Quote,
 )
-from nora.domain.notes import Note
 from nora.domain.ports import (
     ContextAssembler,
     EngageDecision,
@@ -309,40 +308,6 @@ def test_it_satisfies_the_context_assembler_port():
     assert isinstance(assembler, ContextAssembler)
 
 
-# ---- the assembler's helper -------------------------------------------------
-#
-# The `<self>` read is tested in `tests/unit/test_self_block.py`.
-
-
-def _assembler(memory, **kw):
-    return TranscriptInjection(
-        audit=FakeRecordStore(), persons=_MILES,
-        context_window=10, metrics=kw.pop("metrics", Metrics()),
-        ai_peer=kw.pop("ai_peer", "nora"),
-    )
-
-
-# ---------------------------------------------------------------------------
-# The note tier's read.
-#
-# The ONE read in this assembler that is not room-keyed: `standing` is scoped
-# by UNIT (DEC-105), so the fake below is a unit→notes map
-# rather than a store that says yes — a `standing` implementation ignoring its
-# argument would pass every assertion here and prove nothing about the
-# scoping, which is the only property deciding who sees a note.
-
-
-def _note(note_id: str, unit: str, title: str) -> Note:
-    return Note(
-        id=note_id, unit=unit, title=title,
-        description="Three venues on the table; nobody has picked one.",
-        uncertainty="which venue, and whether the date still works",
-        closing_condition="a venue is booked, or the date is abandoned",
-        established_in="g1", created_at=1, head_revision_id=f"{note_id}-r1",
-        anchor_date=20260909,
-    )
-
-
 def _policy(unit: str = "ridgeline", conversation_id: str = "g1") -> Policy:
     convo = Conversation(
         platform="signal", ids=frozenset({conversation_id}), persons=None,
@@ -351,74 +316,6 @@ def _policy(unit: str = "ridgeline", conversation_id: str = "g1") -> Policy:
     return Policy(
         conversations=(convo,), _by_id={("signal", conversation_id): convo},
     )
-
-
-class FakeNoteStore:
-    """A unit→notes map answering `()` for a unit it does not hold —
-    the shape `SqlNoteStore.standing` has (`WHERE unit = :unit`), not
-    a double that returns its whole contents whatever it is asked."""
-
-    def __init__(self, by_unit: dict[str, tuple[Note, ...]]) -> None:
-        self._by_unit = by_unit
-        self.calls: list[str] = []
-
-    async def standing(self, *, unit: str) -> tuple[Note, ...]:
-        self.calls.append(unit)
-        return self._by_unit.get(unit, ())
-
-
-class RaisingNoteStore:
-    async def standing(self, *, unit: str) -> tuple[Note, ...]:
-        raise RuntimeError("note store is down")
-
-
-# ---- nora_note_index_entries, the gauge config.toml calls "the tell" -------
-#
-# The four tests below are one test each of the four states this gauge has to
-# keep apart, because a gauge that could not tell them apart would
-# mislead: a notebook with notes in it, a notebook that is wired
-# and empty, a tier that is switched off, and a read that failed. Only the
-# first two are readings; the last two must be ABSENT rather than `0`, which is
-# the whole reason the publish sits on the success path.
-
-
-# --- Standing's read half ---------------------------------------------------
-
-async def test_the_position_is_read_by_platform_and_conversation():
-    """The room's Standing paragraph is a READ ADAPTER in the shared view
-    (docs/design/cognition/graph.md): the store is still keyed
-    `(platform, conversation_id)`; a store called with the wrong key would
-    return a plausible position belonging to another room."""
-    from nora.agent.shared_state import shared_reader
-    from nora.domain.standing import Standing
-    from nora.testing import InMemoryStandingStore
-
-    class _Spy(InMemoryStandingStore):
-        def __init__(self) -> None:
-            super().__init__()
-            self.reads: list[tuple[str, str]] = []
-
-        async def read(self, *, platform: str, conversation_id: str):
-            self.reads.append((platform, conversation_id))
-            return await super().read(
-                platform=platform, conversation_id=conversation_id)
-
-    store = _Spy()
-    await store.write(standing=Standing(
-        platform="signal", conversation_id="g1", body="a position",
-        fold_count=1, updated_at=1,
-    ))
-    assembler = TranscriptInjection(
-        audit=FakeRecordStore(), persons=_MILES,
-        context_window=10, metrics=Metrics(), policy=_policy(),
-        shared=shared_reader(
-            standing=store, ai_peer="nora",
-            rooms_of_unit=lambda unit: (("signal", "g1"),)),
-    )
-    view = await assembler._shared(_msg(), None)
-    assert store.reads == [("signal", "g1")]
-    pos = next(e for e in view.entries if e.kind == "standing")
-    assert pos.subject == "a position"
 
 
 async def test_the_tag_path_reads_presence_at_turn_start():
@@ -460,30 +357,6 @@ async def test_the_tag_path_reads_presence_at_turn_start():
 # green if the wrapper lost its attributes or a call site stopped going through
 # it.
 # ---------------------------------------------------------------------------
-
-
-async def test_a_called_floor_reads_no_legacy_store_even_when_wired(exported_spans, monkeypatch):
-    reads = []
-
-    async def legacy(*args, **kwargs):
-        reads.append("legacy")
-        raise RuntimeError("Legacy store reached on the called path")
-
-    store = FakeRecordStore()
-    await store.append(message=_msg())
-    assembler = TranscriptInjection(
-        audit=store, persons=_MILES, context_window=10, metrics=Metrics(),
-        ai_peer="nora", policy=_policy(),
-    )
-    for method in ("_notes", "_memos", "_shared"):
-        monkeypatch.setattr(assembler, method, legacy)
-
-    ctx = await assembler.assemble(request=_request())
-
-    assert ctx.transcript and ctx.tagger is not None
-    assert not reads
-    spans = [s.name for s in exported_spans.get_finished_spans()]
-    assert spans.count("store.record.recent") == 1
 
 
 async def test_a_store_read_span_carries_row_count_and_duration(exported_spans):
@@ -626,15 +499,3 @@ def test_the_composition_root_hands_the_configured_prompt_window_to_the_assemble
         metrics=Metrics(), policy=permissive_policy(),
     )
     assert assembler._prompt_window == example_config.store.effective_prompt_window == 20
-
-
-
-# ---- <memos> (DEC-306): keyed on the unit, like the notes ------------------------
-
-
-async def _kept(store: object, unit: str, title: str) -> object:
-    return await store.create(  # type: ignore[attr-defined]
-        unit=unit, platform="signal", conversation_id="g1", title=title,
-        body="## Kept\n- kept [1]", citations=("1",), mode="told",
-        established_by="cognition:u", model=None, now_ms=1,
-    )

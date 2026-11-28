@@ -360,14 +360,11 @@ SHAPES = {
 <people_in_window description>
   <person description fields name>
   <person description fields name>
-<notes description fields id_kind>
-<memos description fields>
 <transcript description fields window>
   <m age at author_id from n>""",
     "relevance_gate": """
 <transcript description fields>
-  <m age from n>
-<standing description fields written>""",
+  <m age from n>""",
     "skills": """
 <available_skills description fields>
   <skill name when_to_load>""",
