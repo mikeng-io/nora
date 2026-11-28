@@ -86,9 +86,9 @@
   {
     "name": "7 rollup_read: namesakes offered by bare name",
     "file": "nora/memory/adapters/tools/standing.py",
-    "old": "return (True, None, _ambiguous_person(c.matches, c.view.people, by_id=c.by_id)",
-    "new": "                return {'status': 'ambiguous', 'could_be': [p.name for p in c.matches]}\n",
-    "target": "tests/infra/test_social_read.py::test_an_item_says_what_it_is_how_old_it_is_and_what_it_showed"
+    "old": "return (True, None, _ambiguous_person(c.matches, c.view.people, by_id=c.by_id))",
+    "new": "return (True, None, {'status': 'ambiguous', 'could_be': [p.name for p in c.matches], 'note': 'Ask which one.'})",
+    "target": "tests/unit/test_rollup_read_namesakes.py::test_on_a_tag_turn_no_person_id_is_offered_or_taken"
   },
   {
     "name": "8 store: items_of reads the place as first recorded",
