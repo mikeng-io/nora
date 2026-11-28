@@ -38,6 +38,14 @@ _R90_PERSONS = Persons(
 
 ROOT = Path(__file__).resolve().parents[1]
 RULE_TESTS = {
+    "R-132": "test_every_row_and_edge_carries_the_planes",
+    "R-133": "test_decide_writes_committed_rows_and_indexes_about_by_derivation",
+    "R-134": "test_claim_cites_only_shown_observed_or_computed_evidence",
+    "R-135": "test_admission_checks_the_form_and_keeps_the_proposed_content",
+    "R-136": "test_only_the_named_done_act_closes_its_intention",
+    "R-137": "test_unavailable_access_view_cannot_substitute_an_empty_audience",
+    "DEC-70": "test_only_the_tag_path_and_the_fire_path_can_send",
+    "DEC-133": "test_no_act_verb_is_ever_read_only",
     "R-124": "test_review_grades_due_guess_once_and_removes_it_from_anchors",
     "R-125": "test_review_fails_startup_when_the_resolved_judge_is_the_writer",
     "R-110": "test_the_first_clock_ending_has_the_deadline_and_no_witness",
@@ -123,19 +131,10 @@ RULE_TESTS = {
     "R-33": "test_a_stored_image_is_read_only_within_scope_and_screened_on_serve",
     # R-34 is retired (DEC-73); the number is not reused.
     # R-35: saved-place resolution is subset-scoped and falls through, never
-    # refuses (DEC-60). A room that is not a verified subset of
-    # the circle resolves NO household place name — silently, so an outsider
-    # cannot learn a guarded name EXISTS (the deliberate inverse of R-31's loud
-    # refusal: there the subject is a person's position and silence would lie;
-    # here the dictionary entry's existence is itself the secret).
+    # refuses (DEC-60). A room outside the verified circle resolves no household
+    # place name so even the name's existence stays private.
     "R-35": "test_a_non_subset_room_resolves_no_saved_place",
-    # R-36…R-37b: the heartbeat (DEC-70).
-    #
-    # R-36: a reminder NEVER fires early. The tick's batch is `due_at <= now` and
-    # nothing else — no rounding, no "close enough", no catch-up window. It is
-    # the first rule because it is the one a scheduler gets wrong quietly: firing
-    # a minute early is a message that arrives before the thing it is about, and
-    # nobody reports it as a bug.
+    # R-36: the heartbeat (DEC-70) makes a reminder eligible at its due tick.
     "R-36": "test_the_graph_clock_does_not_publish_a_future_delivery",
     # R-37: a row fires ONCE, ever. Taking a row is a compare-and-set on
     # `state = 'pending'` inside the statement, not a read-then-write: `due()` is
@@ -324,7 +323,7 @@ RULE_TESTS = {
     "R-102": "test_an_identity_failure_degrades_that_platform_and_the_rest_start_live",
     "R-113": "test_a_closed_wake_closes_its_whole_set",
     "R-114": "test_engagement_alias_acquisition_blocks_a_wake_write_and_defers_debrief",
-    "R-116": "test_wake_offers_only_graph_tools_and_its_one_objective",
+    "R-116": "test_only_engagement_can_compose_a_delivery",
     "R-120": "test_wake_open_links_a_new_topic_and_rediscover_returns_it",
     "R-115": "test_the_third_counted_failure_parks_the_set",
     "R-121": "test_three_distinct_verdicts_admit_a_checked_lesson",

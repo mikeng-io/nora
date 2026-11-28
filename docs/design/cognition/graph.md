@@ -75,6 +75,11 @@ Three edge families never stand in for each other:
 | **about** | a row → the entities it concerns | no: an index for retrieval |
 | **draws on** | a claim or intention → another claim or intention | no: context or premise |
 
+An `about` edge is a retrieval index written with the row it indexes, computed
+when code derives it from that row's identity pointers and inferred when the
+model declares its subject, while each stage's basis rule governs the row and
+its evidential and premise edges (`cites`, `draws on`, `rests on`, `serves`).
+
 **Support and dependency stay apart.** `cites` is evidential support: it gives
 a claim its strength and must trace to observed or computed rows. `draws on` is
 inferential dependency: claim B built on claim A's premise. It is recorded so

@@ -536,7 +536,7 @@
   "tests/offline_eval_harness.py": 6,
   "tests/offline_eval_support.py": 7,
   "tests/offline_pipeline.py": 3,
-  "tests/test_acceptance_rules.py": 91,
+  "tests/test_acceptance_rules.py": 89,
   "tests/test_agent_runner_stop_reason.py": 10,
   "tests/test_architecture_doc.py": 1,
   "tests/test_boundaries.py": 2,

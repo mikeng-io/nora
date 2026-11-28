@@ -168,11 +168,14 @@ async def test_interest_edge_type_is_refused(engine) -> None:
     assert result.outcomes == (Refusal("unknown_edge_type", "type"),)
 
 
-async def test_non_profile_claim_parts_are_admitted(engine) -> None:
-    proposal = replace(CLAIM_PROPOSAL, part="situation")
+@pytest.mark.parametrize("text", ["The lantern needs a bracket.", "Measure the bracket at dusk."])
+async def test_admission_checks_the_form_and_keeps_the_proposed_content(engine, text) -> None:
+    proposal = replace(CLAIM_PROPOSAL, part="situation", content={"text": text})
     result = await _service(engine).admit((proposal,), PASS, ("item-1",))
     assert result.outcomes == (Stored(proposal.id),)
-    assert (await _rows(engine, CLAIM))[proposal.id]["part"] == "situation"
+    row = (await _rows(engine, CLAIM))[proposal.id]
+    assert row["part"] == "situation"
+    assert row["content"] == {"text": text}
 
 
 async def test_lesson_cannot_carry_a_prediction(engine) -> None:

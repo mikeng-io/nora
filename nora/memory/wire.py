@@ -110,7 +110,10 @@ def admission(
     lesson_checker: LessonChecker | None = None,
 ) -> AdmissionService:
     identity = AdmissionIdentity(persons, policy, access=access, nora_accounts=nora_accounts)
-    store = SqlAdmissionStore(SqlAdmissionRows(engine, identity), SqlCognitiveGraph(engine), engine)
+    store = SqlAdmissionStore(
+        SqlAdmissionRows(engine, identity), SqlCognitiveGraph(engine), engine,
+        lesson_checker=lesson_checker,
+    )
     from nora.infra.sql.tension import SqlTensionStore
 
     review = LessonReview(lesson_checker, SqlTensionStore(engine)) if lesson_checker else None

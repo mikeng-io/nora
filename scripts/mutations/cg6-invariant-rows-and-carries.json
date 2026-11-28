@@ -1,0 +1,100 @@
+[
+  {
+    "name": "Graph rows require one populated basis",
+    "file": "nora/infra/sql/migrations/versions/0164_cognitive_graph.py",
+    "old": "sa.Column(\"basis\", sa.Text, nullable=False),",
+    "new": "sa.Column(\"basis\", sa.Text, nullable=True),",
+    "target": "tests/infra/test_cognitive_graph_schema.py::test_every_row_and_edge_carries_the_planes"
+  },
+  {
+    "name": "Decide persists committed evidential edges",
+    "file": "nora/memory/adapters/admission_store.py",
+    "old": "edges = [{**shared, **_link_values(link), \"id\": f\"edge:{uuid4().hex}\"} for link in links]",
+    "new": "edges = [{**shared, **_link_values(link), \"id\": f\"edge:{uuid4().hex}\"} for link in links]\n    for edge in edges:\n        if edge[\"type\"] == \"cites\" and edge[\"basis\"] == \"committed\":\n            edge[\"basis\"] = \"computed\"",
+    "target": "tests/infra/test_intention_commit.py::test_decide_writes_committed_rows_and_indexes_about_by_derivation"
+  },
+  {
+    "name": "A revision indexes the model's inferred subject",
+    "file": "nora/memory/adapters/admission_store.py",
+    "old": "        e.basis == \"inferred\",\n",
+    "new": "        e.basis == \"observed\",\n",
+    "target": "tests/infra/test_intention_commit.py::test_decide_writes_committed_rows_and_indexes_about_by_derivation"
+  },
+  {
+    "name": "A revision indexes people by their computed identity pointers",
+    "file": "nora/memory/adapters/admission_store.py",
+    "old": "    if not people:\n        return\n",
+    "new": "    if people:\n        return\n",
+    "target": "tests/infra/test_intention_commit.py::test_decide_writes_committed_rows_and_indexes_about_by_derivation"
+  },
+  {
+    "name": "An inferred claim cannot cite an inferred entity",
+    "file": "nora/memory/domain/graph.py",
+    "old": "return target.element == \"row\" and target.basis in (\"observed\", \"computed\")",
+    "new": "return target.element == \"row\" and target.basis in (\"observed\", \"computed\", \"inferred\")",
+    "target": "tests/unit/test_cognitive_graph_admission.py::test_claim_cites_only_shown_observed_or_computed_evidence"
+  },
+  {
+    "name": "Admission keeps the proposed claim content",
+    "file": "nora/memory/adapters/admission_store.py",
+    "old": "            content=proposal.content,",
+    "new": "            content={\"text\": \"Fixture rewritten by code.\"},",
+    "target": "tests/infra/test_cognitive_graph_admission.py::test_admission_checks_the_form_and_keeps_the_proposed_content"
+  },
+  {
+    "name": "An act's outcome is recorded by observe",
+    "file": "nora/memory/app/acts.py",
+    "old": "        await self._store.observe(act, invocation.outcome)\n        return invocation",
+    "new": "        return invocation",
+    "target": "tests/infra/test_act_envelope.py::test_act_commits_before_the_call_and_refuses_its_identity_twice"
+  },
+  {
+    "name": "A graph read with unavailable access stays unknown",
+    "file": "nora/memory/app/retrieval.py",
+    "old": "return RetrievalResult(\"unavailable\", bounds, cause=str(exc))",
+    "new": "return RetrievalResult(\"nothing_found\", bounds)",
+    "target": "tests/infra/test_retrieval_scope.py::test_unavailable_access_view_cannot_substitute_an_empty_audience"
+  },
+  {
+    "name": "A revised claim keeps its part",
+    "file": "nora/memory/domain/admission.py",
+    "old": "            if isinstance(proposal.replacement, CreateClaim) and (\n                proposal.replacement.part != base.part\n            ):\n                raise _RefusalError(\"illegal_transition\", \"part\")\n",
+    "new": "",
+    "target": "tests/unit/test_cognitive_graph_admission.py::test_a_lesson_cannot_be_revised_into_a_fact tests/infra/test_lesson_admission.py::test_operator_retirement_hides_graph_lesson_and_sets_evidence_floor"
+  },
+  {
+    "name": "The checker returns the law it handed to the judge",
+    "file": "nora/language/doctrine_check.py",
+    "old": "        return verdict, rules",
+    "new": "        return verdict, self.rules()",
+    "target": "tests/unit/test_doctrine_check.py::test_the_check_reads_only_the_law_that_reaches_a_units_turns"
+  },
+  {
+    "name": "A lesson cannot be written against a different law revision",
+    "file": "nora/memory/adapters/admission_store.py",
+    "old": "        if current != checked_law:\n            raise AdmissionWriteRefusedError(refusal)\n",
+    "new": "",
+    "target": "tests/infra/test_lesson_admission.py::test_lesson_write_refuses_law_changed_since_the_judge"
+  },
+  {
+    "name": "The labelled doctrine script consumes the returned verdict",
+    "file": "scripts/doctrine_check_labelled.py",
+    "old": "        got = []\n        for _ in range(samples):\n            verdict, _rules = await check.judge(case[\"lesson\"])\n            got.append(verdict)\n",
+    "new": "        got = [await check.judge(case[\"lesson\"]) for _ in range(samples)]\n",
+    "target": "tests/unit/test_doctrine_check.py::test_labelled_cases_count_the_checkers_verdict"
+  },
+  {
+    "name": "An act reserved without an outcome cannot close its intention",
+    "file": "nora/memory/adapters/condition_matcher.py",
+    "old": "        if row is None or row[\"verdict\"] == \"uncertain\":\n            return Evaluation(\"unknown\")\n",
+    "new": "        if row is None:\n            return Evaluation(\"true\", Witness(intention[\"id\"], intention[\"asserted_at\"], intention))\n        if row[\"verdict\"] == \"uncertain\":\n            return Evaluation(\"unknown\")\n",
+    "target": "tests/infra/test_condition_matcher.py::test_only_the_named_done_act_closes_its_intention"
+  },
+  {
+    "name": "Only engagement model passes can compose a delivery act",
+    "file": "nora/memory/app/act_scope.py",
+    "old": "        if context is not None and context.occasion in {\n            \"debrief\", \"wake\", \"wake_history\", \"review\",\n        }:\n            raise ActRefused(\"non_engagement_pass\")\n",
+    "new": "",
+    "target": "tests/unit/test_engagement_egress.py::test_only_engagement_can_compose_a_delivery"
+  }
+]

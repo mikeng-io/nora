@@ -24,6 +24,7 @@ from nora.domain.culture import Citable
 from nora.domain.doctrine_check import CheckVerdict, LawRule, Tension, parse_verdict
 from nora.language.doctrine_check import DoctrineCheck, render_check_input
 from nora.obs.metrics import Metrics
+from scripts.doctrine_check_labelled import _run_cases
 
 RULES = (
     LawRule(file="core/constraints.md", line=10, text="Never share where a member is."),
@@ -112,9 +113,24 @@ def _check(answer: object, metrics: Metrics | None = None,
 
 
 async def test_the_check_reads_only_the_law_that_reaches_a_units_turns():
-    check, client = _check('{"verdict": "consistent"}')
-    assert (await check.judge(LESSON)).outcome == "consistent"
+    law = list(ALL_LAW)
+
+    class ReloadingClient(_Client):
+        async def complete(self, *, system: str, prompt: str) -> _Answer:
+            response = await super().complete(system=system, prompt=prompt)
+            law.pop(0)
+            return response
+
+    client = ReloadingClient('{"verdict": "consistent"}')
+    check = DoctrineCheck(
+        client=client, law=lambda: tuple(law), instruction=lambda: "judge it", timeout_seconds=1,
+    )
+    verdict, rules = await check.judge(LESSON)
+    assert verdict.outcome == "consistent"
+    assert rules == RULES
+    assert check.rules() == RULES[1:]
     (prompt,) = client.prompts
+    assert prompt == render_check_input(lesson=LESSON, rules=rules)
     assert "core/constraints.md" in prompt and "rooms/conduct.md" in prompt
     assert "public/" not in prompt and "instruments/" not in prompt
 
@@ -123,10 +139,26 @@ async def test_a_failed_slow_or_unread_check_is_an_error_and_counted():
     m = Metrics()
     for answer in (RuntimeError("down"), "hang", "not json"):
         check, _ = _check(answer, metrics=m)
-        assert (await check.judge(LESSON)).outcome == "error"
+        verdict, _ = await check.judge(LESSON)
+        assert verdict.outcome == "error"
     empty, _ = _check('{"verdict": "consistent"}', metrics=m, instruction="  ")
-    assert (await empty.judge(LESSON)).outcome == "error"
+    verdict, _ = await empty.judge(LESSON)
+    assert verdict.outcome == "error"
     assert m.get("nora_doctrine_check_total", outcome="error") == 4
+
+
+@pytest.mark.parametrize(("answer", "rc", "reported"), [
+    ('{"verdict": "consistent"}', 0, "PASS generated"),
+    ('{"verdict": "conflict", "rule": 1, "why": "shares a place"}', 1, "FAIL generated"),
+])
+async def test_labelled_cases_count_the_checkers_verdict(capsys, answer, rc, reported):
+    check, client = _check(answer)
+    cases = [{"id": "generated", "expect": "consistent", "lesson": LESSON}]
+    assert await _run_cases(check, cases, samples=1) == rc
+    report = capsys.readouterr().out
+    assert reported in report
+    assert f"RESULT cases_failed={rc}/1" in report
+    assert client.prompts == [render_check_input(lesson=LESSON, rules=RULES)]
 
 
 class _FakeCheck:
