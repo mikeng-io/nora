@@ -322,6 +322,7 @@ class _AnchorQueries:
         r = self._rows
         aliases = tuple(ref for ref, key in self._scope.room_keys.items()
                         if key == self._scope.room)
+        # ponytail: a bounded read takes the first graph IDs, regardless of urgency.
         ids = await self._conn.scalars(sa.select(r.graph_id).where(
             r.kind == "intention", r.state == "open",
             sa.or_(r.origin_room.is_(None), r.origin_room.in_(aliases)),
