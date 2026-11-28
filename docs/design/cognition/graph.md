@@ -181,9 +181,9 @@ An outage is never a leak.
 
 A maintain intention ends **ceased** (its holds-while was observed false) or
 **dropped** (its drop-when was met); its watches stop when it ends. While its
-condition cannot be evaluated because a source is unhealthy, it stays open and
-its review records unknown. It has no verdict of its own: its track record is
-its children's verdicts.
+condition cannot be evaluated because a source is unhealthy, it stays open: its
+review is unavailable and writes nothing. It has no verdict of its own: its
+track record is its children's verdicts.
 
 **Conditions** are one of a closed set of forms, each evaluated by code to
 true, false or unknown. The form decides the witness and who writes the ending:
