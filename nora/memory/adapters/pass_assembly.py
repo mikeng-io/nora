@@ -116,9 +116,9 @@ class PassAssembler:
             bounds = replace(bounds, since=min(bounds.since, since),
                              rows=max(bounds.rows, len(data.stimuli)))
         seeds = await self._anchors.build(choice, data, scope, now, ceiling=clock)
-        # Selected review targets and their evidence can predate the default window.
-        if seeds.review_since is not None:
-            bounds = replace(bounds, since=min(bounds.since, seeds.review_since))
+        # Pinned intentions and evidence can predate the default window.
+        if seeds.required_since is not None:
+            bounds = replace(bounds, since=min(bounds.since, seeds.required_since))
         if seeds.cause is not None:
             result = RetrievalResult("unavailable", bounds, cause=seeds.cause)
         else:

@@ -13,5 +13,5 @@ class DeliveryEvidence:
 
 class DeliveryHistory(Protocol):
     async def read(
-        self, unit: str, intention: str, destination: str,
+        self, unit: str, intention: str, destination: str, *, occurrence: str | None = None,
     ) -> DeliveryEvidence | None: ...

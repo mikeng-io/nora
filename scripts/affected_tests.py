@@ -69,8 +69,8 @@ The classes, in order:
   an added, edited or deleted test can redden them — a new `tests/test_zz.py`
   reddens `test_tests_root_takes_no_new_files`, a new test that reads
   `config.example.toml` reddens `test_config_comes_from_the_template`), every
-  test module that IMPORTS it (`tests/unit/test_cognition_failure_backoff.py`
-  imports `test_cognition_session_lifecycle`), and the tests the reader scan
+  test module that IMPORTS it (`tests/contract/test_authority_backend_contract.py`
+  imports `test_managed_admission`), and the tests the reader scan
   below finds reading it. Any other path (`conftest.py`, `builders.py`,
   fixtures, a deleted or renamed-away test) is `ALL`: a helper is imported by
   many modules and collects nothing itself, and a deleted test can break the

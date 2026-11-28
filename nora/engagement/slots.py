@@ -7,7 +7,7 @@ The lock's ownership is split across `admission.run` (acquires) and the
 pipeline's `finally` (releases); getting that wrong strands a queued tag
 forever.
 
-The heartbeat fire path (`nora.app.heartbeat`) must contend for the SAME slot:
+The graph proactive poller contends for the same slot:
 a reminder must not run while a tag is in flight for that conversation, and a
 tag must not start while a reminder is firing. A release that does not start
 the next queued turn strands whatever queued behind the fire turn until the

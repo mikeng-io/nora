@@ -24,14 +24,13 @@ whether the model takes the right path.
 | 12 | someone keeps returning to racing, and names one game | `interested_in` → topic racing, weight grows with evidence; `likes` → that game | a profile line "likes racing" | eval; the weight count is a test |
 | 13 | in a group room: "what does B like?" | answered from what B shared in this room | likes shared only elsewhere | test (scope); eval for the wording |
 
-**Eval cases replay recorded wakes from the eval snapshot.**
-Each names `metadata.wake: <cognition_wake id>` and a `room_*` alias.
-The sandbox is restored as of that wake's time and the session receives the
-wake's own stimulus batch through live agenda assembly, never a summary sentence.
-A missing wake is ERROR. Unanchored scenarios remain parked until a recorded
-wake demonstrates the scenario; no fake model input is substituted.
+**Every case is parked.** The legacy Cognition session these cases ran on was
+removed, so no entry point runs `evals/corpora/cognition_session.yaml`: the
+eleven `c` cases wait on a private anchor, and `r01` to `r06`, which replayed a
+recorded wake, wait on a graph wake entry that replays one. A parked case keeps
+its id and is never run; nothing substitutes a fake input.
 
-**Each case runs more than once** (a single run decides nothing; the
+**Each case, once it runs, runs more than once** (a single run decides nothing; the
 relevance-gate measurement), scored fail-closed: an empty or wrong path is
 FAIL, a timeout ERROR, never a PASS. **A held-out set** of anchored cases is
 never shown in the instruction, so the suite measures understanding, not

@@ -51,65 +51,17 @@ To tell "quiet" from "broken":
    to the operator. A sustained rise above 1% means tags are failing, not that nobody
    tagged her.
 
-   **The `audience="tag"` filter is load-bearing, not tidiness.** The heartbeat's
-   fire path (reminders) shares this series and is labelled `audience="heartbeat"`;
-   unfiltered, its failures are charged to a <1% budget whose denominator counts
-   only tags, so a broken heartbeat reads as a broken conversation path and a
-   handful of failed reminders can blow an alarm nobody can then diagnose. The
-   heartbeat's own health is a separate expression —
-   `nora_silent_failures_total{audience="heartbeat"}` alongside
-   `nora_reminders_fired_total{outcome}` and `nora_heartbeat_last_tick_age_seconds`.
+   Filter the rate by audience. A quiet participation turn is an ordinary
+   result tracked by `nora_participation_silence_total`. Use the participation
+   silence and spoke counters as the denominator for the participation rate.
 
-   The participation occasion (docs/design/cognition/loop.md, once enabled) is the
-   third audience on this series, and it changes what "silent" MEANS: a
-   participation turn that says nothing is the HEALTHY outcome, so it never lands
-   here — it counts on `nora_participation_silence_total`, and a spoke turn on
-   `nora_participation_spoke_total` (their ratio is how often the occasion finds
-   grounded value). What lands here under `audience="participation"` is only a
-   malfunction of the ordinary kind — a budget-cut turn or a delivery failure —
-   so participation's own budget expression is
-   `nora_silent_failures_total{audience="participation"} / (nora_participation_silence_total + nora_participation_spoke_total)`,
-   NOT a share of the tag budget.
-
-   The proactive occasion (docs/design/cognition/loop.md, DEC-162; since
-   2026-10-03, DEC-277, its reminder rows are written by the Cognition
-   session's `remind`, and the fire path's act turn below is unchanged) is the fourth audience and has
-   participation's exact shape: a `kind="proactive"` row's act turn that
-   says nothing is the healthy outcome and counts on
-   `nora_proactive_silence_total` (the row is DONE with `outcome="silent"`),
-   a spoke turn on `nora_proactive_spoke_total`, and only a malfunction lands
-   here under `audience="proactive"`. Its budget expression is the same
-   ratio over its own two series. The heartbeat's own fired counter gains
-   three outcomes for this kind — `silent`, and the fire-time screen's
-   `cancelled_note_retired` / `cancelled_note_moved`. The decide pass and its
-   `nora_proactive_decisions_total` / `nora_dream_run_total{adaptor="proactive"}`
-   are gone (DEC-277); read the deciding side in the `cognition_wake_outcome` table.
-
-   **A reminder can also be hours late with all three of those reading healthy.**
-   A tick that finds the conversation's slot held by a tag leaves the rows
-   `pending` and moves on: nothing fired, nothing failed, and the tick itself
-   completed, so the fired counter is flat and the tick-age gauge drops back to
-   zero. `nora_heartbeat_deferrals_total` is the only signal — a sustained rate
-   means a busy group is starving its own reminders. It counts deferred *turns
-   per tick*, so the same rows re-count each tick; `nora reminders list` is
-   where you find out which rows, and marks them `OVERDUE`.
-
-   ```bash
-   curl -s http://127.0.0.1:9100/metrics | grep nora_heartbeat_deferrals_total
-   ```
-
-   **Those two can disagree, and the disagreement is a reading, not a bug.** A
-   reminder that delivered message 1 of 3 and then timed out increments
-   `nora_silent_failures_total{audience="heartbeat",reason="invocation_timeout"}`
-   *and* resolves `nora_reminders_fired_total{outcome="sent"}` — because both are
-   true: the invocation was abandoned, and the group did hear something.
-   `nora_partial_replies_total{reason="invocation_failed"}` is the series that
-   says which one it was. Every increment there is a message the group was meant
-   to receive, so read it whenever the two above do not agree:
-
-   ```bash
-   curl -s http://127.0.0.1:9100/metrics | grep nora_partial_replies_total
-   ```
+   The graph clock publishes due reminders as `intention_due` occurrences in
+   `graph_stimulus`. The proactive poller records the delivery attempt in
+   `graph_stimulus_claim`. A busy room leaves its due occurrence available for
+   the next poll. Inspect due occurrences and their proactive claim state to
+   distinguish a backlog from a completed turn. A rise in
+   `nora_proactive_stimulus_parked_total` reports occurrences parked after
+   repeated unavailable delivery rechecks.
 
    ```bash
    curl -s http://127.0.0.1:9100/metrics \
@@ -1223,7 +1175,7 @@ python3 ~/workspace/nora/scripts/secret_delivery.py --runtime-root ~/workspace/n
 | `sent` | she delivered it | nothing |
 | `deferred` | a tag held the conversation on that tick | nothing — the row is still `PENDING` and the next tick retries. Climbing without ever reaching `sent` means the slot is never freeing; look at the tag path, not at compute |
 | `failed_error` | the turn raised, **or** boot recovery resolved the row. `error` on the row says which: `process crashed mid-delivery` (`FIRING`) or `lost track of this job across a restart` (`PENDING`) | a `PENDING` row is swept at every boot, because a backend's job registry is in-memory. Nothing retries; the request has to be made again |
-| `failed_policy` / `failed_timeout` | the fire turn itself was refused or cut off | same reading as `nora_reminders_fired_total`'s own — §8.1's outcomes, not compute-specific |
+| `failed_policy` / `failed_timeout` | the fire turn itself was refused or cut off | policy refusal or turn deadline reached |
 
 **Nothing here is retried.** One job, one delivery, ever — the same
 at-most-once rule reminders hold.

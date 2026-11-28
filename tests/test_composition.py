@@ -1437,3 +1437,32 @@ async def test_the_senders_hold_identity_toml_as_their_direct_message_allowlist(
 
 
 
+
+
+async def test_markdown_identity_reaches_the_live_tools(cfg, tmp_path):
+    import shutil
+
+    from nora.agent.room import Room
+    from nora.domain.models import DeliveryStatus, TranscriptRow
+
+    directory = tmp_path / "renamed-doctrine"
+    shutil.copytree(cfg.doctrine.dir, directory)
+    identity = directory / "core/identity.md"
+    identity.write_text(
+        identity.read_text().replace("display_name: Nora", "display_name: AgentAlpha")
+    )
+    (tmp_path / "policy.toml").write_text(_HOME_POLICY)
+    deps = await build_dependencies(override_config(cfg, {"doctrine.dir": directory}))
+    registry = deps.engagement._tool_registry
+    own = TranscriptRow(id=1, sender_id="self", sender_name="PreviousLabel", ts=1,
+                        body="I checked the venue", is_nora=True,
+                        delivery_status=DeliveryStatus.SENT, raw_json=None)
+    tools = {t.name: t.call for t in registry.specs(
+        store=deps.audit, conversation_id="g1", conversation_type="group",
+        persons=deps.persons, deliverer=None, metrics=deps.metrics,
+        room=Room(platform="signal", conversation_id="g1", roster_source=None,
+                  persons=deps.persons), transcript=(own,),
+    )}
+    result = await tools["who_said"](words="checked the venue")
+    assert result["status"] == "ok"
+    assert result["said_by"] == [{"who": "AgentAlpha", "line": "I checked the venue"}]

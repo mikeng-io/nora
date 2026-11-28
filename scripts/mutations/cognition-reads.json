@@ -49,13 +49,6 @@
     "target": "tests/integration/test_rollup_read.py::test_a_room_that_may_not_be_shown_a_row_is_told_rows_were_left_out_and_nothing_else"
   },
   {
-    "name": "rollup_read: a name resolves among everyone, not this room's people (R-21)",
-    "file": "nora/memory/adapters/tools/standing.py",
-    "old": "\n        c.matches = c.view.find(c.name) or tuple(\n            p for p in c.view.people if c.by_id and p.person_id == c.name\n        )\n        ",
-    "new": "            c.matches = tuple(p for p in persons.by_person.values() if p.c.name == c.name)\n",
-    "target": "tests/integration/test_rollup_read.py::test_a_name_resolves_only_among_this_rooms_people"
-  },
-  {
     "name": "rollup_read: a build that does not exist reads as an empty interval",
     "file": "nora/memory/adapters/tools/standing.py",
     "old": "\n    if c.got.build_id is None or c.got.through_ms is None:\n        ",
@@ -187,5 +180,10 @@
     "old": "            standing=head, revision_id=str(newest.id) if matches and newest else None,\n",
     "new": "            standing=head, revision_id=str(newest.id) if newest else None,\n",
     "target": "tests/infra/test_standing_revision.py::test_a_legacy_head_with_a_divergent_chain_has_no_revision_id"
-  }
-]
+  },
+  {
+    "name": "rollup_read: a name resolves among everyone, not this room's people (R-21)",
+    "file": "nora/memory/adapters/tools/standing.py",
+    "old": "        c.matches = c.view.find(c.name)\n",
+    "new": "        c.matches = tuple(p for p in c.persons.by_person.values() if p.name == c.name)\n",
+    "target": "tests/integration/test_rollup_read.py::test_a_name_resolves_only_among_this_rooms_people"

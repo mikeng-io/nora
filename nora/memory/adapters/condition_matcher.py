@@ -11,6 +11,7 @@ from nora.domain.graph_stimuli import GraphStimulus
 from nora.domain.lineage import ROW, Lineage
 from nora.infra.sql.cognitive_graph_schema import (
     GRAPH_STIMULUS,
+    GRAPH_STIMULUS_CLAIM,
     INTENTION,
     NORA_ACT,
     NORA_ACT_OUTCOME,
@@ -34,6 +35,7 @@ from nora.memory.domain.conditions import (
     OwnDelivery,
     Predicate,
 )
+from nora.memory.domain.time_trigger import decode_time_trigger
 
 _FORMS = ("act_event", "identity_event", "predicate")
 _ACT, _OUTCOME = NORA_ACT.c, NORA_ACT_OUTCOME.c
@@ -104,6 +106,11 @@ class SqlIntentionBatch:
     async def _act(
         self, intention: Mapping[str, Any], condition: ActEvent | OwnDelivery, *, trigger: bool,
     ) -> Evaluation:
+        if (
+            isinstance(condition, OwnDelivery) and not trigger
+            and await self._series_pending(intention)
+        ):
+            return Evaluation("unknown")
         unit = intention["unit"]
         stmt = (
             sa.select(NORA_ACT_OUTCOME, _ACT.executor, _ACT.destination)
@@ -126,6 +133,23 @@ class SqlIntentionBatch:
         ):
             return Evaluation("unknown")
         return Evaluation("true" if done else "false", _witness(row, row["asserted_at"]))
+
+    async def _series_pending(self, intention: Mapping[str, Any]) -> bool:
+        schedule = decode_time_trigger(intention["trigger"])
+        if schedule is None or schedule.recurrence is None:
+            return False
+        stimulus, claim = GRAPH_STIMULUS.c, GRAPH_STIMULUS_CLAIM.c
+        published, completed = (await self._conn.execute(sa.select(
+            sa.func.count(stimulus.occurrence), sa.func.count(claim.occurrence),
+        ).select_from(GRAPH_STIMULUS.outerjoin(GRAPH_STIMULUS_CLAIM, sa.and_(
+            claim.unit == stimulus.unit, claim.graph_id == stimulus.graph_id,
+            claim.kind == stimulus.kind, claim.occurrence == stimulus.occurrence,
+            claim.claimant == "proactive", claim.state == "closed",
+        ))).where(
+            stimulus.unit == intention["unit"], stimulus.graph_id == intention["id"],
+            stimulus.kind == "intention_due",
+        ))).one()
+        return completed != published or schedule.occurrence(published) is not None
 
     async def _identity_event(
         self, intention: Mapping[str, Any], condition: IdentityEvent, *, trigger: bool,
