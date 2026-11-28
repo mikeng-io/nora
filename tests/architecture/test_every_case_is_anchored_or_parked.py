@@ -58,9 +58,7 @@ UNANCHORED_BY_DESIGN = {
     # this rebuild owes: their premise exists only in a Discord room, and a
     # turn cannot run where no adapter is wired. They are unfinished, not
     # parked: parking would retire them to make the rebuild look complete.
-    "participation": {
-        "other-service-command", "admin-joke-known", "admin-joke-unknown",
-    },
+    "participation": {"other-service-command"},
     "identity_grounding": {
         "fabrication_invented_time_window",
         "grounded_correct_top_when_alias_stated",

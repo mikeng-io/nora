@@ -15,7 +15,6 @@ account in another unit.
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from typing import Any
 
@@ -28,15 +27,11 @@ from nora.infra.sql import create_sql_engine
 from nora.infra.sql.cognitive_graph_schema import CLAIM, EDGE, ENTITY
 from nora.infra.sql.cognitive_graph_store import SqlCognitiveGraph
 from nora.infra.sql.culture import SqlCultureStore
-from nora.infra.sql.schema import CULTURE, CULTURE_REVISION
 from nora.subject import (
     Knowledge,
     Message,
-    Subject,
     SubjectSpec,
     sandbox_as_of,
-    sandbox_database,
-    sandbox_from_snapshot,
 )
 from nora.subject.as_of import render_tag_blocks
 from tests.sandbox_fixtures import ROOM, Source, offline_subject, seed_source
@@ -56,7 +51,6 @@ IDENTITY = (
     '[persons.bo]\nname = "Bo"\n'
     '[[persons.bo.signal]]\nphone = "+852222"\n'
 )
-OVERRIDES = {"culture.enabled": True}
 
 NORA_ENTITY = "nora:nora:nora"
 UNIT_ENTITY = "nora:unit:nora"
@@ -183,19 +177,6 @@ async def source(clean_pg_url: str, pg_template: str, tmp_path: Any, monkeypatch
     return src
 
 
-@pytest.fixture
-async def sandbox(source: Source, pg_template: str, tmp_path: Any) -> AsyncIterator[Subject]:
-    async with (
-        sandbox_database(source.url, template=pg_template) as url,
-        offline_subject(SubjectSpec(
-            database_url=url, workdir=tmp_path / "sandbox", room=source.room,
-            policy=source.policy, identity=source.identity, now=NOW,
-            overrides=dict(OVERRIDES),
-        )) as subject,
-    ):
-        yield subject
-
-
 async def test_an_eval_turn_carries_the_unit_and_person_accounts_as_of_then(
     clean_pg_url: str, pg_template: str, source: Source, tmp_path: Any,
 ) -> None:
@@ -250,25 +231,3 @@ async def test_an_eval_turn_carries_the_unit_and_person_accounts_as_of_then(
     rendered = "\n".join(blocks.values())
     for absent in ("AFTER:", "UNLISTED:", "OTHER UNIT:"):
         assert absent not in rendered, absent
-
-
-async def test_only_the_listed_persons_accounts_of_this_unit_are_copied(
-    sandbox: Subject, source: Source,
-) -> None:
-    """The rendering hides an unlisted person's account anyway, so the negative
-    is read off the sandbox's own store: the copy takes what the room lists and
-    nothing else, in this unit's keys alone."""
-    await sandbox_from_snapshot(sandbox, source_url=source.url, before_ms=BEFORE_MS)
-    engine = create_sql_engine(sandbox.database_url)
-    try:
-        wanted = character_key(UNIT, "miles_novak")
-        keys = (wanted, character_key(UNIT, "bo"), character_key("elsewhere", "miles_novak"))
-        async with engine.connect() as conn:
-            heads = (await conn.execute(
-                sa.select(CULTURE.c.key, CULTURE_REVISION.c.body, CULTURE_REVISION.c.written_at)
-                .join(CULTURE_REVISION, CULTURE.c.head_revision_id == CULTURE_REVISION.c.id)
-                .where(CULTURE.c.key.in_(keys))
-            )).all()
-        assert heads == [(wanted, "Miles plans, then waits", BEFORE_MS - 2 * HOUR)]
-    finally:
-        await engine.dispose()

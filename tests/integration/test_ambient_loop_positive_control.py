@@ -32,6 +32,7 @@ from nora.app.participation import ParticipationTrigger
 from nora.app.runtime import BackgroundTasks
 from nora.doctrine.loader import DoctrineStore
 from nora.domain.models import DeliveryStatus
+from nora.engagement.slots import ConversationSlots
 from nora.engagement.stages import debrief
 from nora.infra.sql import SqlRecordStore, create_sql_engine
 from nora.infra.sql.cognitive_graph_schema import DEBRIEF_OBLIGATION, NORA_PASS_OUTPUT
@@ -51,8 +52,6 @@ from nora.policy import load_policy
 from nora.testing import (
     FakeAdapter,
     FakeAgentRunner,
-    InMemoryNoteStore,
-    InMemoryStandingStore,
     ScriptedTurn,
     group_event,
 )
@@ -214,8 +213,6 @@ def _config(tmp_path: Path) -> Any:
         "policy_file": tmp_path / "policy.toml",
         "relevance_gate.enabled": True,
         "participation.enabled": True,
-        "standing.enabled": True,
-        "notes.enabled": True,
     })
 
 
@@ -253,8 +250,6 @@ async def _drive(tmp_path: Path, engine: AsyncEngine) -> _Journey:
             memory_wire.act_envelope(engine), registration.scope, registration.revisions,
         ),
     )
-    standing_store = InMemoryStandingStore()
-    note_store = InMemoryNoteStore()
     adapter = FakeAdapter()
     home_adapter = _HomeAdapter()
     clock = _Clock(T_QUESTION)
@@ -278,7 +273,7 @@ async def _drive(tmp_path: Path, engine: AsyncEngine) -> _Journey:
     gate_client = _ScriptedGateClient()
     gate = RelevanceGate(
         client=gate_client, prompts=doctrine_store, records=audit, metrics=metrics,
-        persons=persons, standing=standing_store,
+        persons=persons,
         transcript_limit=cfg.relevance_gate.transcript_rows,
     )
     debrief_client = _ScriptedDebriefClient()
@@ -288,13 +283,14 @@ async def _drive(tmp_path: Path, engine: AsyncEngine) -> _Journey:
         persons, policy, doctrine_store, cfg.content_checks.enabled,
         # Graph bounds compare against Postgres assertion time.
         lambda: datetime.now(UTC), metrics,
+        ConversationSlots(maxlen=2, spawn=asyncio.create_task, policy=policy),
+        lambda _: None,
     )
 
     dispatcher, _engagement, background, trigger = build_offline_pipeline(
         cfg, adapter=adapter, audit=audit,
         access=access, room_policy=policy,
         doctrine_store=doctrine_store, runner=tag_runner, metrics=metrics,
-        notes=note_store, standing=standing_store,
         debrief_wiring=replace(debrief_wiring, client=debrief_client),
         extra_engage_policies=(RelevanceGatePolicy(policy),),
         participation_runner=participation_runner,
