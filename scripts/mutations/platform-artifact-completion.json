@@ -102,7 +102,7 @@
     "file": "nora/domain/observations.py",
     "old": "    if entry.get(\"artifact_kind\") == \"contact\" and not f.get(\"contacts\"):\n        bits.append(_contact_summary(f))\n    elif name:",
     "new": "    if name:",
-    "target": "tests/unit/test_platform_observation_wired.py::test_a_retained_signal_contact_keeps_top_level_values"
+    "target": "tests/unit/test_platform_observation_fixtures.py::test_signal_contacts_and_previews_are_artifacts"
   },
   {
     "name": "SDK default count replaces absent raw scheduled event count",
