@@ -2474,9 +2474,9 @@
     "internal_docstrings": 1
   },
   "tests/test_prefill.py": {
-    "file_lines": 1473,
+    "file_lines": 1423,
     "comment_blocks": 6,
-    "internal_docstrings": 6
+    "internal_docstrings": 5
   },
   "tests/test_relay.py": {
     "internal_docstrings": 3
@@ -2642,7 +2642,7 @@
     "internal_docstrings": 1
   },
   "tests/unit/test_context_selector_render.py": {
-    "internal_docstrings": 3
+    "internal_docstrings": 2
   },
   "tests/unit/test_debrief.py": {
     "file_lines": 1624,

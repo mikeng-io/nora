@@ -16,7 +16,6 @@ from nora.domain.blocks import ContextBlock, assemble
 from nora.domain.external_files import render_file_links
 from nora.domain.models import PersonRef
 from nora.domain.prompt import escape
-from nora.domain.shared_state import SharedEntry, SharedView
 from nora.subject.context_selector_render import OPTIONAL, SYSTEM, selector_prompt
 from nora.testing.context_blocks import compose_fixture
 from tests.test_prefill import (
@@ -24,24 +23,13 @@ from tests.test_prefill import (
     _ctx,
     _documents,
     _rows,
+    _source_object,
     _subagents,
 )
-
 
 #: `context_filter.OPTIONAL` before the move — the selector's four
 #: withholdable candidates, pinned so a drift between the plan contract and
 #: the blocks the builder previews is a failure and not a surprise.
-def _shared() -> SharedView:
-    """The consolidated `<standing>` view `TagContext.shared` carries — one
-    entry so the block is a real candidate the selector may withhold."""
-    return SharedView(
-        unit="u", status="ok", as_of_ms=0,
-        entries=(SharedEntry(kind="standing", id="position",
-                             scope="signal:g1", status="open",
-                             subject="where it had got to"),),
-        sources=(("findings", "ok"),),
-    )
-
 
 _LEGACY_OPTIONAL = frozenset({"peer_history", "documents", "computer", "subagents"})
 
@@ -155,7 +143,7 @@ def test_selector_prompt_is_byte_identical_to_the_inline_path(monkeypatch):
         tagger=PersonRef("ada", "Ada"),
         peer_card=("Ada: a person",),
         tagger_card=("A long history. " * 50,),  # over the 600-char preview cut
-        shared=_shared(),
+        source_objects=(_source_object(),),
         documents=_documents(),
         computer=_computer(),
         subagents=_subagents(),
