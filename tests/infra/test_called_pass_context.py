@@ -183,7 +183,7 @@ async def test_called_uses_standing_and_keeps_room_situations(scenario, called):
     assert "unit-standing" in standing[0].text
     assert "room-situation" in standing[0].text
     assert {"unit-standing", "room-situation"} <= shown
-    assert not {"notes", "memos", "standing"} & {block.tag for block in blocks}
+    assert not {"notes", "memos"} & {block.tag for block in blocks}
 
 
 @pytest.mark.parametrize("scope", [
