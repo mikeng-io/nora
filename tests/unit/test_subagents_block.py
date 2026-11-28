@@ -6,7 +6,7 @@ job carries its live progress or says it is unknown; a finished one its outcome,
 report, documents and whether the room was told; this room's jobs only; the 24 h window and
 the five-row cap with a count of what was left out; `row.error` never reaches the block;
 every value is one line, cut and escaped; the block says what it is; it sits after
-`<documents>` and before `<standing>`; the fire path is never given the reader.
+`<documents>` and before `<source_objects>`; the fire path is never given the reader.
 """
 
 from __future__ import annotations
@@ -382,9 +382,9 @@ def test_the_block_says_what_it_is_when_it_was_read_and_what_not_to_repeat():
     assert "never that nothing ran" in desc
 
 
-def test_the_block_sits_after_documents_and_before_standing_and_is_per_turn():
+def test_the_block_sits_after_documents_and_before_source_objects_and_is_per_turn():
     order = {name: n for name, n, _ in _BLOCKS}
-    assert order["documents"] < order["subagents"] < order["standing"]
+    assert order["documents"] < order["subagents"] < order["source_objects"]
     assert {name: key for name, _, key in _BLOCKS}["subagents"] == "turn"
     line = SubagentLine("j1", "running", "a title", "an objective", NOW)
     view = SubagentsView(lines=(line,), now=NOW)
