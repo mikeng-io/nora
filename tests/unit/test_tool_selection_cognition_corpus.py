@@ -8,9 +8,9 @@ case. Every case is parked: the legacy Cognition session it ran on was removed.
 from __future__ import annotations
 
 from evals.scenarios import CORPUS_ENTRY, ROUTED_CORPORA, census, load_all
+from nora.agent.catalog.entries import NATIVE_TOOLS
 
 NAME = "tool_selection_cognition"
-NOW = 1_800_000_000_000
 
 def test_the_corpus_is_registered_and_routed():
     assert CORPUS_ENTRY[NAME] == "dreamer"
@@ -37,7 +37,7 @@ def test_no_real_name_or_quoted_message_appears_in_any_case_input():
     person («Miles posted 2 story frames»)."""
     cases = load_all(NAME)
     for case in cases:
-        allowed = {"Miles"} if "social_read" in case.metadata["tools"] else set()
+        allowed = {"Miles"} if "social_read" in case.metadata.get("tools", ()) else set()
         for name in ("Miles", "Ada"):
             if name not in allowed:
                 assert name not in case.input, (case.name, name)
@@ -45,28 +45,40 @@ def test_no_real_name_or_quoted_message_appears_in_any_case_input():
     assert len(named) == 3, named
 
 
+def test_parked_legacy_reads_keep_their_case_ids_without_expectations():
+    cases = {case.name: case for case in load_all(NAME)}
+    for name in (
+        "cognition_standing_read_before_standing_revise",
+        "cognition_standing_read_vs_note_read_where_the_room_stands",
+        "cognition_memo_read_vs_note_read_before_revising",
+    ):
+        metadata = cases[name].metadata
+        assert metadata["parked"]["why"]
+        assert not {"tools", "not_tools", "before"} & metadata.keys()
 
 
+def test_active_tool_selection_routing_uses_registered_tools():
+    active = [case for case in load_all("tool_selection") if not case.metadata.get("parked")]
+    assert active
+    for case in active:
+        metadata = case.metadata
+        tools = set(metadata.get("tools", ())) | set(metadata.get("not_tools", ()))
+        tools.update(metadata.get("required_tools", ()))
+        for field in ("before", "args_include", "args_exclude", "args_date"):
+            tools.update(metadata.get(field, {}))
+        for successors in metadata.get("before", {}).values():
+            tools.update(successors)
+        assert tools <= NATIVE_TOOLS.keys(), (case.name, tools - NATIVE_TOOLS.keys())
 
 
-
-
-def test_each_new_read_is_measured_against_the_sibling_it_is_confusable_with():
-    """`rollup_read`, `standing_read` and `social_read` each have routing
-    cases against their confusable siblings: `rollup_read` against
-    `record_query` and `where_been`, `standing_read` against
-    `note_read`/`note_search`, `social_read` against `record_query` and
-    `rollup_read`, and the order a revision needs (read before
-    `standing_revise`). `character_read` and `event_search` are not
-    `social_read`'s siblings: a Cognition session reads them to orient
-    itself, so a case forbidding them fails on a right session."""
-    by_name = {c.name: c.metadata for c in load_all(NAME)}
-    against = {
-        tool: {n for m in by_name.values() if tool in m["tools"] for n in m.get("not_tools", [])}
-        for tool in ("rollup_read", "standing_read", "social_read")
-    }
-    assert {"record_query", "where_been"} <= against["rollup_read"]
-    assert {"note_read", "note_search"} <= against["standing_read"]
-    assert {"record_query", "rollup_read"} <= against["social_read"]
-    ordered = by_name["cognition_standing_read_before_standing_revise"]
-    assert ordered["before"] == {"standing_read": ["standing_revise"]}
+def test_retained_read_cases_name_the_confusable_sibling():
+    metadata = [case.metadata for case in load_all(NAME)]
+    for tool, siblings in (
+        ("rollup_read", {"record_query", "where_been"}),
+        ("social_read", {"record_query", "rollup_read"}),
+    ):
+        negatives = {
+            negative for row in metadata if tool in row.get("tools", ())
+            for negative in row.get("not_tools", ())
+        }
+        assert siblings <= negatives
