@@ -131,5 +131,3 @@ class RegisterGraphLinks:
             self.metrics.inc(
                 "nora_comprehend_refused_parts_total", part=refusal.kind, reason=refusal.reason
             )
-        if result.refused:
-            raise ValueError("Register link projection refused")
