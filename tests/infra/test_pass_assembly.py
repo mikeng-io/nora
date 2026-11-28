@@ -416,10 +416,11 @@ async def test_fire_prefill_uses_the_room_unit_person_and_nora_profiles(
         assert prefill.index('<profile of="nora-pointer"') < lesson
     assert "Unrelated person observation" not in prefill
     assert "<culture" not in prefill
-    standing = prefill.split("<standing", 1)[1].split("</standing>", 1)[0]
+    assert prefill.count("<standing ") == 1
+    standing = prefill.split("<standing ", 1)[1].split("</standing>", 1)[0]
     assert "fire-unit-standing" in standing
     assert "fire-room-situation" in standing
-    assert all(f"<{tag}" not in prefill for tag in ("memos", "notes", "standing"))
+    assert all(f"<{tag}" not in prefill for tag in ("memos", "notes"))
 
 
 async def test_fire_prefill_keeps_profiles_after_the_standing_deadline(
