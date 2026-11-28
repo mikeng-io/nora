@@ -43,6 +43,12 @@ def test_graph_wake_refuses_the_same_resolved_model_with_legacy_lessons_on_or_of
     checker = build_graph_lesson_check(distinct, doctrine, instructions, client, metrics)
     assert checker is not None and checker.model == "resolved-model"
 
+    configured = distinct.model_copy(update={
+        "model_routes": {"dreamer": ModelRoute(model="other-model")},
+    })
+    checker = build_graph_lesson_check(configured, doctrine, instructions, client, metrics)
+    assert checker is not None and checker.model == "configured-check"
+
 
 def test_config_loads_judge_model_and_refuses_the_retired_key(example_config_path, tmp_path):
     current = example_config_path.read_text().replace(
