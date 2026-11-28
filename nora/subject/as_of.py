@@ -63,12 +63,12 @@ LIVE_BLOCKS: frozenset[str] = frozenset({"tool_catalogue", "presence"})
 #: (so it cannot carry its own closing tag), its closing tag ends a line.
 _BLOCK = re.compile(
     r"^<([a-z_]+)([^\n>]*[^/\n>])?>\n(.*?)\n</\1>$", re.MULTILINE | re.DOTALL)
-#: A self-closed empty presentation (`<graph_standing ... />`) is still a
+#: A self-closed empty presentation (`<standing ... />`) is still a
 #: compared surface: its attributes carry the read's status, so a timed-out
 #: read (`status="unavailable"`) and a successful empty one differ in the
 #: text rather than both vanishing from the comparison.
 _PRESENTATION = re.compile(r"^<([a-z_]+)([^\n>]*?)\s*/>$", re.MULTILINE)
-_OF = re.compile(r'\bof="([^"]+)"')
+_OF = re.compile(r'\sof="([^"]+)"')
 _UNAVAILABLE = re.compile(r'\bstatus="unavailable"')
 
 
@@ -77,8 +77,8 @@ def blocks_of(prefill_text: str) -> dict[str, str]:
 
     `prefill_text` is the block message `EngagementGraph.prompt` returns —
     exactly what a tag turn's Langfuse generation records. A block rendered
-    per subject (`graph_profile`) repeats its name, so its key carries the
-    `of` attribute: `graph_profile of=entity:unit:nora`. Self-closed empty
+    per subject can repeat its name, so its key carries the
+    `of` attribute: `profile of=entity:unit:nora`. Self-closed empty
     presentations count too: their attributes carry the read's status, so
     `status="unavailable"` and a successful empty block differ here. Any
     other duplicate fails closed rather than keeping one of them.
@@ -91,7 +91,7 @@ def blocks_of(prefill_text: str) -> dict[str, str]:
     for match in (*blocks, *top_level):
         name, attrs = match.group(1), match.group(2) or ""
         key = name
-        if name == "graph_profile" and (of := _OF.search(attrs)):
+        if of := _OF.search(attrs):
             key = f"{name} of={of.group(1)}"
         if key in out:
             raise ValueError(f"block {key!r} appears twice; this is not one prefill")

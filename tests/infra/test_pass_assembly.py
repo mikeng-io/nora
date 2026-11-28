@@ -110,11 +110,11 @@ async def test_called_renders_steady_blocks_floor_people_standing_and_related_in
     context = await _assembler(scenario).assemble("called", data, floor, SCOPE, NOW)
     elements = _elements(context)
     assert [(element.tag, element.get("of")) for element in elements] == [
-        ("graph_profile", "nora-pointer"), ("graph_lessons", None),
-        ("graph_profile", "room-here"), ("graph_profile", "unit-pointer"),
+        ("profile", "nora-pointer"), ("lessons", None),
+        ("profile", "room-here"), ("profile", "unit-pointer"),
         ("members", None), ("transcript", None),
-        ("graph_profile", "person-other"), ("graph_profile", "person-here"),
-        ("graph_standing", None), ("related", None),
+        ("profile", "person-other"), ("profile", "person-here"),
+        ("standing", None), ("related", None),
     ]
     assert "called-item" in elements[-1].text
     assert "local-intention" in elements[-2].text
@@ -155,7 +155,7 @@ async def test_failed_anchors_mark_every_presentation_unavailable_and_keep_floor
         "members", "transcript",
     }]
     assert {element.tag for element in blocks} == {
-        "graph_profile", "graph_lessons", "graph_standing", "related",
+        "profile", "lessons", "standing", "related",
     }
     assert {element.attrib["status"] for element in blocks} == {"unavailable"}
     assert {element.attrib["cause"] for element in blocks} == {"anchor_read_failed"}
@@ -166,7 +166,7 @@ async def test_debrief_holds_only_standing_after_the_floor(scenario) -> None:
     await intention(scenario, "open-for-debrief")
     context = await _assembler(scenario).assemble("debrief", DebriefInput(()), _floor(), SCOPE, NOW)
     elements = _elements(context)
-    assert [element.tag for element in elements] == ["members", "transcript", "graph_standing"]
+    assert [element.tag for element in elements] == ["members", "transcript", "standing"]
     assert "open-for-debrief" in elements[-1].text
 
 
@@ -207,7 +207,7 @@ def _room_list(scenario: Scenario, *, assembler: PassAssembler | None = None):
         conversation_type="group", deliverer=SinkSender(), metrics=Metrics(),
         room=Room(platform="signal", conversation_id=ROOM, roster_source=None, persons=persons),
         transit_source=_UNREACHABLE_TRANSIT, rooms=directory,
-        graph_profiles=assembler if assembler is not None else _assembler(scenario),
+        profile_reader=assembler if assembler is not None else _assembler(scenario),
         clock=lambda: NOW,
     )
     return next(t._tool_func for t in tools if t.tool_name == "room_list")
@@ -237,7 +237,7 @@ async def test_room_list_bounds_profiles_to_the_graph_read_budget(
     assert next(r["culture"] for r in result["rooms"] if r["here"]) == expected
 
 
-async def test_room_list_reads_each_rooms_graph_profile_in_the_turn_audience(scenario) -> None:
+async def test_room_list_reads_each_rooms_profile_in_the_turn_audience(scenario) -> None:
     await pointers(scenario)
     await _trait(scenario, "local-culture", "room-here", "Keeps its decisions brief.\nSecond line.")
     await _trait(scenario, "unit-culture", "unit-pointer", "This belongs to the unit.")
@@ -355,7 +355,7 @@ async def test_room_list_reports_missing_graph_schema_as_unavailable(scenario) -
 
 
 @pytest.mark.parametrize("show_nora", (True, False))
-async def test_fire_prefill_uses_the_room_unit_person_and_nora_graph_profiles(
+async def test_fire_prefill_uses_the_room_unit_person_and_nora_profiles(
     scenario, doctrine_store, show_nora,
 ) -> None:
     alias = "fixture-arriving-thread"
@@ -400,29 +400,30 @@ async def test_fire_prefill_uses_the_room_unit_person_and_nora_graph_profiles(
         ("room-here", "Room observation"), ("unit-pointer", "Unit observation"),
         ("person-here", "Person observation"),
     ):
-        opening = f'<graph_profile of="{pointer}"'
+        opening = f'<profile of="{pointer}"'
         assert opening in prefill
         fragment = prefill.split(opening, 1)[1]
-        assert body in fragment.split("</graph_profile>", 1)[0]
-    assert ('<graph_profile of="nora-pointer"' in prefill) is show_nora
+        assert body in fragment.split("</profile>", 1)[0]
+    assert ('<profile of="nora-pointer"' in prefill) is show_nora
     assert ("Nora observation" in prefill) is show_nora
-    lesson = prefill.index("<graph_lessons")
-    assert "</graph_lessons>" in prefill[lesson:]
-    assert "fixture-lesson" in prefill[lesson:].split("</graph_lessons>", 1)[0]
-    assert lesson < prefill.index('<graph_profile of="room-here"') < prefill.index(
-        '<graph_profile of="unit-pointer"'
+    lesson = prefill.index("<lessons")
+    assert "</lessons>" in prefill[lesson:]
+    assert "fixture-lesson" in prefill[lesson:].split("</lessons>", 1)[0]
+    assert lesson < prefill.index('<profile of="room-here"') < prefill.index(
+        '<profile of="unit-pointer"'
     )
     if show_nora:
-        assert prefill.index('<graph_profile of="nora-pointer"') < lesson
+        assert prefill.index('<profile of="nora-pointer"') < lesson
     assert "Unrelated person observation" not in prefill
     assert "<culture" not in prefill
-    standing = prefill.split("<graph_standing", 1)[1].split("</graph_standing>", 1)[0]
+    assert prefill.count("<standing ") == 1
+    standing = prefill.split("<standing ", 1)[1].split("</standing>", 1)[0]
     assert "fire-unit-standing" in standing
     assert "fire-room-situation" in standing
-    assert all(f"<{tag}" not in prefill for tag in ("memos", "notes", "standing"))
+    assert all(f"<{tag}" not in prefill for tag in ("memos", "notes"))
 
 
-async def test_fire_prefill_keeps_graph_profiles_after_the_standing_deadline(
+async def test_fire_prefill_keeps_profiles_after_the_standing_deadline(
     scenario, doctrine_store,
 ) -> None:
     await pointers(scenario)

@@ -330,7 +330,7 @@ class ToolRegistry:
         lineage: LineagePolicy | None = None,
         rollup: RollupReadSource | None = None,
         # Scoped graph profiles for room_list.
-        graph_profiles: GraphProfileReader | None = None,
+        profile_reader: GraphProfileReader | None = None,
         # `social_read`'s read of the social stream's Record: `None` withholds it.
         social_items: SocialItemsSource | None = None,
         # `[subagent] enabled` (ships off): the desk the four `subagent_*` tools
@@ -370,7 +370,7 @@ class ToolRegistry:
         self._documents = documents
         self._lineage = lineage
         self._rollup = rollup
-        self._graph_profiles = graph_profiles
+        self._profile_reader = profile_reader
         self._social_items = social_items
         # Tools with missing dependencies are omitted from every surface
         # and from the gate's digest, so a turn cannot route to them.
@@ -1059,7 +1059,7 @@ class ToolRegistry:
             memory_intake=self._memory_intake,
             lineage=self._lineage,
             rollup=self._rollup,
-            graph_profiles=self._graph_profiles,
+            profile_reader=self._profile_reader,
             social_items=self._social_items,
             versions=self._versions, releases=self._releases,
             giphy_source=self._giphy,

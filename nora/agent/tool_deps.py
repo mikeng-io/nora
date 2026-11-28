@@ -182,7 +182,7 @@ class ToolDeps:
     observations: Any = None
     lineage: LineagePolicy | None = None
     rollup: RollupReadSource | None = None
-    graph_profiles: GraphProfileReader | None = None
+    profile_reader: GraphProfileReader | None = None
     social_items: SocialItemsSource | None = None
     subagent: SubagentDesk | None = None
     video: VideoDesk | None = None

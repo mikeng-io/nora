@@ -211,7 +211,7 @@ async def test_old_poll_pushed_beyond_40_messages_still_surfaces():
 
     prompt = _prompt(ctx)
     assert "<source_event" in prompt and 'kind="poll"' in prompt
-    assert "<source_object" in prompt and "closed" in prompt
+    assert "<source_object " in prompt and "closed" in prompt
     assert "p1" not in prompt
     assert "room-a" not in prompt and "acct" not in prompt
 
@@ -511,7 +511,7 @@ async def test_unknown_source_time_never_dresses_up_as_upstream():
     assert 'time="unknown"' in ev_line and "received=" in ev_line
     assert "at=" not in ev_line
     obj_line = next(ln for ln in prompt.splitlines()
-                    if ln.startswith("<source_object"))
+                    if ln.startswith("<source_object "))
     assert 'time="unknown"' in obj_line and "received=" in obj_line
     assert "observed=" not in obj_line
 
@@ -548,7 +548,7 @@ async def test_clockless_update_does_not_inherit_the_previous_source_clock():
     assert detail["detail"]["time_quality"] == "unknown"
     assert detail["detail"]["received_ms"] == head.received_ms
     line = next(line for line in _prompt(ctx).splitlines()
-                if line.startswith("<source_object") and 'kind="pin"' in line)
+                if line.startswith("<source_object ") and 'kind="pin"' in line)
     assert 'time="unknown"' in line and "observed=" not in line
 
 
@@ -801,7 +801,7 @@ async def test_old_target_reaction_union_reaches_standing_and_real_tools(outside
     assert (mid not in {row.id for row in ctx.transcript}) == outside_window
     prompt = _prompt(ctx)
     line = next(line for line in prompt.splitlines()
-                if line.startswith("<source_object") and 'kind="reaction"' in line)
+                if line.startswith("<source_object ") and 'kind="reaction"' in line)
     # The pointer is the typed `on` attribute — the SAME row numbering
     # `replying_to="n"` uses — present only while the target is visible, so no
     # pointer invents a target the transcript does not show.

@@ -313,7 +313,7 @@ async def test_guess_profile_renders_its_refuted_grade(scenario):
     review = _review(scenario, _model("guess", "refuted", "later"))
     await review()
     assembled = await _assembler(scenario).assemble("wake", WakeInput(()), (), SCOPE, NOW)
-    profile = next(block for block in assembled.blocks if block.name == "graph_profile")
+    profile = next(block for block in assembled.blocks if block.name == "profile")
     assert "guess" in str(profile.body)
     assert "grade=refuted" in str(profile.body)
 
@@ -344,8 +344,8 @@ def test_review_fails_startup_when_the_resolved_judge_is_the_writer(example_conf
     metrics = Metrics()
     cfg = example_config.model_copy(update={
         "cognition": example_config.cognition.model_copy(update={"enabled": True}),
-        "lessons": example_config.lessons.model_copy(update={
-            "check_model": "generated-configured-judge",
+        "judge": example_config.judge.model_copy(update={
+            "model": "generated-configured-judge",
         }),
         "model_routes": {
             "lesson_check": ModelRoute(model="generated-shared-model"),

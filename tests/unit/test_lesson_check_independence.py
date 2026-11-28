@@ -6,7 +6,7 @@ import pytest
 
 from nora.app.composition_lesson_check import build_graph_lesson_check
 from nora.app.startup import StartupError
-from nora.config import ModelRoute
+from nora.config import ConfigError, ModelRoute, load
 from nora.doctrine.loader import DoctrineStore
 from nora.instructions.dreamer import DreamerInstructions
 from nora.obs.metrics import Metrics
@@ -17,9 +17,8 @@ def test_graph_wake_refuses_the_same_resolved_model_with_legacy_lessons_on_or_of
     example_config, enabled,
 ):
     cfg = example_config.model_copy(update={
-        "lessons": example_config.lessons.model_copy(update={
-            "enabled": enabled, "check_model": "configured-check",
-        }),
+        "lessons": example_config.lessons.model_copy(update={"enabled": enabled}),
+        "judge": example_config.judge.model_copy(update={"model": "configured-check"}),
         "model_routes": {
             "lesson_check": ModelRoute(model="resolved-model"),
             "dreamer": ModelRoute(model="resolved-model"),
@@ -43,3 +42,22 @@ def test_graph_wake_refuses_the_same_resolved_model_with_legacy_lessons_on_or_of
     }})
     checker = build_graph_lesson_check(distinct, doctrine, instructions, client, metrics)
     assert checker is not None and checker.model == "resolved-model"
+
+    configured = distinct.model_copy(update={
+        "model_routes": {"dreamer": ModelRoute(model="other-model")},
+    })
+    checker = build_graph_lesson_check(configured, doctrine, instructions, client, metrics)
+    assert checker is not None and checker.model == "configured-check"
+
+
+def test_config_loads_judge_model_and_refuses_the_retired_key(example_config_path, tmp_path):
+    current = example_config_path.read_text().replace(
+        '[judge]\nmodel = "nora-judge"', '[judge]\nmodel = "fixture-independent-judge"',
+    )
+    path = tmp_path / "config.toml"
+    path.write_text(current)
+    assert load(path, require_secrets=False).judge.model == "fixture-independent-judge"
+
+    path.write_text(current.replace("[lessons]\n", '[lessons]\ncheck_model = "fixture-old"\n'))
+    with pytest.raises(ConfigError, match=r"\[lessons\] check_model has moved to \[judge\] model"):
+        load(path, require_secrets=False)

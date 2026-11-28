@@ -1074,12 +1074,12 @@ def test_judge_export_retains_raw_votes_and_errors_privately(monkeypatch, tmp_pa
 async def test_identity_judgements_receive_the_room_role_the_subject_was_shown(
     judged, monkeypatch, criterion,
 ):
-    role = ('<graph_profile of="synthetic:room:signal:reading" entity="room">\n'
+    role = ('<profile of="synthetic:room:signal:reading" entity="room">\n'
             'In this reading circle, Ada asked the agent to keep the shared reading list.\n'
-            '</graph_profile>')
+            '</profile>')
 
     async def drive(_subject, _case, *, now_ms):
-        _render_her_turn(blocks=role, rendered="graph_profile,transcript")
+        _render_her_turn(blocks=role, rendered="profile,transcript")
         return Outcome(admitted=True, said=("I keep this circle's reading list.",))
 
     monkeypatch.setitem(ENTRY_POINTS, "tag", EntryPoint(drive=drive, delivers_input=True))

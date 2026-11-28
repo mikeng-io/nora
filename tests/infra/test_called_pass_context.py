@@ -89,9 +89,9 @@ async def test_called_presents_the_floor_and_scoped_profiles_in_assembled_order(
 
     blocks = elements(rendered)
     assert [b.tag for b in blocks] == [
-        "graph_profile", "graph_lessons", "graph_profile", "graph_profile",
+        "profile", "lessons", "profile", "profile",
         "members", "clock", "presence", "tool_catalogue", "transcript",
-        "replying_to", "tag_message", "graph_profile", "graph_standing", "related",
+        "replying_to", "tag_message", "profile", "standing", "related",
     ]
     assert blocks[2].get("of") == "room-here"
     assert "Generated room fact" in (blocks[2].text or "")
@@ -144,7 +144,7 @@ async def test_a_room_without_a_unit_does_not_read_message_graph_ids(scenario, c
     )
 
     blocks = elements(rendered)
-    assert blocks.find("graph_standing").get("cause") == "reading_room_unavailable"
+    assert blocks.find("standing").get("cause") == "reading_room_unavailable"
     assert blocks.find("tag_message").text.strip() == "An addressing message"
     assert not shown and not reads and not retrieval.reads
 
@@ -160,13 +160,12 @@ async def test_a_called_pass_carries_the_graph_lesson_and_no_legacy_block(scenar
         ctx, row, now,
     )
 
-    lessons = elements(rendered).findall("graph_lessons")
+    lessons = elements(rendered).findall("lessons")
     assert len(lessons) == 1 and "fixture-lesson" in (lessons[0].text or "")
     assert "fixture-lesson" in shown
-    assert "<lessons" not in rendered.replace("<graph_lessons", "")
 
 
-async def test_called_uses_graph_standing_and_keeps_room_situations(scenario, called):
+async def test_called_uses_standing_and_keeps_room_situations(scenario, called):
     access, ctx, row, now = called
     await intention(scenario, "unit-standing", origin_room=None, asserted_at=now)
     await scenario.claim("room-situation", part="situation", asserted_at=now)
@@ -179,12 +178,12 @@ async def test_called_uses_graph_standing_and_keeps_room_situations(scenario, ca
     )
 
     blocks = elements(rendered)
-    standing = blocks.findall("graph_standing")
+    standing = blocks.findall("standing")
     assert len(standing) == 1
     assert "unit-standing" in standing[0].text
     assert "room-situation" in standing[0].text
     assert {"unit-standing", "room-situation"} <= shown
-    assert not {"notes", "memos", "standing"} & {block.tag for block in blocks}
+    assert not {"notes", "memos"} & {block.tag for block in blocks}
 
 
 @pytest.mark.parametrize("scope", [
@@ -202,6 +201,6 @@ async def test_called_standing_omits_unreadable_unit_intentions(scenario, called
         ctx, row, now,
     )
 
-    assert "visible-standing" in elements(rendered).find("graph_standing").text
+    assert "visible-standing" in elements(rendered).find("standing").text
     assert "unreadable-standing" not in rendered
     assert "unreadable-standing" not in shown

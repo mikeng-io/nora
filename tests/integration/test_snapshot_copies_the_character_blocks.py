@@ -1,7 +1,7 @@
 """A restore copies the account claims the profiles render.
 
 The unit's own account, Nora's own, and the account of each person the room
-LISTS are profile presentations of graph claims (`graph_profile`,
+LISTS are profile presentations of graph claims (`profile`,
 design/cognition/context.md's migration table — `unit_culture`, `self` and
 `character` live there now). A restore (`sandbox_as_of`, the graph's as-of
 mechanism) brings them over, each as of the instant and at the age it had.
@@ -59,7 +59,7 @@ MILES_ENTITY = "nora:identity:miles_novak"
 
 async def _graph_accounts(engine: Any, item_id: str) -> None:
     """The unit's, Nora's and the listed person's accounts as graph claims —
-    what `graph_profile` renders of each subject — plus what must not render:
+    what `profile` renders of each subject — plus what must not render:
     claims asserted after the instant, the unlisted person's account, and the
     same person's account in another unit.
     """
@@ -217,17 +217,17 @@ async def test_an_eval_turn_carries_the_unit_and_person_accounts_as_of_then(
         blocks = await render_tag_blocks(restored, message=tag, now=NOW)
 
     assert "a close group of cyclists" in blocks[
-        "graph_profile of=" + UNIT_ENTITY]
+        "profile of=" + UNIT_ENTITY]
     assert "asserted=5h ago" in blocks[
-        "graph_profile of=" + UNIT_ENTITY], blocks
+        "profile of=" + UNIT_ENTITY], blocks
     assert "she answers short and dry" in blocks[
-        "graph_profile of=" + NORA_ENTITY]
+        "profile of=" + NORA_ENTITY]
     assert "asserted=3h ago" in blocks[
-        "graph_profile of=" + NORA_ENTITY], blocks
+        "profile of=" + NORA_ENTITY], blocks
     assert "Miles plans, then waits" in blocks[
-        "graph_profile of=" + MILES_ENTITY]
+        "profile of=" + MILES_ENTITY]
     assert "asserted=2h ago" in blocks[
-        "graph_profile of=" + MILES_ENTITY], blocks
+        "profile of=" + MILES_ENTITY], blocks
     rendered = "\n".join(blocks.values())
     for absent in ("AFTER:", "UNLISTED:", "OTHER UNIT:"):
         assert absent not in rendered, absent

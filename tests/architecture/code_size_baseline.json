@@ -1363,11 +1363,6 @@
   "nora/language/profile_render.py": {
     "internal_docstrings": 1
   },
-  "nora/language/shared_render.py": {
-    "functions": {
-      "render_shared_state": 124
-    }
-  },
   "nora/obs/determination.py": {
     "comment_blocks": 3,
     "internal_docstrings": 1

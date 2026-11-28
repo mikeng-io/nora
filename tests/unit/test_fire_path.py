@@ -2618,7 +2618,7 @@ async def test_proactive_event_offers_graph_reads_and_excludes_legacy_tools(
     assert {"memory_read", "memory_search", "send_reply"} <= tools
     assert not {"note_read", "note_search", "memo_read", "standing_read"} & tools
     assert ("intention_commit" in tools) == (kind in {"compute", "relay"})
-    assert "<graph_standing" in call["tag_message"]
+    assert "<standing" in call["tag_message"]
     assert "<tag_message" in call["tag_message"]
 
 

@@ -415,7 +415,7 @@ def test_rollup_read_is_a_tag_turns_tool_and_no_other_occasions():
 def test_the_relevance_gates_capability_digest_does_not_offer_what_a_reply_cannot_do():
     from nora.agent.registry import ToolRegistry
 
-    wired = ToolRegistry(rollup=object(), graph_profiles=object(),
+    wired = ToolRegistry(rollup=object(), profile_reader=object(),
                          social_items=object())
     digest = wired.capability_digest()
     assert "social_read" not in digest

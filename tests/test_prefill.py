@@ -227,7 +227,7 @@ def _full_prefill_body() -> str:
         # the block could never be checked.
         catalogue="* now — the current time, here.\n- weather — the forecast.",
     )[1]["content"][0]["text"]
-    block = re.search(r"<standing\b.*?</standing>", body, re.S)
+    block = re.search(r"<source_objects\b.*?</source_objects>", body, re.S)
     assert block is not None
     return body
 
@@ -1163,7 +1163,7 @@ def test_the_prefill_span_names_which_blocks_were_built_and_at_what_size(
 ):
     """The span answers "which blocks were built, from which reads, at what
     size" — every block name doubles as the read it came from
-    (`standing` here is the source-object presentation), so the
+    (`source_objects` is the source-object presentation), so the
     span needs only the name and the rendered size, not a second lookup back
     into those stores.
 
@@ -1184,7 +1184,7 @@ def test_the_prefill_span_names_which_blocks_were_built_and_at_what_size(
     # These blocks all have content
     # in this fixture and must show up as BUILT; asserted by subset rather
     # than equality, so this does not have to re-derive the full catalogue.
-    assert {"peer_card", "standing", "transcript"} <= set(rendered)
+    assert {"peer_card", "source_objects", "transcript"} <= set(rendered)
     assert recorded.attributes["nora.prefill.blocks_declared"] >= len(rendered)
     assert recorded.attributes["nora.prefill.size_chars"] > 0
 
@@ -1383,7 +1383,7 @@ async def test_eval_context_filter_withholds_only_selected_optional_blocks(tmp_p
         body = await _called_prompt(ctx)
     assert "<documents " in body and "<computer " not in body and "<subagents " not in body
     assert "<transcript " in body and "<tag_message " in body
-    assert "<graph_profile " in body and "<graph_standing " in body
+    assert "<profile " in body and "<standing " in body
     assert "full_transcript_window: 1" in received[0]
     assert "first 600 characters" in received[0]
     assert await _called_prompt(ctx) == before

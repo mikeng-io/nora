@@ -2280,39 +2280,35 @@ class LessonsConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     enabled: bool = False
-
-    #: How far back the correction fast path looks on a unit's first session
-    #: (the lower edge of its window when no session has settled yet).
-    #: **604800** (7 days): a unit's whole history is not handed in as
-    #: corrections.
+    #: How far back the correction fast path looks on a unit's first session (the lower edge of its
+    #: window when no session has settled yet). **604800** (7 days): a unit's whole history is not
+    #: handed in as corrections.
     stale_seconds: int = Field(default=604_800, ge=3600)
-
-    #: A lesson not re-evidenced (written or reinforced) for this long is
-    #: retired by code. **5184000** (60 days); unmeasured.
+    #: A lesson not re-evidenced (written or reinforced) for this long is retired by code.
+    #: **5184000** (60 days); unmeasured.
     horizon_seconds: int = Field(default=5_184_000, ge=86_400)
-
-    #: Closed episodes one session is handed, the newest. What is past it is
-    #: consumed, as a Character session's backlog is.
+    #: Closed episodes one session is handed, the newest. What is past it is consumed, as a
+    #: Character session's backlog is.
     batch_limit: int = Field(default=100, ge=1)
-
-    #: The correction fast path: a message that speaks to her and reads as an
-    #: instruction about how she acts is shown to the next session once it is
-    #: this many seconds old, not held for the episode count. **600** (10
-    #: minutes): long enough for the conversation around it to settle, short enough
-    #: that the lesson lands the same evening. `0` turns the fast path off.
+    #: The correction fast path: a message that speaks to her and reads as an instruction about how
+    #: she acts is shown to the next session once it is this many seconds old, not held for the
+    #: episode count. **600** (10 minutes): long enough for the conversation around it to settle,
+    #: short enough that the lesson lands the same evening. `0` turns the fast path off.
     correction_quiet_seconds: int = Field(default=600, ge=0)
 
-    #: The doctrine check's model: a separate call that reads each lesson against the
-    #: law before it is written. `""` is `[llm] model`, the tag model, so the judge is
-    #: never the Dreamer model that wrote the lesson.
-    check_model: str = ""
-    #: Its reasoning effort; `""` is `low`. A verdict over the law's rules is a
-    #: judgement.
+    #: The lesson check uses low effort by default to judge against the law.
     check_reasoning_effort: str = ""
-    #: Its wall clock and output ceiling. The answer is one JSON object with a
-    #: sentence in it; 2048 leaves a reasoning model room before it answers.
+    #: Its wall clock and output ceiling. The answer is one JSON object with a sentence in it; 2048
+    #: leaves a reasoning model room before it answers.
     check_timeout_seconds: float = Field(default=60.0, gt=0)
     check_max_tokens: int = Field(default=2048, ge=128)
+
+
+class JudgeConfig(BaseModel):
+    """Independent judge for lesson checks and grading. Evals use `[evals] judge_model`."""
+
+    model_config = ConfigDict(extra="forbid")
+    model: str = ""  # An empty value falls back to [llm] model.
 
 
 class XaiImageGenConfig(BaseModel):
@@ -3351,6 +3347,8 @@ class Config(BaseModel):
                 "been removed; delete the section"
             )
         lessons = data.get("lessons", {})
+        if isinstance(lessons, dict) and "check_model" in lessons:
+            raise ValueError("[lessons] check_model has moved to [judge] model")
         if isinstance(lessons, dict) and "render" in lessons:
             raise ValueError(
                 "[lessons] render has been removed; tag and fire turns read the graph's "
@@ -3424,6 +3422,7 @@ class Config(BaseModel):
     speech: SpeechConfig = SpeechConfig()
     heartbeat: HeartbeatConfig = HeartbeatConfig()
     lessons: LessonsConfig = LessonsConfig()
+    judge: JudgeConfig = JudgeConfig()
     standing: StandingConfig = StandingConfig()
     # Optional and defaulted — see `MusicConfig`. Ships INERT
     # (`enabled = false`); off, `AdapterRegistry.from_config` builds no
@@ -3615,10 +3614,10 @@ class Config(BaseModel):
         writer's own model grades its own homework. Compared by the configured
         name, so an operator who points two aliases at one model is not caught; a
         same-name one is."""
-        judge = self.lessons.check_model or self.llm.model
+        judge = self.judge.model or self.llm.model
         if self.lessons.enabled and judge == self.dreamer_model():
             raise ValueError(
-                f"[lessons] check_model resolves to {judge!r}, the Dreamer's own model: "
+                f"[judge] model resolves to {judge!r}, the Dreamer's own model: "
                 "the doctrine check must be a model other than the one writing lessons"
             )
         return self

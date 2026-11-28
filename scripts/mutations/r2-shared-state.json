@@ -7,13 +7,6 @@
     "target": "tests/unit/test_fire_path.py::test_a_proactive_act_runs_when_only_optional_display_coverage_fails"
   },
   {
-    "name": "standing-keeps-settled-ledger-outcomes",
-    "file": "nora/language/shared_render.py",
-    "old": "and e.status != \"open\"",
-    "new": "and e.status == \"open\"",
-    "target": "tests/unit/test_shared_state.py::test_closed_decisions_and_done_commitments_survive_the_standing_read"
-  },
-  {
     "name": "r2-5-fact-projection-latest-per-key",
     "file": "nora/domain/tag_trace.py",
     "old": "if prior is None or item.ordinal > prior.ordinal:",
@@ -35,11 +28,11 @@
     "target": "tests/contract/test_tag_trace_store_contract.py::test_turn_facts_pair_structurally_and_reduce_latest_per_key"
   },
   {
-    "name": "unresolved-only-state-must-render",
+    "name": "reader-keeps-unresolved-only-state",
     "file": "nora/agent/shared_state.py",
     "old": "elif not entries and not unresolved_lines:",
     "new": "elif not entries:",
-    "target": "tests/unit/test_shared_state.py::test_an_unresolved_only_view_is_rendered"
+    "target": "tests/unit/test_shared_state.py::test_the_reader_keeps_an_unresolved_only_view"
   },
   {
     "name": "sql-fact-transfer-bounded-after-reduction",
@@ -56,20 +49,6 @@
     "target": "tests/contract/test_tag_trace_store_contract.py::test_turn_facts_last_result_for_a_call_wins"
   },
   {
-    "name": "delivered-act-retains-canonical-identity",
-    "file": "nora/language/shared_render.py",
-    "old": "identity = f\"{e.subject_ref or 'subject unresolved'} · {e.action or 'remind'}\"",
-    "new": "identity = \"identity omitted\"",
-    "target": "tests/unit/test_shared_state.py::test_delivery_facts_expose_action_identity_and_legacy_uncertainty"
-  },
-  {
-    "name": "renderer-keeps-reader-selected-facts",
-    "file": "nora/language/shared_render.py",
-    "old": "for e in recent:",
-    "new": "for e in recent[:12]:",
-    "target": "tests/unit/test_shared_state.py::test_renderer_keeps_all_facts_selected_by_the_bounded_reader"
-  },
-  {
     "name": "nontext-send-is-a-delivery-fact",
     "file": "nora/agent/shared_state.py",
     "old": "subject=\" \".join(str(h.row.body or \"\").split())[:140]\n                        or \"message without text\",",
@@ -81,7 +60,7 @@
     "file": "nora/agent/shared_state.py",
     "old": "evidence = f\"source={record_ref}; recorded={recorded_at}\"",
     "new": "evidence = \"provenance omitted\"",
-    "target": "tests/unit/test_shared_state.py::test_an_unresolved_only_view_is_rendered"
+    "target": "tests/unit/test_shared_state.py::test_the_reader_keeps_an_unresolved_only_view"
   },
   {
     "name": "review3-sql-old-act-lifecycle",

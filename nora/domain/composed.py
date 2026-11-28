@@ -51,7 +51,6 @@ COMPOSERS = frozenset(
         "nora.language.context_render:render_transcript",
         "nora.language.note_render:today_block",
         "nora.language.presence_render:render_presence",
-        "nora.language.shared_render:render_shared_state",
         "nora.language.subagent_render:render_brief",
         "nora.language.subagents_render:render_subagents",
         "nora.language.topic_render:render_topics",

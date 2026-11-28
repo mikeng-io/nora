@@ -110,9 +110,10 @@ async def test_offline_called_pass_uses_the_graph_floor(
 
     assert calls, "the scripted runner was never invoked"
     rendered = calls[0]["tag_message"]
-    assert "<graph_standing " in rendered and 'status="unavailable"' in rendered
+    assert rendered.count("<standing ") == 1
+    assert 'status="unavailable"' in rendered.split("<standing ", 1)[1].split(">", 1)[0]
     assert "<transcript " in rendered and "<tag_message " in rendered
     assert "nora.000 hi" in rendered
-    assert "<standing " not in rendered and "<notes " not in rendered
+    assert "<notes " not in rendered
     assert "the group is planning a weekend trip" not in rendered
     assert "a tracked uncertainty" not in rendered

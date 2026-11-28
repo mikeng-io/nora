@@ -11,7 +11,7 @@ from nora.memory.domain.pass_declarations import PassName, declaration
 from nora.memory.domain.retrieval import RetrievalBounds
 
 NOW = datetime(2026, 11, 2, tzinfo=UTC)
-ALL = ("graph_profile", "graph_standing", "graph_lessons", "related")
+ALL = ("profile", "standing", "lessons", "related")
 
 
 def test_the_passes_declare_their_presentations_bounds_and_pull() -> None:
@@ -19,7 +19,7 @@ def test_the_passes_declare_their_presentations_bounds_and_pull() -> None:
         "called": (ALL, ("read",), 2, 8, 40, 180),
         "ambient": (ALL, ("read",), 2, 8, 40, 180),
         "proactive": (ALL, ("read",), 2, 8, 40, 180),
-        "debrief": (("graph_standing",), (), 1, 8, 30, 30),
+        "debrief": (("standing",), (), 1, 8, 30, 30),
         "wake": (ALL, ("read",), 3, 10, 80, 365),
         "wake_history": (ALL, ("read",), 3, 10, 80, 365),
         "review": ((), ("read",), 1, 10, 60, 365),

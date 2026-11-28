@@ -7,7 +7,7 @@ store is down (and then it is a counted error, never a wrong id, never a failed 
 this room's documents only, whoever made another room's; at most five, most recently
 revised first; an age, a revision and the id on every line; a title is one line, cut,
 and cannot forge a line or close the tag; the block says what it is and what to do with
-the id; it sits after `<computer>` and before `<standing>`; its token cost.
+the id; it sits after `<computer>` and before `<source_objects>`; its token cost.
 """
 
 from __future__ import annotations
@@ -148,11 +148,11 @@ def test_an_empty_title_is_said_not_blank():
     assert render_documents(_view(_line(""))).body.text.startswith('"(untitled)" · id ')
 
 
-def test_the_block_sits_after_computer_and_before_standing_in_the_prompt():
+def test_the_block_sits_after_computer_and_before_source_objects_in_the_prompt():
     from nora.agent.prefill import _BLOCKS
 
     order = {name: n for name, n, _ in _BLOCKS}
-    assert order["computer"] < order["documents"] < order["standing"]
+    assert order["computer"] < order["documents"] < order["source_objects"]
     assert {name: key for name, _, key in _BLOCKS}["documents"] == "turn"
     text = _prefill_text(_ctx(_view(_line("Trip"))))
     assert "<documents " in text and '"Trip"' in text

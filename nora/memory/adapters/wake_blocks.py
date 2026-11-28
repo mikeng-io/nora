@@ -40,7 +40,7 @@ def wake_blocks(
         agenda += builder.graph_rows(open_intentions)
     corrections = tuple(
         s for s in stimuli
-        if s.kind == "strong_cue" and "addresses_nora" in s.cues
+        if s.kind == "strong_cue" and s.occurrence == "" and "addresses_nora" in s.cues
         and s.identity not in (None, "nora") and rows[s.graph_id].kind == "item"
     )
     verdicts = tuple(

@@ -93,7 +93,7 @@ def _make_room_list(deps):
         when available. Pass `room` to send_to or room_read.
         """
         c = SimpleNamespace(
-            graph_profiles=deps.graph_profiles,
+            profile_reader=deps.profile_reader,
             pass_scope=deps.pass_scope,
             content_checks=deps.content_checks,
             metrics=deps.metrics,
@@ -426,7 +426,7 @@ async def _room_list__unit(c):
 
 
 async def _room_profiles(c) -> tuple[dict[str, str], ...]:
-    if c.graph_profiles is None:
+    if c.profile_reader is None:
         return tuple({"status": "unavailable", "note": _PROFILE_NOTES["unavailable"]}
                      for _ in c.unit.rooms)
     view = await c.room.scope()
@@ -439,7 +439,7 @@ async def _room_profiles(c) -> tuple[dict[str, str], ...]:
     subjects: dict[tuple[PointerKind, str], str] = {
         ("room", room_key(r.platform, r.conversation_id)): _room_name(r) for r in c.unit.rooms
     }
-    profiles = await c.graph_profiles.read_profiles(
+    profiles = await c.profile_reader.read_profiles(
         reading, subjects, c.now, as_of=scope.as_of if scope is not None else None,
         concerns=scope.concerns if scope is not None else frozenset(),
     )

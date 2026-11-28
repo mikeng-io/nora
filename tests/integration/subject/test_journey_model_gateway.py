@@ -136,7 +136,7 @@ def _language_declarations(cfg, request, background, tool_spec):
             (
                 request(
                     "lesson_check",
-                    cfg.lessons.check_model,
+                    cfg.judge.model,
                     '<law_rules key="turn"/><lesson_to_check key="turn"/>',
                     raw=True,
                 ),
@@ -207,7 +207,7 @@ def test_generated_subject_answers_every_production_declaration(tmp_path, evalua
         ],
         "nora/app/review_pass.py": [(
             request(
-                "lesson_check", cfg.lessons.check_model, "<review_docket/>",
+                "lesson_check", cfg.judge.model, "<review_docket/>",
                 system=wake_instructions.for_objective("review").text,
                 tools=(tool_spec("graph_propose", "operations", "array"),),
             ),

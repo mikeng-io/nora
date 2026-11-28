@@ -775,9 +775,9 @@ async def _compose_dependencies(
         _memory_wire, dreamer_instructions, cfg, engine, access, lineage, persons_view,
         allowlist, doctrine_store, content_checks, clock, metrics, slots, model_client_for,
     )
-    graph_profiles = _memory_wire.pass_assembler(engine, access, lineage, None, None)
+    profile_reader = _memory_wire.pass_assembler(engine, access, lineage, None, None)
     engagement_graph = EngagementGraph(
-        access, _memory_wire.message_graph_ids(engine), graph_profiles,
+        access, _memory_wire.message_graph_ids(engine), profile_reader,
     )
     graph_reads = (
         _memory_wire.configured_graph_reads(cfg, engine, access, lineage)
@@ -793,7 +793,7 @@ async def _compose_dependencies(
         computer_exports=computer_exports, computer_leases=computer_leases,
         computer_sessions=computer_sessions, computer_settings=computer_settings,
         content_checks=content_checks,
-        discord_presence=discord_presence, graph_profiles=graph_profiles,
+        discord_presence=discord_presence, profile_reader=profile_reader,
         document_service=document_service, engine=engine,
         fetch_client=fetch_client, geocoder=geocoder,
         giphy_client=giphy_client, image_generator=image_generator,

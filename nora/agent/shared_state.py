@@ -13,11 +13,10 @@ caller that would read it as an empty unit.
 is the unit read (the session — the unit IS the read boundary, DEC-231). A
 destination read keeps unit-scoped entries and its own room's entries
 readable, subjects other rooms' ledger entries to the caller's `permit`
-predicate, and renders withheld entries as existence only.
+predicate, and marks withheld entries as existence only.
 
 A store left `None` is a source this view was never asked for, not an
 unavailable one — the coverage line names only the sources that ran.
-`nora.language.shared_render` renders the view; this module only reads.
 """
 
 from __future__ import annotations

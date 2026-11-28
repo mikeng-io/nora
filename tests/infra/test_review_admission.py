@@ -150,7 +150,7 @@ async def test_wake_cannot_change_a_judges_grade(scenario, occasion, operation):
     )).outcomes
     assert outcome == Refusal("grade_owned_by_judge", "base")
     assembled = await _assembler(scenario).assemble("wake", WakeInput(()), (), SCOPE, now)
-    profile = next(block for block in assembled.blocks if block.name == "graph_profile")
+    profile = next(block for block in assembled.blocks if block.name == "profile")
     assert "guess" in str(profile.body) and "grade=refuted" in str(profile.body)
     assert await wire.SqlReviewTargets(scenario.engine).due_review_targets(UNIT, now) == ()
 
