@@ -11,7 +11,7 @@ owns:
   - turn: "one engagement pass from admission to reply, made of several model calls that each re-send every retained tool result"
   - ambient: "a message in a room where Nora is not addressed: recorded as an item, offered to an ambient pass only when room policy admits it, never owed a reply"
   - proactive: "acting when nobody asked: a pass started when Nora's own intention is due or its watched condition holds, which re-judges the room and delivers or stays silent"
-  - relevance gate: "an optional bounded, tools-less admission occasion in front of the ambient offer that reads a closed transcript window and the room's Standing and writes nothing"
+  - relevance gate: "an optional bounded, tools-less admission occasion in front of the ambient offer that reads only a closed transcript window and writes nothing"
   - subconscious / conscious: "the operator's words for the reflection loop, which runs underneath, and the engagement loop, which speaks"
 area: cognition
 links:
@@ -194,9 +194,9 @@ admitted by room policy and may never suppress a call; a proactive pass is
 admitted when its intention is due; a wake is admitted by the wake evaluator
 with no model call. A failed admission produces no pass and no fallback. An
 optional relevance gate may stand in front of the ambient offer as a bounded,
-tools-less admission occasion: it reads a closed window of the transcript and
-the room's Standing and nothing else, writes nothing, admits nothing when it
-fails, and never replaces the ambient pass's own right to silence.
+tools-less admission occasion. It reads only a closed transcript window and
+writes nothing. On failure it admits nothing. The ambient pass retains its
+right to silence.
 
 ## Open loops
 
