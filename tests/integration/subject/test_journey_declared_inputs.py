@@ -38,7 +38,7 @@ from nora.subject.journey import (
 from nora.subject.journey_world import action_service
 from nora.subject.obtain import SubjectSpec, build_config, default_policy, obtain
 from nora.testing.signal_daemon import FakeSignalDaemon
-from tests.integration.subject.test_recorded_wake_runtime import services
+from tests.integration.subject.protocol_services import services
 
 # The driver prepares eval indexes — DDL — so every case owns a database.
 pytestmark = pytest.mark.fresh_database
@@ -80,7 +80,7 @@ async def _world(clean_pg_url: str, tmp_path: Path, name: str):
               + "home_room = true\n")
     overrides = {
         "platforms.signal.mode": "bridge", "platforms.signal.enabled": True,
-        "cognition.enabled": True, "obs.metrics.port": port,
+        "obs.metrics.port": port,
     }
     spec = SubjectSpec(database_url=clean_pg_url, workdir=tmp_path / name,
                        policy=policy, overrides=overrides)

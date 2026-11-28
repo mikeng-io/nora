@@ -109,20 +109,6 @@ async def test_all_platforms_degraded_composes_serves_503_and_recovers(
     assert deps.registry.state_of("signal") == "degraded"
     assert not deps.registry.live_platforms()
 
-    # The lessons evidence through its OWN wiring, built while Signal is degraded.
-    from sqlalchemy.ext.asyncio import create_async_engine
-
-    from nora.app.composition_dream import _lessons_evidence
-
-    engine = create_async_engine(clean_pg_url)
-    lessons = _lessons_evidence(
-        allowlist=None, cfg=override_config(cfg, {"lessons.enabled": True}),
-        content_checks=True, doctrine_store=deps.doctrine_store,
-        dreamer_instructions=deps.dreamer_instructions, engine=engine,
-        metrics=deps.metrics, model_client_for=lambda name: deps.client,
-        persons=deps.persons, registry=deps.registry,
-        route_model=lambda name, model: model or "nora")
-    assert "+85290000100" not in lessons._evidence._self_ids
     # The listener is not running in this test; report its socket up so the
     # only variable /health sees is liveness.
     deps.registry.get("signal")._listener = SimpleNamespace(
@@ -147,12 +133,11 @@ async def test_all_platforms_degraded_composes_serves_503_and_recovers(
     assert deps.registry.identity_for("signal") == identity
     # The COMPOSED long-lived alias holders were built while Signal was
     # degraded; each now sees her promoted id (a startup copy would not).
-    holders = [*_reachable(deps, ("MentionPolicy", "ReplyToNoraPolicy")), lessons._evidence]
+    holders = [*_reachable(deps, ("MentionPolicy", "ReplyToNoraPolicy"))]
     assert {type(h).__name__ for h in holders} >= {
-        "MentionPolicy", "ReplyToNoraPolicy", "LessonEvidence"}
+        "MentionPolicy", "ReplyToNoraPolicy"}
     assert all("+85290000100" in h._self_ids for h in holders)
     await task
-    await engine.dispose()
 
 
 def _reachable(root, names, limit=500000):

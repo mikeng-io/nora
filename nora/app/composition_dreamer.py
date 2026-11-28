@@ -8,20 +8,11 @@ from nora.agent import factory, tool_choice
 from nora.agent.dreamer import (
     DreamerRuntime,
 )
-from nora.app.cognition_session import CognitionSessionRunner
-from nora.app.cognition_wiring import (
-    CognitionShutdown,
-)
-from nora.app.cognition_wiring import session_guidance as cognition_session_guidance
-from nora.app.composition_cognition import cognition_session
-from nora.app.composition_dream import (
-    _dream_tool_source,
-    _lessons_evidence,
-)
+from nora.app.composition_dream import _dream_tool_source
 from nora.app.composition_helpers import _reasoning_effort
 from nora.app.composition_review import build_review_runner
 
-"""Dreamer and Cognition wiring steps."""
+"""Dreamer runtime and review wiring."""
 
 
 log = logging.getLogger("nora.app.composition")
@@ -31,91 +22,28 @@ log = logging.getLogger("nora.app.composition")
 
 @dataclass(frozen=True)
 class EnabledWiring:
-    cognition_runner: Any
     dreamer_runtime: Any
     review: Any = None
 
 
-async def enabled(
-    allowlist: Any, audit: Any, cfg: Any, clock: Any,
-    cognition_context_screen: Any,
-    content_checks: Any, doctrine_store: Any, document_service: Any,
-    documents_context: Any,
-    dreamer_instructions: Any, engine: Any, entry_store: Any,
-    event_store: Any,
-    ledger_store: Any, lineage: Any, media_join: Any,
-    memo_store: Any, metrics: Any, mobility: Any,
-    model_client_for: Any, note_store: Any, observation_store: Any, persons: Any,
-    presence_circles: Any, presence_reader: Any,
-    reasoning_strip_store: Any, registry: Any, reminder_caps: Any,
-    reminders: Any, rosters: Any, route_model: Any,
-    shared: Any, standing_fold: Any, standing_store: Any, stimulus_store: Any,
-    tag_trace_store: Any, tier: Any, tool_registry: Any, unit_rooms: Any,
-    unit_scopes: Any, access: Any = None, *, legacy_replay: bool = False,
+def enabled(
+    allowlist: Any, audit: Any, cfg: Any, dreamer_instructions: Any,
+    metrics: Any, model_client_for: Any, persons: Any, reasoning_strip_store: Any,
+    registry: Any, rosters: Any, route_model: Any, tier: Any, tool_registry: Any,
+    access: Any = None,
 ) -> EnabledWiring:
-    dreamer_runtime = None
-    review = None
-    cognition_runner = None
-    if cfg.dreamer.enabled:
-        rt = _dreamer_runtime(
-            allowlist=allowlist, audit=audit, cfg=cfg,
-            metrics=metrics, model_client_for=model_client_for,
-            persons=persons, access=access,
-            reasoning_strip_store=reasoning_strip_store, registry=registry,
-            rosters=rosters, route_model=route_model, tier=tier,
-            tool_registry=tool_registry,
-        )
-        dreamer_runtime = rt.dreamer_runtime
-        review = build_review_runner(
-            cfg, dreamer_instructions, rt.dream_tools, model_client_for, metrics,
-        )
-        if legacy_replay and cfg.cognition.enabled and stimulus_store is not None:
-            cognition_lessons = _lessons_evidence(
-                allowlist=allowlist, cfg=cfg, content_checks=content_checks,
-                doctrine_store=doctrine_store,
-                dreamer_instructions=dreamer_instructions, engine=engine,
-                metrics=metrics, model_client_for=model_client_for,
-                persons=persons, registry=registry, route_model=route_model,
-            )
-            cog = await cognition_session(
-                allowlist=allowlist, audit=audit, cfg=cfg, clock=clock,
-                cognition_context_screen=cognition_context_screen,
-                cognition_lessons=cognition_lessons,
-                content_checks=content_checks,
-                document_service=document_service,
-                documents_context=documents_context,
-                dream_model=rt.dream_model, dream_models=rt.dream_models,
-                dream_tools=rt.dream_tools,
-                dreamer_instructions=dreamer_instructions,
-                dreamer_runtime=dreamer_runtime, engine=engine,
-                entry_store=entry_store,
-                event_store=event_store,
-                ledger_store=ledger_store, lineage=lineage,
-                media_join=media_join, memo_store=memo_store,
-                metrics=metrics, mobility=mobility, note_store=note_store,
-                observation_store=observation_store, persons=persons,
-                presence_circles=presence_circles,
-                presence_reader=presence_reader,
-                registry=registry,
-                reminder_caps=reminder_caps, reminders=reminders,
-                rosters=rosters, session_guidance=cognition_session_guidance(dreamer_instructions),
-                shared=shared, standing_fold=standing_fold,
-                standing_store=standing_store,
-                stimulus_store=stimulus_store,
-                tag_trace_store=tag_trace_store, tier=tier,
-                tool_registry=tool_registry, unit_rooms=unit_rooms, access=access,
-                unit_scopes=unit_scopes,
-            )
-            cognition_runner = cog.cognition_runner
-    return EnabledWiring(
-        cognition_runner=cognition_runner,
-        dreamer_runtime=dreamer_runtime,
-        review=review,
+    rt = _dreamer_runtime(
+        allowlist=allowlist, audit=audit, cfg=cfg,
+        metrics=metrics, model_client_for=model_client_for,
+        persons=persons, access=access,
+        reasoning_strip_store=reasoning_strip_store, registry=registry,
+        rosters=rosters, route_model=route_model, tier=tier,
+        tool_registry=tool_registry,
     )
-
-
-def legacy_cognition_shutdown(runner: CognitionSessionRunner | None) -> CognitionShutdown | None:
-    return CognitionShutdown(runner=runner) if runner is not None else None
+    review = build_review_runner(
+        cfg, dreamer_instructions, rt.dream_tools, model_client_for, metrics,
+    )
+    return EnabledWiring(dreamer_runtime=rt.dreamer_runtime, review=review)
 
 
 @dataclass(frozen=True)

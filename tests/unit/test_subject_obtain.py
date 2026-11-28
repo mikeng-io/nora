@@ -343,7 +343,7 @@ def test_dumped_spike_overrides_remain_typed_and_sandboxed(
                                        "provider": "generated"}},
         "providers": {"generated": {"base_url": "http://host.docker.internal:20128/v1",
                                     "api_key_env": "OMNIROUTE_API_KEY"}},
-        "cognition": {**example_config.cognition.model_dump(), "enabled": True},
+        "cognition": example_config.cognition.model_dump(),
     })
     cfg = build_config(spec)
     assert isinstance(cfg.llm, LLMConfig)
@@ -353,6 +353,5 @@ def test_dumped_spike_overrides_remain_typed_and_sandboxed(
     assert cfg.endpoint("cognition")[0] == "http://127.0.0.1:20128/v1"
     assert cfg.llm.model == "generated-host-model"
     assert cfg.llm.base_url == "http://127.0.0.1:20128/v1"
-    assert cfg.cognition.enabled
     assert cfg.store.data_dir == tmp_path
     assert spec.database_url == "postgresql+asyncpg://x/x"

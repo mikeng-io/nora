@@ -32,7 +32,6 @@ _INITIAL_LEGACY = frozenset(
         "nora.agent.prefill:build_tag_message",
         "nora.agent.speech_format:render_input",
         "nora.ingest.relevance_gate:render_context",
-        "nora.language.confirmation_render:confirmation_prompts",
         "nora.subject.context_selector_render:selector_prompt",
     }
 )

@@ -7,7 +7,7 @@ sandbox engine — `SqlNoteStore.standing`, `SqlMemoStore.kept`,
 `SqlLessonStore.lessons`, the graph profile snapshot,
 the Cognitive Graph's entity anchors and complete typed edge set through
 `nora.memory.wire`'s graph-state readers, and the stimulus store's `view`
-plus `pending_self_wakes` — never an eval-side SQL projection. Entries
+— never an eval-side SQL projection. Entries
 key by the store's own id; the diff classifies created / revised
 (before and after) / retired-or-closed / unchanged.
 """
@@ -23,7 +23,6 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from nora import memory
 from nora.domain.culture import split_culture_key
 from nora.domain.lineage import room_key
-from nora.infra.sql.cognition_store import SqlCognitionStore
 from nora.infra.sql.entries import SqlEntryStore
 from nora.infra.sql.gatherings import SqlGatheringStore
 from nora.infra.sql.lessons import SqlLessonStore
@@ -186,12 +185,7 @@ async def snapshot(
 
     stimuli = SqlStimulusStore(engine)
     view = await stimuli.view(unit=unit, mode="live", now_ms=now_ms, limit=500)
-    self_wakes = await SqlCognitionStore(engine).pending_self_wakes(
-        unit=unit, since_ms=0,
-    )
-    kinds["wake"] = {
-        f"stimulus:{s.id}": _payload(s) for s in view.pending
-    } | {f"self:{w.wake_ref}": _payload(w) for w in self_wakes}
+    kinds["wake"] = {f"stimulus:{s.id}": _payload(s) for s in view.pending}
 
     return UnitState(kinds=kinds)
 

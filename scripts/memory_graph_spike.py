@@ -26,9 +26,7 @@ from nora.domain.blocks import BlockKey, ContextBlock, assemble, restamp
 from nora.domain.composed import compose_body
 from nora.domain.memory_graph import Walk
 from nora.domain.prompt import escape
-from nora.infra.embedder import fingerprint as embedder_fingerprint
-from nora.infra.sql import memory_index
-from nora.infra.sql.engine import create_readonly_sql_engine, create_sql_engine
+from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.memory_graph import WALK_SQL, walk_parameters
 from nora.infra.sql.schema import METADATA
 from nora.language.cognition_parse import ledger_source_row, shown_source_rows
@@ -655,41 +653,17 @@ def evidence_exchanges(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return exchanges
 
 
-async def _legacy_replay_substrate(subject: Any, *, source_url: str) -> None:
-    """The legacy derived substrate the retained replay runner still consumes."""
-    index = subject.cfg.memory.index
-    model = embedder_fingerprint(index.embedder_model)
-    target = create_sql_engine(subject.database_url)
-    from nora.app.graph_project import projection_context
-
-    reload = subject.deps.config_reload
-    target.update_execution_options(memory_graph=projection_context(
-        reload.policy, reload.persons,
-        nora_name=subject.cfg.doctrine.display_name, produce=False,
-    ))
-    source = create_readonly_sql_engine(source_url)
-    try:
-        await memory_index.rebuild(target)
-        async with source.connect() as src, target.begin() as dst:
-            await memory_index.adopt_worker_state(src, dst, model=model)
-    finally:
-        await source.dispose()
-        await target.dispose()
-
-
 async def index_replay_sandbox(subject: Any, *, source_url: str) -> SandboxIndex:
-    """Build both derived substrates a recordedwake replay needs.
+    """Build the derived substrate a recorded-wake replay needs.
 
     `sandbox_as_of` restores no derived row (`nora.infra.sql.history.NOT_RESTORED`).
-    The current graph read tools need `graph_search`, built exactly as a
-    graph-surface eval draw builds it; the retained legacy replay runner also
-    needs its own `memory_node` input projection. Vectors are adopted from the
-    source in both substrates — never generated with a model call.
+    The graph read tools need `graph_search`, built exactly as a graph-surface eval
+    draw builds it. Vectors are adopted from the source, never generated with a
+    model call.
     """
     index = subject.cfg.memory.index
     if index.embed:
         await check_served_model(index.embedder_url, index.embedder_model)
-    await _legacy_replay_substrate(subject, source_url=source_url)
     return await index_sandbox(
         subject.database_url,
         source_url=source_url,
@@ -750,12 +724,8 @@ def evidence_file(directory: Path) -> Path:
 
 def main() -> int:
     """The graph-only replay scorer and its frozen-evidence entries are
-    retired: `python -m scripts.cognition_loop` is the evaluator. The
-    helpers below stay for the tests that still import them."""
-    raise SystemExit(
-        "the graph-only replay scorer is retired; "
-        "use `python -m scripts.cognition_loop`"
-    )
+    retired. The helpers below stay for the tests that still import them."""
+    raise SystemExit("the graph-only replay scorer is retired")
 
 
 

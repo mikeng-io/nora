@@ -265,7 +265,7 @@ class App:
             await deps.wake_poller.recover()
             deps.background.spawn(deps.wake_poller.run())
         else:
-            log.info("graph wake disabled ([cognition] enabled = false)")
+            log.info("graph wake not composed for this subject")
         # The OAuth keepalive (DEC-308): HERE and not in composition, because
         # the eval subject composes the same graph and must not spend the
         # deployment's rotating refresh tokens. `None` with image generation
@@ -470,11 +470,9 @@ async def run_until_stopped(
     """Run `app` until it ends or a stop signal arrives, then shut it down.
 
     Without a SIGTERM handler the process dies on the signal without
-    unwinding: `finally` never runs, so `App.shutdown` (and with it
-    `CognitionShutdown`, which waits for remaining session outcome writes)
-    would be reachable only by SIGINT. `docker stop` sends SIGTERM, so a
-    restart would kill sessions mid-flight and leave their wakes open to hold
-    their units for the rest of the session timeout. (`uv run`, the image's
+    unwinding: `finally` never runs, so `App.shutdown` would be
+    reachable only by SIGINT. `docker stop` sends SIGTERM, so a restart would kill work
+    mid-flight. (`uv run`, the image's
     entrypoint, forwards SIGTERM to the process it spawns.)
 
     The first signal cancels `app.run()`, which stops the adapters and every

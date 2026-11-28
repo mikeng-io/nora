@@ -50,8 +50,6 @@ async def test_a_restarted_process_recovers_a_profile_without_roster_collections
         'managed': {'kratos_admin_url': ory.kratos_admin,
                     'keto_read_url': ory.keto_read, 'keto_write_url': ory.keto_write},
     }
-    values['dreamer']['enabled'] = False
-    values.setdefault('cognition', {})['enabled'] = False
     values.setdefault('participation', {})['enabled'] = False
     env.write_text(tomli_w.dumps(values))
     connection = await asyncpg.connect(clean_pg_url.replace('postgresql+asyncpg:', 'postgresql:'))
@@ -135,8 +133,6 @@ async def test_file_backend_starts_reloads_and_refuses_writes_with_ory_down(env)
         "managed": {"kratos_admin_url": _DEAD, "keto_read_url": _DEAD,
                     "keto_write_url": _DEAD},
     }
-    values["dreamer"]["enabled"] = False
-    values.setdefault("cognition", {})["enabled"] = False
     values.setdefault("participation", {})["enabled"] = False
     env.write_text(tomli_w.dumps(values))
     policy_path = env.parent / "policy.toml"
@@ -174,8 +170,6 @@ async def test_managed_backend_refuses_to_start_when_kratos_cannot_answer(env):
         "managed": {"kratos_admin_url": _DEAD, "keto_read_url": _DEAD,
                     "keto_write_url": _DEAD},
     }
-    values["dreamer"]["enabled"] = False
-    values.setdefault("cognition", {})["enabled"] = False
     values.setdefault("participation", {})["enabled"] = False
     env.write_text(tomli_w.dumps(values))
     with pytest.raises(StartupError, match="Kratos admin listener unreachable"):
@@ -191,8 +185,6 @@ async def test_managed_backend_refuses_to_start_when_keto_cannot_answer(env, ory
         "managed": {"kratos_admin_url": ory.kratos_admin,
                     "keto_read_url": _DEAD, "keto_write_url": _DEAD},
     }
-    values["dreamer"]["enabled"] = False
-    values.setdefault("cognition", {})["enabled"] = False
     values.setdefault("participation", {})["enabled"] = False
     env.write_text(tomli_w.dumps(values))
     with pytest.raises(StartupError, match="Keto read listener unreachable"):
@@ -212,8 +204,6 @@ async def test_a_running_managed_backend_answers_unavailable_when_ory_drops(
                     "keto_read_url": ory.keto_read,
                     "keto_write_url": ory.keto_write},
     }
-    values["dreamer"]["enabled"] = False
-    values.setdefault("cognition", {})["enabled"] = False
     values.setdefault("participation", {})["enabled"] = False
     env.write_text(tomli_w.dumps(values))
     room = Scope(ScopeKind.ROOM, room_scope_id("signal", "Z3JvdXA="))

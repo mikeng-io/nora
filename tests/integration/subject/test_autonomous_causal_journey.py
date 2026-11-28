@@ -15,10 +15,10 @@ from nora.subject.journey import JourneyDriver
 from nora.subject.journey_world import finite_boundary, make_causal_protocol
 from nora.subject.obtain import SubjectSpec, build_config, default_policy, obtain
 from nora.testing.causal_protocol import CAUSAL_TIMING, CORRECTION, INITIAL
+from tests.integration.subject.protocol_services import services
 from tests.integration.subject.test_causal_runtime_journey import (
     runtime_evidence as runtime_evidence,
 )
-from tests.integration.subject.test_recorded_wake_runtime import services
 
 
 async def _closed_wake(driver, body):
@@ -50,7 +50,7 @@ async def test_real_app_settles_graph_wakes_for_initial_message_and_correction(
               .replace('persons = "*"', 'persons = ["miles_novak"]')
               + "home_room = true\n")
     overrides = {"platforms.signal.mode": "bridge", "platforms.signal.enabled": True,
-                 "cognition.enabled": True, "cognition.quiet_seconds": 0.5,
+                 "cognition.quiet_seconds": 0.5,
                  "obs.metrics.port": 0, **CAUSAL_TIMING}
     spec = SubjectSpec(database_url=clean_pg_url, workdir=tmp_path / "subject",
                        policy=policy, overrides=overrides)

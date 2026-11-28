@@ -123,10 +123,6 @@ _UNJOINED_BY_OWN_SQL = {
         "returns room message text and attachment handles. Cached image or video "
         "descriptions are absent unless the pass recorded them in a tool result."
     ),
-    "nora/infra/sql/character.py": (
-        "Cognition Lessons reads closed response episodes and addressed messages "
-        "with its own SQL. The stored bodies carry bare attachment handles."
-    ),
     "nora/infra/sql/snapshot.py": (
         "the point-in-time reconstruction reads `messages` directly and returns "
         "`body` as stored, so a row that had media shows the bare "
@@ -271,7 +267,6 @@ PATHS = {
     "nora/engagement/context.py": "tag",
     "nora/app/fire.py": "fire",
     "nora/engagement/stages/debrief.py": "debrief",
-    "nora/app/cognition_context.py": "cognition",
     "nora/app/wake_floor.py": "wake",
     # The conversation tools' record_query hit render (`query.py`); record.py/
     # rooms.py share the label — the discovery sees only the toolkit's

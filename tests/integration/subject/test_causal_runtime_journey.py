@@ -15,7 +15,7 @@ from opentelemetry import trace
 
 from nora.__main__ import App
 from nora.infra.sql.engine import create_sql_engine
-from nora.infra.sql.schema import BRIDGE_ACTION, MESSAGES, STIMULUS
+from nora.infra.sql.schema import BRIDGE_ACTION, MESSAGES
 from nora.platform.bridge.queue import StreamProducer
 from nora.platform.bridge.service import action_http_status, action_response
 from nora.subject.environment import IsolatedServices
@@ -27,7 +27,7 @@ from nora.subject.sandbox import eval_host_lock
 from nora.testing.causal_protocol import completion
 from nora.testing.signal_daemon import FakeSignalDaemon
 from scripts.memory_graph_spike import measured_run_budget
-from tests.integration.subject.test_recorded_wake_runtime import services
+from tests.integration.subject.protocol_services import services
 
 
 @pytest.fixture
@@ -98,7 +98,7 @@ async def test_real_app_bridge_admission_settles_before_cancellation(
         port = listener.getsockname()[1]
     policy = default_policy(("signal", "g1"), unit="generated-unit") + "home_room = true\n"
     overrides = {"platforms.signal.mode": "bridge", "platforms.signal.enabled": True,
-                 "cognition.enabled": True, "obs.metrics.port": port}
+                 "obs.metrics.port": port}
     spec = SubjectSpec(database_url=clean_pg_url, workdir=tmp_path / "subject",
                        policy=policy, overrides=overrides)
     cfg = build_config(spec)
@@ -148,14 +148,13 @@ async def test_real_app_bridge_admission_settles_before_cancellation(
             async with engine.connect() as conn:
                 recorded = (await conn.execute(sa.select(MESSAGES).where(
                     MESSAGES.c.platform_message_id == str(incoming.sent_ms)))).mappings().all()
-                stimuli = (await conn.execute(sa.select(STIMULUS).where(
-                    STIMULUS.c.conversation_id == room))).mappings().all()
             if room == "g1":
-                assert len(recorded) == len(stimuli) == 1
+                assert len(recorded) == 1
                 assert recorded[0]["person_id"] == "miles_novak"
                 assert event["state"] == "done"
                 kinds = {w["kind"] for w in work}
-                assert kinds >= {"ingest", "stimulus"}
+                assert "ingest" in kinds
+                assert "stimulus" not in kinds
                 assert "memory_feed" not in kinds
                 if tagged:
                     async with engine.connect() as conn:
@@ -172,7 +171,7 @@ async def test_real_app_bridge_admission_settles_before_cancellation(
                     assert daemon.sent[0]["params"]["message"] == sent[0]["body"]
             else:
                 assert event["state"] == "intentional_skip"
-                assert recorded == stimuli == []
+                assert recorded == []
             assert not env.denied, [(e["method"], e["path"]) for e in env.denied]
             env.check()
         finally:

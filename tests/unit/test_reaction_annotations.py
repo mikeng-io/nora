@@ -17,10 +17,7 @@ from types import SimpleNamespace
 
 from nora.agent.prefill import render_transcript
 from nora.agent.toolkit.transcript import _transcript_messages
-from nora.app.cognition_grounding import _record_item
 from nora.domain.block_types import BLOCK_TYPES
-from nora.domain.cognition_ground import RecordItem
-from nora.domain.cognition_session import Room
 from nora.domain.models import (
     REACTION_PAIRS_MAX,
     DeliveryStatus,
@@ -35,10 +32,7 @@ from nora.domain.models import (
     fold_reactions,
     states_from_standing,
 )
-from nora.domain.record_query import RecordHit, RecordRefHit
-from nora.domain.stimuli import Stimulus
 from nora.infra.sql.audit import reaction_states
-from nora.language.cognition_render import _message_row, _shrunk
 from nora.testing import FakeRecordStore
 
 NOW = datetime(2026, 10, 31, 12, 0, tzinfo=UTC)
@@ -206,57 +200,10 @@ def test_an_unread_row_emits_no_reaction_keys():
 
 # ---- Cognition: stimulus change vs current target state ---------------------
 
-def test_a_reaction_item_keeps_its_own_event_and_the_targets_state():
-    stimulus = Stimulus(
-        id=1, unit="u1", ref="message_reaction:7", kind="message",
-        item="reaction", platform="signal", conversation_id="g1",
-        person_id="p2", at_ms=NOW_MS - 60_000,
-        recorded_at_ms=NOW_MS - 60_000,
-    )
-    target = _row(reactions=RowReactions(
-        counts=(("👍", 3),), observed_at=NOW_MS - 60_000, recorded=4,
-    ))
-    found = RecordRefHit(
-        "message_reaction", 7,
-        RecordHit(platform="signal", conversation_id="g1", row=target),
-        emoji="👍",
-    )
-    item = _record_item(
-        stimulus, ("message_reaction", 7), found, body="dinner at 8?",
-        author="Miles",
-    )
-    # The stimulus's own change/time is retained…
-    assert item.kind == "reaction" and item.emoji == "👍"
-    assert item.at_ms == NOW_MS - 60_000
-    # …beside the target's CURRENT recorded state, same fold.
-    assert item.reactions is not None
-    assert item.reactions.counts == (("👍", 3),)
 
 
-def test_the_agenda_renders_change_and_current_state_distinctly():
-    item = RecordItem(
-        ref="message_reaction:7", kind="reaction", message_id=42,
-        room=Room("signal", "g1"), author="Miles",
-        at_ms=NOW_MS - 60_000, text="dinner at 8?", emoji="👍",
-        reactions=RowReactions(
-            counts=(("👍", 3),), observed_at=NOW_MS - 60_000, recorded=4,
-        ),
-    )
-    row = _message_row(item, (), now_ms=NOW_MS, tz=UTC, message_chars=200)
-    out = row.show(None)
-    assert 'reaction="👍"' in out               # the stimulus's change
-    assert 'reactions="👍x3"' in out            # the target's current state
-    assert 'reactions_observed="recorded ' in out
 
 
-def test_an_item_without_recorded_reactions_renders_no_claim():
-    item = RecordItem(
-        ref="messages:1", kind="message", message_id=1,
-        room=Room("signal", "g1"), author="Miles",
-        at_ms=NOW_MS, text="hi",
-    )
-    out = _message_row(item, (), now_ms=NOW_MS, tz=UTC, message_chars=200).show(None)
-    assert "reactions" not in out
 
 
 # ---- the read's bounds: SQL reduction and the partial marker --------------
@@ -386,52 +333,10 @@ def test_the_tool_dict_carries_display_handles_and_a_bounded_pair_count():
 
 # ---- the budget: annotation bounded beside the words -----------------------
 
-def _crowded(author: str = "Miles") -> RecordItem:
-    return RecordItem(
-        ref="messages:1", kind="message", message_id=1,
-        room=Room("discord", "g1"), author=author,
-        at_ms=NOW_MS - 60_000, text="dinner at 8?",
-        reactions=RowReactions(
-            counts=tuple(
-                (f"<:verylongcustomname{i}:12345678901234567{i}>", 1)
-                for i in range(20)
-            ),
-            observed_at=NOW_MS - 30_000, recorded=21,
-        ),
-    )
 
 
-def test_the_annotation_is_budgeted_beside_the_words_and_marks_omission():
-    """Twenty custom reactions rendered over 1300 chars against an 800
-    allowance before; the label now shrinks with the same cut the words
-    take, `+N` marks what is left out, the platform ids never render, and
-    the coverage/time attribute always stays."""
-    row = _message_row(_crowded(), (), now_ms=NOW_MS, tz=UTC, message_chars=200)
-    full = row.show(None)
-    label = full.split('reactions="')[1].split('"')[0]
-    assert "+" in label                       # the +N omission marker
-    assert "1234567890" not in full           # no platform id
-    assert 'reactions_observed="recorded ' in full
-    shrunk = _shrunk(row, 200)
-    assert len(shrunk) <= 200
-    assert "1234567890" not in shrunk
-    assert 'reactions_observed="recorded ' in shrunk
-    assert "+" in shrunk.split('reactions="')[1].split('"')[0]
 
 
-def test_an_own_row_budgets_the_annotation_the_same_way():
-    own = _crowded()
-    own = RecordItem(
-        ref="messages:1", kind="message", message_id=1, room=own.room,
-        author="Nora", at_ms=own.at_ms, text=own.text, own=True,
-        reactions=own.reactions,
-    )
-    from nora.language.cognition_render import _own_row
-
-    shrunk = _shrunk(_own_row(own, now_ms=NOW_MS, tz=UTC, message_chars=200), 200)
-    assert len(shrunk) <= 200
-    assert "1234567890" not in shrunk
-    assert 'reactions_observed="recorded ' in shrunk
 
 
 # ---- partial coverage and the removal bit ---------------------------------
@@ -450,31 +355,6 @@ def test_a_partial_state_is_marked_never_read_as_complete():
     assert items[0]["reactions_source"] == "partial"
 
 
-def test_a_reaction_removal_is_marked_distinct_from_an_add():
-    stimulus = Stimulus(
-        id=1, unit="u1", ref="message_reaction:7", kind="message",
-        item="reaction", platform="signal", conversation_id="g1",
-        person_id="p2", at_ms=NOW_MS - 60_000, recorded_at_ms=NOW_MS - 60_000,
-    )
-    target = _row(reactions=RowReactions(
-        counts=(("👍", 2),), observed_at=NOW_MS - 60_000, recorded=3,
-    ))
-    hit = RecordHit(platform="signal", conversation_id="g1", row=target)
-    removed = _record_item(
-        stimulus, ("message_reaction", 7),
-        RecordRefHit("message_reaction", 7, hit, emoji="👍", removed=True),
-        body="dinner at 8?", author="Miles",
-    )
-    assert removed.removed is True
-    out = _message_row(removed, (), now_ms=NOW_MS, tz=UTC, message_chars=200).show(None)
-    assert 'reaction="👍"' in out and 'reaction_removed="yes"' in out
-    added = _record_item(
-        stimulus, ("message_reaction", 7),
-        RecordRefHit("message_reaction", 7, hit, emoji="👍"),
-        body="dinner at 8?", author="Miles",
-    )
-    out = _message_row(added, (), now_ms=NOW_MS, tz=UTC, message_chars=200).show(None)
-    assert 'reaction="👍"' in out and "reaction_removed" not in out
 
 
 # ---- what the model is told -----------------------------------------------

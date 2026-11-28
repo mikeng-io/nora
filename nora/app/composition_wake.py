@@ -9,11 +9,10 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 import nora.memory as memory
 from nora.access import IdentityAccess
-from nora.agent.dreamer import TOOL_RESULT_CAPS, DreamerRuntime
+from nora.agent.dreamer import TOOL_RESULT_CAPS, AdaptorBudget, DreamerRuntime
 from nora.agent.lineage import LineagePolicy
 from nora.agent.room import Room
-from nora.app.cognition_session import CognitionAgentRunner
-from nora.app.cognition_wiring import cognition_budget
+from nora.app.cognition_agent_runner import CognitionAgentRunner, DreamerAgentRunner
 from nora.app.review_pass import ReviewPass
 from nora.app.startup import StartupError
 from nora.app.wake_debrief import WakeDebriefRetry
@@ -35,7 +34,7 @@ from nora.policy import Policy
 
 
 def build_wake(
-    cfg: Config, runtime: DreamerRuntime | None, instructions: DreamerInstructions,
+    cfg: Config, runtime: DreamerRuntime, instructions: DreamerInstructions,
     engine: AsyncEngine, access: IdentityAccess, lineage: LineagePolicy, policy: Policy,
     debrief: Any, slots: ConversationSlots, audit: SqlRecordStore,
     presence: PresenceReader, documents: DocumentsContextReader | None,
@@ -43,11 +42,7 @@ def build_wake(
     metrics: Metrics, clock: Callable[[], datetime], rosters: Mapping[str, Any], registry: Any,
     content_checks: bool, media_join: MediaJoin | None,
     *, review: tuple[CognitionAgentRunner, str] | None = None,
-) -> WakePoller | None:
-    if not cfg.cognition.enabled:
-        return None
-    if runtime is None:
-        raise StartupError("[cognition] enabled needs a Dreamer runtime")
+) -> WakePoller:
     try:
         instructions.for_objective("wake")
     except InstructionError as exc:
@@ -88,11 +83,20 @@ def build_wake(
         review_pass = ReviewPass(
             targets=memory.wire.SqlReviewTargets(engine), rooms=floor, assembler=debrief.assembler,
             surface=review_surface, admission=debrief.admission, agent=judge,
-            instructions=instructions, budget=cognition_budget(cfg.dreamer.budget_for("cognition")),
+            instructions=instructions, budget=pass_budget(cfg),
             model=judge_model, revisions=debrief.revisions, policy=policy, clock=clock,
         )
     return WakePoller(memory.wire.wake_claims(engine), runner, retry, policy, metrics, clock,
                       config=cfg.cognition, review=review_pass)
+
+
+def pass_budget(cfg: Config) -> AdaptorBudget:
+    """`[dreamer.budgets.cognition]`: rounds, tokens, output tokens and the wall clock."""
+    b = cfg.dreamer.budget_for("cognition")
+    return AdaptorBudget(
+        turns=b.turns, total_tokens=b.total_tokens, output_tokens=b.output_tokens,
+        timeout_seconds=b.timeout_seconds,
+    )
 
 
 def build_wake_runner(
@@ -101,12 +105,10 @@ def build_wake_runner(
     revisions: Callable[[], Mapping[str, str | None]], model: str,
     occasion: memory.PassName = "wake", clock: Callable[[], datetime] | None = None,
 ) -> WakePassRunner:
-    from nora.app.cognition_agent_runner import DreamerAgentRunner
-
     return WakePassRunner(
         rooms=rooms, assembler=assembler, surface=surface, instructions=instructions,
         agent=DreamerAgentRunner(runtime=runtime, metrics=metrics, agent_name=occasion,
                                  result_caps=TOOL_RESULT_CAPS, bound_tool_arguments=True),
-        budget=cognition_budget(cfg.dreamer.budget_for("cognition")),
+        budget=pass_budget(cfg),
         model=model, revisions=revisions, occasion=occasion, clock=clock,
     )

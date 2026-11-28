@@ -110,3 +110,35 @@ async def test_a_rebuild_keeps_a_vector_whose_input_is_unchanged(engine):
     await memory_index.rebuild(engine)
 
     assert (await _nodes(engine))[("message", str(mid))].embedding_model == MODEL
+
+
+async def _adopt(engine: Any) -> None:
+    async with engine.begin() as conn:
+        await memory_index._adopt_owed_since(conn, conn, model=MODEL)
+
+
+async def test_a_node_the_source_owes_a_vector_for_takes_the_sources_earlier_wait(engine):
+    import time
+
+    store = ProjectingRecordStore(engine)
+    now_ms = int(time.time() * 1000)
+    first = await store.append(message=_message("the lantern festival plan", ts=now_ms))
+    second = await store.append(message=_message("the lantern festival plan", ts=now_ms))
+    async with engine.begin() as conn:
+        await conn.execute(
+            sa.update(MEMORY_NODE).where(MEMORY_NODE.c.source_id == str(first))
+            .values(owed_since=sa.func.clock_timestamp() - sa.text("interval '3 hours'"))
+        )
+    await _adopt(engine)
+    nodes = await _nodes(engine)
+    assert nodes[("message", str(second))].owed_since == nodes[("message", str(first))].owed_since
+
+
+async def test_a_node_nobody_owes_is_bounded_by_its_own_instant(engine):
+    store = ProjectingRecordStore(engine)
+    mid = await store.append(message=_message("a message from long ago", ts=1000))
+    async with engine.begin() as conn:
+        await conn.execute(sa.update(MEMORY_NODE).values(at_ms=1000, embed_error="empty"))
+    await _adopt(engine)
+    node = (await _nodes(engine))[("message", str(mid))]
+    assert node.owed_since.timestamp() < 10

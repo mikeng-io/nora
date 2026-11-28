@@ -18,9 +18,9 @@ async def enqueue_downstream(
     conn: Any, *, store: Any, work: Any, envelope: Any, message: Any,
     decision: Any, person: Any, row_id: Any, absorbed: bool, unit: Any,
     observation_status: str | None, room_command: Any, participation: Any,
-    stimulus: Any, downstream: dict[str, Any],
+    downstream: dict[str, Any],
 ) -> bool:
-    """Enqueue the turn/participation/stimulus obligations;
+    """Enqueue the turn and participation obligations;
     returns whether `message` IS a room command (the caller stamps it)."""
     # ONE command-recognition rule for both ingress paths: the predicate the
     # live dispatcher is handed at composition, over the VERIFIED normalized
@@ -59,22 +59,6 @@ async def enqueue_downstream(
             account_key=work.account_key,
             conversation_id=work.conversation_id,
             payload={"note_message": message_to_dict(message),
-                     **downstream})
-        ordinal += 1
-    # A committed sidecar's ordinal-90 obligation is the ONE stimulus for
-    # the event; a refused/unscoped sidecar leaves the ordinary wake to raise.
-    source_owned = observation_status == "ok" and bool(unit)
-    if stimulus is not None and row_id is not None and not source_owned:
-        await store.enqueue_work(
-            conn, event_id=envelope.event_id,
-            kind="stimulus", ordinal=ordinal,
-            platform=work.platform,
-            account_key=work.account_key,
-            conversation_id=work.conversation_id,
-            payload={"message": message_to_dict(message),
-                     "row_id": row_id,
-                     "person_id": person.person_id if person else None,
-                     "absorbed": absorbed, "unit": unit,
                      **downstream})
         ordinal += 1
     return command

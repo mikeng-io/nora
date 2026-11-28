@@ -17,7 +17,6 @@ from nora.app.cli import _database_url, _persons, _policy
 from nora.app.composition_dreamer import dreamer_model_source
 from nora.app.composition_stores import build_doctrine, instructions, managed_identity
 from nora.app.composition_wake import build_wake_runner
-from nora.app.startup import StartupError
 from nora.app.wake_pass import WakePassRunner
 from nora.app.wake_rooms import WakeRoomSlots
 from nora.config import Config
@@ -81,8 +80,6 @@ async def replay_dependencies(
 
         corpus = instructions(cfg, metrics).dreamer_instructions
         corpus.for_objective("wake-history")
-        if not cfg.dreamer.enabled:
-            raise StartupError("Graph replay requires the Dreamer runtime")
         base_url, key, model = cfg.endpoint("dreamer", cfg.dreamer_model())
         client = factory.create_client(base_url=base_url, api_key=key)
         stack.push_async_callback(client.close)

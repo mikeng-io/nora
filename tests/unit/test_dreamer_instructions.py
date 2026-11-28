@@ -413,8 +413,6 @@ def test_every_shipped_objective_assembles_inside_the_two_tags():
     adaptor only, and nothing in the tmp_path half would see it."""
     store = shipped_objectives()
     for name in store.objective_names():
-        if name == "cognition":
-            continue  # its body is its whole instruction, no Dreamer doctrine
         text = store.for_objective(name).text
         assert text.startswith('<dreamer_doctrine name="dreamer">\n'), name
         assert text.endswith("\n</dreamer_objective>"), name
@@ -446,15 +444,6 @@ def test_no_shipped_description_reaches_the_model():
             SHIPPED / "objectives" / f"{name}.md", required=("name", "description")
         ).meta["description"])
         assert desc not in text, name
-    # the skill's description is repo metadata too
-    cognition = store.objective_body("cognition")
-    skill = store.skill("cognition-register")
-    assert skill is not None
-    for path in (SHIPPED / "objectives" / "cognition.md",
-                 SHIPPED / "skills" / "cognition-register.md"):
-        desc = str(parse_document(path, required=("name", "description")).meta["description"])
-        assert len(desc) > 60
-        assert desc not in cognition and desc not in skill.instructions, path.name
 
 
 # --- every shipped objective is accounted for ------------------------------
@@ -467,8 +456,6 @@ NATIVELY_AUTHORED = {
     "wake",
     "wake-history",
     "standing-debrief",
-    # The Cognition session's instruction (DEC-244); it lists no tool and no limit.
-    "cognition",
     # The doctrine check: an instrument's instruction, read through
     # `objective_body`, never with the Dreamer doctrine.
     "doctrine-check",

@@ -71,7 +71,6 @@ enabled = false
 text = "nora"
 min_interval_seconds = 5
 [dreamer]
-enabled = true
 model = "nora-dreamer"
 reasoning_effort = "low"
 max_tokens = 6000
@@ -542,7 +541,7 @@ _SUBAGENT_DEPLOYMENT = (
 
 
 def test_a_deployment_with_the_subagent_on_keeps_the_preconditions_it_needs():
-    """`[subagent] enabled` refuses to load without `[dreamer]` and `[compute]`
+    """`[subagent] enabled` refuses to load without `[compute]`
     on, so FORCE_OFF writing `compute.enabled = false` over it would leave a
     generated config that cannot be loaded."""
     from evals.subject_config import adopted
@@ -550,7 +549,6 @@ def test_a_deployment_with_the_subagent_on_keeps_the_preconditions_it_needs():
     taken = adopted(_SUBAGENT_DEPLOYMENT)
     assert taken["subagent.enabled"] is True
     assert taken["compute.enabled"] is True
-    assert taken["dreamer.enabled"] is True
 
 
 def test_the_generated_subagent_config_loads_under_the_production_validators(tmp_path):
@@ -564,7 +562,7 @@ def test_the_generated_subagent_config_loads_under_the_production_validators(tmp
     target = tmp_path / "config.toml"
     target.write_text(generated, encoding="utf-8")
     cfg = load(target, require_secrets=False)
-    assert cfg.subagent.enabled and cfg.compute.enabled and cfg.dreamer.enabled
+    assert cfg.subagent.enabled and cfg.compute.enabled
 
 
 def test_the_subagent_rewrite_changes_nothing_when_the_subagent_is_off():

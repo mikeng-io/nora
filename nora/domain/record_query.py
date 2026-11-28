@@ -14,7 +14,11 @@ from dataclasses import dataclass
 
 from nora.domain.models import TranscriptRow
 
-__all__ = ["RECORD_QUERY_MAX", "RecordHit", "RecordQuery", "RecordRefHit"]
+__all__ = ["RECORD_QUERY_MAX", "RECORD_REF_TABLES", "RecordHit", "RecordQuery", "RecordRefHit"]
+
+#: The tables a message stimulus's `ref` names a row of: a message or an edit names the
+#: message, a reaction and a delete name their own row.
+RECORD_REF_TABLES: tuple[str, ...] = ("messages", "message_reaction", "message_delete")
 
 #: The most hits one call returns. A read that answers "what was said over
 #: this stretch" hands back verbatim group text, so it is bounded the way

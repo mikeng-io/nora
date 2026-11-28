@@ -17,7 +17,6 @@ def test_graph_wake_refuses_the_same_resolved_model_with_legacy_lessons_on_or_of
     example_config, enabled,
 ):
     cfg = example_config.model_copy(update={
-        "cognition": example_config.cognition.model_copy(update={"enabled": True}),
         "lessons": example_config.lessons.model_copy(update={
             "enabled": enabled, "check_model": "configured-check",
         }),

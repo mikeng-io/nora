@@ -1,10 +1,8 @@
 """The Cognition loop eval (`docs/engineering/evaluation-cognition-loop.md`).
 
-Runs a real Cognition session — the deployment's own
-`CognitionSessionRunner` in the live lane — over a sequence of recorded
-wakes of one unit, inside a per-case sandbox restored at the first wake
-and advanced by copying only the world's Record rows between wakes. Each
-wake is diffed across every owned store and judged fail-closed by two
+The shared report, judging and state-diff pieces of the autonomous journey: a
+sandbox restored at an instant and advanced by copying only the world's Record
+rows. Each wake is diffed across every owned store and judged fail-closed by two
 independent judges.
 """
 

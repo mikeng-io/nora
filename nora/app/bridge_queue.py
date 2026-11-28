@@ -399,7 +399,7 @@ class WorkRunner:
                  db_locks: DbSpeakingLocks,
                  adapters: dict[str, Any], gate: Any = None, metrics: Any = None,
                  participation: Any = None,
-                 stimulus: Any = None, debrief: Any = None,
+                 debrief: Any = None,
                  instance: str | None = None, lease_seconds: int = 300,
                  allowlist: Any = None, persons: Any = None,
                  fire_speak: Any = None, participation_state: Any = None,
@@ -418,7 +418,6 @@ class WorkRunner:
         self._gate = gate            # RelevanceGate | None (participation eval)
         self._metrics = metrics
         self._participation = participation  # ParticipationTrigger | None
-        self._stimulus = stimulus            # stimulus_stage.Wiring | None
         self._debrief = debrief              # Callable(trace_payload) | None
         # The CURRENT policy + identity truth, consulted by deferred effects:
         # an obligation enqueued under a policy that has since moved must fail
@@ -975,7 +974,6 @@ class WorkRunner:
                     observation_status=observation_status,
                     room_command=self._room_command,
                     participation=self._participation,
-                    stimulus=self._stimulus,
                     downstream=downstream)
                 # The queued receipt is BRIDGE-owned: the producer emits it
                 # once per canonical event at enqueue, so the app never
@@ -1224,49 +1222,15 @@ class WorkRunner:
             self._store._engine, platform=work.platform,
             conversation_id=work.conversation_id, target=obs.target,
             target_author_id=obs.target_author_id)
-        actor_pid = None
-        if obs.actor_id and obs.actor_status == "known" and self._access is not None:
-            ref = await self._access.resolve_ref(work.platform, obs.actor_id)
-            actor_pid = ref.person_id if ref is not None else None
-        at_ms = obs.occurred_ms if obs.occurred_ms is not None else obs.received_ms
-        enqueued_ms = _now_ms()
-
         async def hook(conn: Any, obs_id: int) -> None:
-            # Committed WITH the observation row: the replay marker and the
-            # durable stimulus obligation. A kill after this commit resumes
-            # from the marker; a kill before it replays the append, which
-            # dedupes — either way no obligation is orphaned and none is
-            # doubled.
+            # Committed WITH the observation row: the replay marker. A kill after
+            # this commit resumes from the marker; a kill before it replays the
+            # append, which dedupes.
             await conn.execute(sa.text(
                 "UPDATE bridge_event SET payload = payload || :patch,"
                 " updated_at = now() WHERE id = :eid"),
                 {"patch": json.dumps({"observation_row_id": obs_id}),
                  "eid": envelope.event_id})
-            if self._stimulus is not None and unit:
-                await self._store.enqueue_work(
-                    conn, event_id=envelope.event_id, kind="stimulus",
-                    ordinal=90, platform=work.platform,
-                    account_key=work.account_key,
-                    conversation_id=work.conversation_id,
-                    payload={
-                        "observation_row_id": obs_id,
-                        "object_kind": obs.object_kind,
-                        "unit": unit, "at_ms": at_ms,
-                        "actor_id": obs.actor_id or None,
-                        "actor_person_id": actor_pid,
-                        # A co-delivered utterance rides the SAME
-                        # obligation — both refs of the one source event,
-                        # never a second wake of its own.
-                        "message_row_id": sibling_row_id,
-                        "message": (message_to_dict(sibling_message)
-                                    if sibling_message is not None else None),
-                        "person_id": sibling_person_id,
-                        # Reaching the append at all means the admission was
-                        # absorbed — every caller refuses otherwise.
-                        "absorbed": True,
-                        "trace": envelope.trace,
-                        "enqueued_ms": enqueued_ms,
-                    })
 
         try:
             await self._observations.append(
@@ -1401,61 +1365,7 @@ class WorkRunner:
         return room, None
 
     async def _run_stimulus(self, work: Any) -> None:
-        if self._stimulus is None:
-            await self._finish(work, "intentional_skip",
-                               {"reason": "stimulus off"})
-            return
-        from nora.ingest.stages import stimulus as stimulus_stage
-        room, refuse = self._current_room(
-            work, bool(work.payload.get("absorbed", True)))
-        if room is None:
-            await self._finish(work, "intentional_skip", {"reason": refuse})
-            return
-        if "observation_row_id" in work.payload:
-            # The ONE observation stimulus family: the obligation the
-            # observation's own append transaction enqueued. A co-delivered
-            # utterance rides the same row — the payload carries it under
-            # `message`/`person_id` so the single stimulus holds the whole
-            # source event's wake semantics.
-            sibling = work.payload.get("message")
-            outcome, sid, reason = await stimulus_stage.run_observation(
-                observation_row_id=int(work.payload["observation_row_id"]),
-                object_kind=work.payload.get("object_kind") or "unknown",
-                platform=work.platform,
-                conversation_id=work.conversation_id,
-                unit=work.payload.get("unit"),
-                at_ms=int(work.payload.get("at_ms") or 0),
-                actor_person_id=work.payload.get("actor_person_id"),
-                actor_id=work.payload.get("actor_id"),
-                message=(message_from_dict(sibling)
-                         if sibling is not None else None),
-                person_id=work.payload.get("person_id"),
-                wiring=self._stimulus, metrics=self._metrics,
-                recorded_at_ms=work.payload.get("enqueued_ms"))
-            if outcome == "written":
-                await self._finish(work, "done", {"stimulus_id": sid})
-            elif outcome == "skipped":
-                await self._finish(work, "intentional_skip", {"reason": reason})
-            else:
-                state = ("failed_retained" if work.attempts >= 5
-                         else "retryable_failure")
-                await self._finish(work, state, {"reason": reason or "failed"})
-            return
-        outcome, sid, reason = await stimulus_stage.run_typed(
-            message=message_from_dict(work.payload["message"]),
-            item="message", row_id=work.payload.get("row_id"),
-            person_id=work.payload.get("person_id"),
-            wiring=self._stimulus, metrics=self._metrics,
-            recorded_at_ms=work.payload.get("enqueued_ms"),
-            dedupe=True)
-        if outcome == "written":
-            await self._finish(work, "done", {"stimulus_id": sid})
-        elif outcome == "skipped":
-            await self._finish(work, "intentional_skip", {"reason": reason})
-        else:
-            state = ("failed_retained" if work.attempts >= 5
-                     else "retryable_failure")
-            await self._finish(work, state, {"reason": reason or "failed"})
+        await self._finish(work, "intentional_skip", {"reason": "stimulus off"})
 
     async def _run_participation_fire(self, work: Any, key: tuple[str, str]) -> None:
         """The claimed window turn: persisted admission first, then the same

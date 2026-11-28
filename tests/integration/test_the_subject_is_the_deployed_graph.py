@@ -80,7 +80,7 @@ async def test_obtain_returns_the_production_graph(spec, clean_pg_url, cognition
         assert spec.policy is not None
         spec = replace(
             spec, policy=spec.policy + "home_room = true\n",
-            overrides={"cognition.enabled": True, "dreamer.enabled": True, "notes.enabled": True},
+            overrides={"notes.enabled": True},
         )
     requests: list[dict] = []
     daemon = FakeSignalDaemon()
@@ -100,18 +100,15 @@ async def test_obtain_returns_the_production_graph(spec, clean_pg_url, cognition
     retired = {
         "dream_adaptors", "dream_schedule_clock", "dream_schedules", "language_scopes",
         "language_store", "memory", "profile_cited", "unit_scopes", "wake_evaluator",
-        "wake_tick_seconds", "graph_batches",
+        "wake_tick_seconds", "graph_batches", "cognition_runner", "cognition_shutdown",
     }
     assert added | {"access", "managed_services", "managed_session"} <= fields
     assert retired.isdisjoint(fields), retired & fields
-    assert len(fields) == 77, (
+    assert len(fields) == 75, (
         "index_state removed for the legacy memory wiring; reconcile the production subject."
     )
-    if cognition:
-        assert isinstance(subject.deps.wake_poller, WakePoller)
-        assert subject.deps.wake_poller._review is not None
-    else:
-        assert subject.deps.wake_poller is None
+    assert isinstance(subject.deps.wake_poller, WakePoller)
+    assert subject.deps.wake_poller._review is not None
     assert not requests
     assert subject.deps.graph_observe is not None
     assert subject.deps.access is subject.deps.ingest._access
@@ -434,11 +431,11 @@ async def test_actual_production_composition_retains_fire_bridge_and_cognition(
     environment = IsolatedServices(database_url=clean_pg_url,
                                     applications=applications, redis=True)
     async with environment:
-        subject = await obtain(replace(spec, environment=environment), legacy_replay=True)
+        subject = await obtain(replace(spec, environment=environment))
         assert isinstance(subject.deps, Dependencies)
         assert subject.deps.fire_path is not None
         assert subject.deps.bridge_runtime is not None
-        assert subject.deps.cognition_runner is not None
+        assert subject.deps.wake_poller is not None
         assert subject.deps.memory_embed is not None
         assert set(subject.deps.registry.adapters) == {"signal", "discord", "whatsapp", "instagram"}
         assert all(getattr(subject.cfg.platforms, p).mode == "bridge"
@@ -451,20 +448,14 @@ async def test_actual_production_composition_retains_fire_bridge_and_cognition(
         # actual SDK wire bodies, not an inspection/pre-assembly substitute.
         control_cfg = environment.bind_config(build_config(spec))
         control_deps = await build_dependencies(control_cfg, clock=lambda: now,
-                                                operational_clock=wall_clock, legacy_replay=True)
+                                                operational_clock=wall_clock)
         control = replace(subject, cfg=control_cfg, deps=control_deps)
         environment.register_subject(control)
         assert control.deps.memory_embed is not None
         assert type(control.deps.memory_embed) is type(subject.deps.memory_embed)
         assert control_cfg.store.database_url_env != subject.cfg.store.database_url_env
         assert subject.cfg.credentials[subject.cfg.store.database_url_env] == clean_pg_url
-        for graph in (control, subject):
-            result = await graph.deps.cognition_runner.probe(
-                unit=subject.unit, summary="Generated empty affair",
-                now_ms=int(now.timestamp() * 1000))
-            assert result.stop_reason == "end_turn"
-        assert len(requests) == 2
-        assert requests[0] == requests[1]
+        assert control.deps.wake_poller is not None
         assert not environment.denied
         await control.aclose()
         await subject.aclose()

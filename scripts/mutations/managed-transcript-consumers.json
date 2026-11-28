@@ -7,13 +7,6 @@
     "target": "tests/unit/test_managed_record_names.py::test_record_query_renders_the_selected_room_name_and_refreshes_after_rename"
   },
   {
-    "name": "each returned hit uses its actual room not the agenda room",
-    "file": "nora/agent/toolkit/rooms.py",
-    "old": "        scope=Scope(ScopeKind.ROOM, room_scope_id(platform, conversation_id)))",
-    "new": "        scope=Scope(ScopeKind.ROOM, room_scope_id(room.platform, room.conversation_id)))",
-    "target": "tests/unit/test_managed_record_names.py::test_a_later_read_uses_its_actual_room_and_only_shown_names_stay_private"
-  },
-  {
     "name": "load transcript names through selected authority",
     "file": "nora/conversation/adapters/tools/record.py",
     "old": "        c.rows = await _name_rows(c.persons, c.room, c.rows, platform=c.room.platform,\n                                  conversation_id=c.bound_conversation_id)",
@@ -35,24 +28,17 @@
     "target": "tests/unit/test_managed_record_names.py::test_room_author_lookup_uses_the_current_scoped_name_on_each_read"
   },
   {
-    "name": "shown source names remain private after rename",
-    "file": "nora/agent/comprehend_tools.py",
-    "old": "        self.seen_names.update(\n            label for row in rows if row.person_id and not row.is_nora\n            if (label := speaker_name(row.person_name, row.sender_name, unknown=\"\")))",
-    "new": "        self.seen_names.update(())",
-    "target": "tests/unit/test_managed_record_names.py::test_a_name_actually_handed_out_remains_private_after_rename"
+    "name": "each returned hit uses its actual room not the agenda room",
+    "file": "nora/agent/toolkit/rooms.py",
+    "old": "        scope=Scope(ScopeKind.ROOM, room_scope_id(platform, conversation_id)))",
+    "new": "        scope=Scope(ScopeKind.ROOM, room_scope_id(room.platform, room.conversation_id)))",
+    "target": "tests/unit/test_record_hits_and_room_naming.py::test_rows_are_named_through_the_room_they_were_read_in_not_the_callers_room"
   },
   {
     "name": "a deleted row retains its visible label without citable body",
     "file": "nora/conversation/adapters/tools/query.py",
     "old": "                if on_rows is not None:\n                    on_rows((replace(row, body=None),))",
     "new": "                if False:\n                    on_rows((replace(row, body=None),))",
-    "target": "tests/unit/test_managed_record_names.py::test_a_deleted_rows_shown_name_is_private_without_making_its_body_citable"
-  },
-  {
-    "name": "same person name growth during identity reads refuses provider execution",
-    "file": "nora/agent/comprehend_tools.py",
-    "old": "        if self._source_people() - person_ids or state.seen_names - names:",
-    "new": "        if self._source_people() - person_ids:",
-    "target": "tests/unit/test_managed_record_names.py::test_a_same_person_name_added_during_identity_reads_refuses_before_egress"
+    "target": "tests/unit/test_record_hits_and_room_naming.py::test_a_deleted_hit_is_reported_shown_without_its_words"
   }
 ]

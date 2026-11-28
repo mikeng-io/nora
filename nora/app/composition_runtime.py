@@ -3,17 +3,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from nora.app.composition_helpers import _note_unit_of
 from nora.app.runtime import BackgroundTasks
 from nora.engagement.slots import ConversationSlots
-from nora.infra.sql.stimuli import SqlStimulusStore
 from nora.infra.sql.tag_debounce import SqlTagDebounceStore
-from nora.ingest.stages import stimulus as stimulus_stage
 from nora.obs.health import LLMState
 from nora.platform.discord.bridge_control import BridgeChannelDirectory
 from nora.tag import Debounce
 
-"""Runtime-support wiring steps: tasks, slots, stimulus."""
+"""Runtime-support wiring steps: tasks and slots."""
 
 
 @dataclass(frozen=True)
@@ -69,29 +66,3 @@ def build_slots(background: Any, cfg: Any, policy: Any) -> SlotsWiring:
         maxlen=cfg.engagement.queue.max_depth, spawn=background.spawn, policy=policy,
     )
     return SlotsWiring(slots=slots)
-
-
-@dataclass(frozen=True)
-class StimulusWiring:
-    stimulus_store: Any
-    stimulus_wiring: Any
-
-
-def stimulus(allowlist: Any, cfg: Any, engine: Any, registry: Any)-> StimulusWiring:
-
-
-    # The cognition loop's stimuli: OFF under `[cognition] enabled = false`, the shipped
-    # default. On, the ingest pipeline appends one stimulus per recorded person-authored
-    # item, and the evaluator reads them and starts sessions. The evaluator is built after…
-    stimulus_wiring: stimulus_stage.Wiring | None = None
-    stimulus_store: SqlStimulusStore | None = None
-    if cfg.cognition.enabled:
-        stimulus_store = SqlStimulusStore(engine)
-        stimulus_wiring = stimulus_stage.Wiring(
-            store=stimulus_store,
-            unit_of=_note_unit_of(allowlist),
-            self_ids=registry.self_aliases(),
-            reply_quiet_seconds=cfg.cognition.reply_quiet_seconds,
-            timeout_seconds=cfg.cognition.store_timeout_seconds,
-        )
-    return StimulusWiring(stimulus_store=stimulus_store, stimulus_wiring=stimulus_wiring)

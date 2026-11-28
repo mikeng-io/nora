@@ -19,15 +19,8 @@ from __future__ import annotations
 
 from typing import Any, ClassVar
 
-import pytest
 from strands.types._events import ToolResultEvent
 
-from nora.agent.catalog.entries import NATIVE_TOOLS
-from nora.agent.comprehend_tools import (
-    HISTORICAL_READ_UNAVAILABLE,
-    HistoricalRead,
-    as_of_reads,
-)
 from nora.agent.toolkit.transcript import _read_window
 
 
@@ -54,104 +47,24 @@ def _use(arguments: dict[str, Any]) -> dict[str, Any]:
     return {"toolUseId": "t", "input": arguments}
 
 
-async def _answer(tool: HistoricalRead, arguments: dict[str, Any]) -> dict[str, Any]:
-    events = [e async for e in tool.stream(_use(arguments), {})]
-    return events[-1].tool_result["content"][0]["json"]
 
 
 # ---- the current-head table ------------------------------------------------
 
-def test_every_unavailable_name_is_a_real_read_tool():
-    """The table can only refuse what exists: a renamed or dropped tool must
-    not linger here answering for a name nothing builds."""
-    assert HISTORICAL_READ_UNAVAILABLE
-    assert set(HISTORICAL_READ_UNAVAILABLE) <= set(NATIVE_TOOLS)
-    assert all(NATIVE_TOOLS[n].read_only for n in HISTORICAL_READ_UNAVAILABLE)
 
 
-@pytest.mark.parametrize("name", sorted(
-    n for n in ("memory_search", "memory_read", "note_read",
-                "note_search", "memo_read", "social_read", "room_state_read",
-                "poll_list", "poll_read", "lookup_person",
-                "who_said", "group_members", "rollup_read",
-                "standing_read", "routine_read", "where_been",
-                "media_search", "file_fetch")
-))
-async def test_a_current_head_read_answers_unavailable_and_the_inner_tool_never_runs(name):
-    """Fail-closed, named, and nothing read: `unavailable` with the real
-    limitation, never `nothing_found`, and the inner tool's store is never
-    touched — a miss is not evidence the fold was empty. `file_fetch` is in
-    the table because a shared file's CONTENT is what it says at fetch time:
-    nothing as-of can read it back."""
-    inner = _Inner(name)
-    answer = await _answer(HistoricalRead(inner), {})
-    assert answer["status"] == "unavailable" and answer["note"]
-    assert inner.calls == []
 
 
 # ---- record_query's branches ------------------------------------------------
 
-@pytest.mark.parametrize("arguments", [
-    {"kind": "poll"},
-    {"object": "poll:000000000000"},
-    {"scope": "all_rooms", "start": "2014-05-01"},
-])
-async def test_record_query_branches_that_read_current_state_refuse(arguments):
-    """The typed source-object branch folds and lists as they stand now, and
-    `all_rooms` checks today's member list — neither can be read as of the
-    evidence instant, so each answers `unavailable` and never runs."""
-    inner = _Inner("record_query")
-    answer = await _answer(HistoricalRead(inner), arguments)
-    assert answer["status"] == "unavailable"
-    assert inner.calls == []
 
 
-async def test_record_query_message_reads_pass_through():
-    """The messages branch stays: its interval is already bounded at the
-    instant the session's clock is bound to, so the call runs untouched."""
-    inner = _Inner("record_query")
-    arguments = {"start": "2014-05-01", "end": "2014-05-31", "text": "dinner"}
-    answer = await _answer(HistoricalRead(inner), arguments)
-    assert answer["status"] == "ok"
-    assert inner.calls[0]["input"] == arguments
 
 
 # ---- pass-through reads ------------------------------------------------------
 
-@pytest.mark.parametrize("name,arguments", [
-    ("record_query", {"start": "2014-05-01"}),
-    ("load_transcript", {"limit": 5}),
-    ("load_transcript", {"before": "2013-01-01"}),
-    ("load_transcript", {"before": "2030-01-01"}),
-    ("load_transcript", {"before": "next tuesday-ish"}),
-    ("room_read", {"room": "generated-room", "before": "2013-01-01"}),
-    ("web_search", {"query": "dinner"}),
-    ("web_fetch", {"url": "https://example.invalid/"}),
-    ("media_fetch", {"code": "generated-code"}),
-    ("place_info", {"name": "generated-place"}),
-    ("instagram_read", {"handle": "generated-handle", "what": "profile"}),
-    ("x_search", {"query": "dinner"}),
-])
-async def test_reads_with_honest_as_of_semantics_pass_through_verbatim(name, arguments):
-    """Every read the record CAN answer as-of passes through with its call
-    untouched — the bound lives in the built tool's own clock, so a `before`
-    (absent, earlier, later or malformed) reaches the native parser verbatim,
-    where it is honored, bounded at the instant, or refused as ever."""
-    inner = _Inner(name)
-    answer = await _answer(HistoricalRead(inner), arguments)
-    assert answer["status"] == "ok"
-    assert inner.calls[0]["input"] == arguments
 
 
-async def test_as_of_reads_wraps_tool_objects_and_leaves_functions_alone():
-    """Only Strands-shaped tools are wrapped: a caller's plain-function
-    stand-in keeps its own behavior (and its own `__name__` dispatch)."""
-    async def fn(**kw: Any) -> dict[str, Any]:
-        return {"status": "ok"}
-    fn.__name__ = "record_query"  # type: ignore[attr-defined]
-    wrapped = as_of_reads([_Inner("note_read"), fn])
-    assert isinstance(wrapped[0], HistoricalRead)
-    assert wrapped[1] is fn
 
 
 # ---- the bound itself: the read's own instant reaches the store --------------

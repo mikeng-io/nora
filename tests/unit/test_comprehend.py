@@ -3,10 +3,8 @@
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 
-import pytest
 import tiktoken
 
-from nora.agent.comprehend_tools import egress_reason
 from nora.domain.comprehend import ComprehendItem, Preview, card_facts
 from nora.domain.memory_graph import (
     Entity,
@@ -46,77 +44,10 @@ ITEM = ComprehendItem(
     },
 )
 
-@pytest.mark.parametrize(
-    ("text", "reason"),
-    [
-        ("where was Generated Person yesterday", "private_person"),
-        ("@generated_handle posts", "private_person"),
-        ("call +" + "852" + "9000" + "0101", "identifier"),
-        (str(20 + 2.312) + "," + str(110 + 4.168), "coordinate"),
-        ("who played Generated Hall on 2026-01-10", None),
-    ],
-)
-def test_egress_screen(text, reason):
-    assert egress_reason(text, ("Generated Person", "@generated_handle")) == reason
 
 
-def test_nested_percent_encoding_cannot_bypass_private_person_screen():
-    assert (
-        egress_reason("where was Generated%2525252520Person", ("Generated Person",))
-        == "private_person"
-    )
 
 
-@pytest.mark.parametrize("name,argument", [
-    ("web_search", "query"), ("web_fetch", "url"),
-    ("instagram_search", "query"), ("instagram_read", "handle"),
-    ("instagram_read", "link"), ("instagram_read", "url"),
-    ("x_search", "query"), ("x_read", "handle"),
-    ("x_read", "link"), ("x_read", "url"),
-    ("place_info", "name"), ("place_info", "address"),
-    ("media_fetch", "url"), ("media_fetch", "question"),
-    ("file_fetch", "link"), ("file_fetch", "url"),
-])
-async def test_outbound_arguments_are_screened_before_the_tool_runs(name, argument):
-    from nora.agent.comprehend_tools import ComprehendRead, LookupState
-    from nora.agent.fetch_watch import GraphFetched, _result_of
-    from nora.agent.ports import ToolSpec, adapt
-    from nora.obs.metrics import Metrics
-    from nora.testing.comprehend import InMemoryComprehendRecords
-
-    public = "https://example.invalid/volleyball" if argument in {"url", "link"} else "volleyball"
-    calls = []
-
-    async def outbound(query: str = "", url: str = "", handle: str = "", name: str = "",
-                       address: str = "", question: str = "", link: str = "") -> dict:
-        values = {"query": query, "url": url, "handle": handle, "name": name,
-                  "address": address, "question": question, "link": link}
-        calls.append(values)
-        value = values[argument]
-        if value != public:
-            return {"status": "unavailable", "reason": "unexpected_target"}
-        return {"status": "ok", "text": value}
-
-    records, fetched = InMemoryComprehendRecords(), GraphFetched()
-    state = LookupState(fetched, UNIT, 1, records, Metrics(), ("Generated Person",))
-    tool = ComprehendRead(adapt(ToolSpec(
-        name=name, description="", schema={}, call=outbound,
-    )), state)
-
-    async def call(value, use_id):
-        events = [event async for event in tool.stream(
-            {"toolUseId": use_id, "name": name, "input": {argument: value}}, {},
-        )]
-        return _result_of(events[-1])
-
-    refused = await call("Generated Person", "private")
-    assert refused["status"] == "refused" and refused["reason"] == "private_person"
-    assert calls == [] and fetched.sources == {}
-    assert records.refusals == [(1, "egress", "private_person")]
-    permitted = await call(public, "public")
-    assert permitted["status"] == "ok" and permitted["text"] == public
-    assert len(calls) == 1 and calls[0][argument] == public
-    assert len(fetched.sources) == 1
 
 
 
@@ -257,64 +188,5 @@ def test_preview_text_never_reports_a_row_the_budget_omitted():
     assert len(shown) < 100
 
 
-async def test_a_memory_read_marks_repeats_and_counts_what_is_new():
-    from nora.agent.comprehend_tools import ComprehendRead, LookupState
-    from nora.agent.fetch_watch import GraphFetched, _result_of
-    from nora.agent.ports import ToolSpec, adapt
-    from nora.obs.metrics import Metrics
-    from nora.testing.comprehend import InMemoryComprehendRecords
-
-    async def read():
-        return {
-            "status": "ok",
-            "keys": [["person", "generated-person"], ["note", "generated-note"]],
-            "relations": [],
-        }
-
-    state = LookupState(
-        GraphFetched(), UNIT, 1, InMemoryComprehendRecords(), Metrics(), ())
-    tool = ComprehendRead(
-        adapt(ToolSpec(name="memory_search", description="", schema={}, call=read)),
-        state,
-    )
-
-    async def call(use_id):
-        events = [
-            event async for event in tool.stream(
-                {"toolUseId": use_id, "name": "memory_search", "input": {}}, {})
-        ]
-        return _result_of(events[-1])
-
-    first = await call("first")
-    assert first["status"] == "ok"
-    assert first["new"] == 2 and first["repeated"] == []
-    second = await call("second")
-    assert second["status"] == "ok"      # repeats-only keeps its own status
-    assert second["new"] == 0
-    assert second["repeated"] == [
-        ["note", "generated-note"], ["person", "generated-person"]]
 
 
-async def test_an_unavailable_read_carries_no_saturation_claim():
-    from nora.agent.comprehend_tools import ComprehendRead, LookupState
-    from nora.agent.fetch_watch import GraphFetched, _result_of
-    from nora.agent.ports import ToolSpec, adapt
-    from nora.obs.metrics import Metrics
-    from nora.testing.comprehend import InMemoryComprehendRecords
-
-    async def read():
-        return {"status": "unavailable", "reason": "database unreachable"}
-
-    state = LookupState(
-        GraphFetched(), UNIT, 1, InMemoryComprehendRecords(), Metrics(), ())
-    tool = ComprehendRead(
-        adapt(ToolSpec(name="memory_read", description="", schema={}, call=read)),
-        state,
-    )
-    events = [
-        event async for event in tool.stream(
-            {"toolUseId": "u1", "name": "memory_read", "input": {}}, {})
-    ]
-    answer = _result_of(events[-1])
-    assert answer["status"] == "unavailable"
-    assert "new" not in answer and "repeated" not in answer

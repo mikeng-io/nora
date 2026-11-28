@@ -26,7 +26,6 @@ from nora.engagement.stages import debrief
 from nora.obs.metrics import Metrics
 from nora.obs.tracing import span
 from nora.testing import FakeRecordStore, InMemoryStandingStore
-from nora.testing.tag_traces import FakeTagTraceStore
 
 pytestmark = pytest.mark.asyncio
 
@@ -1595,186 +1594,22 @@ def _unit_target():
     )
 
 
-async def _unit_fold(*, ledger, trace=None, items=(), status="stop",
-                     sessions=1):
-    """One `fold_unit` call over the real-fake ledger and a SAVED session
-    Record — `by_tag` must find the session's own `turn(<id>)` handle for
-    the entries to cite; a trace `save` never wrote is «could not check»."""
-    from nora.testing.standing_ledger import InMemoryStandingLedger
-    from nora.testing.tag_traces import FakeTagTraceStore
-
-    traces = FakeTagTraceStore()
-    trace = trace if trace is not None else dataclasses.replace(
-        _trace(), unit="u1", tag_id="session-1")
-    for _ in range(sessions):
-        await traces.save(trace)
-    if not isinstance(ledger, InMemoryStandingLedger):
-        ledger = InMemoryStandingLedger()
-    client = _Client(debrief.Completion(
-        json.dumps({"items": list(items)}), status))
-    metrics = Metrics()
-    await debrief.fold_unit(
-        trace=trace, unit="u1", rooms=(("signal", "room-a"),),
-        ledger=ledger, target=_unit_target(), tag_traces=traces,
-        client=client, objective=_Objective(), metrics=metrics,
-        display_name="Nora", timeout_seconds=5.0,
-        store_timeout_seconds=5.0, now_ms=2000,
-    )
-    if client.prompts:
-        assert "Scope of this call: UNIT." in client.prompts[0]
-    return ledger, metrics
 
 
-async def test_the_cognition_fold_materializes_unit_scope_entries_under_cas():
-    """fold_unit writes each organized item ONCE at scope="unit" through the
-    validated ledger verb — a revise/close carries the read `base`, an open
-    gets the unit scope, and the saved Record's own `turn(t<id>)` is what
-    the sections cite."""
-    from nora.domain.standing_ledger import LedgerEntry
-    from nora.testing.standing_ledger import InMemoryStandingLedger
-
-    prior = LedgerEntry(
-        id="d1", kind="decision", unit="u1", scope="unit",
-        platform="signal", conversation_id="", revision=2, status="open",
-        subject="which venue",
-        body="## Options\n- amber\n- blue\n## Leaning\n- none yet",
-        opened_at=1, last_revised_at=1,
-    )
-    ledger, _ = await _unit_fold(
-        ledger=InMemoryStandingLedger((prior,)),
-        items=[
-            {"kind": "decision", "subject": "which venue",
-             "status": "closed", "outcome": "chose amber", "id": "d1"},
-            {"kind": "decision", "subject": "whether friday works",
-             "status": "open",
-             "sections": {"Options": "ride, stay", "Leaning": "ride"}},
-        ],
-    )
-    close = next(op for op in ledger.applied if op.op == "close")
-    open_ = next(op for op in ledger.applied if op.op == "open")
-    assert close.id == "d1" and close.base == 2
-    assert "turn(t" in close.outcome  # cites the saved Record's own handle
-    assert open_.scope == "unit"
-    assert open_.sections["Options"] and "turn(t" in open_.sections["Options"]
-    assert all(op.status is None and (op.op != "open" or op.outcome is None)
-               for op in ledger.applied)
 
 
-async def test_a_unit_fold_close_needs_cited_grounds_and_a_known_entry():
-    from nora.testing.standing_ledger import InMemoryStandingLedger
-    ledger, _ = await _unit_fold(
-        ledger=InMemoryStandingLedger(),
-        items=[
-            # no id -> nothing to close
-            {"kind": "decision", "subject": "x", "status": "closed",
-             "outcome": "done"},
-            # id the unit does not hold -> unresolved, never a guessed merge
-            {"kind": "decision", "subject": "y", "status": "closed",
-             "outcome": "done", "id": "d-missing"},
-        ],
-    )
-    assert ledger.applied == []
 
 
-async def test_a_malformed_unit_fold_preserves_the_prior_entries():
-    from nora.testing.standing_ledger import InMemoryStandingLedger
-    ledger = InMemoryStandingLedger()
-    client = _Client(debrief.Completion("not json", "stop"))
-    traces = FakeTagTraceStore()
-    trace = dataclasses.replace(_trace(), unit="u1", tag_id="session-1")
-    await traces.save(trace)
-    await debrief.fold_unit(
-        trace=trace, unit="u1", rooms=(("signal", "room-a"),),
-        ledger=ledger, target=_unit_target(), tag_traces=traces,
-        client=client, objective=_Objective(), metrics=Metrics(),
-        display_name="Nora", timeout_seconds=5.0,
-        store_timeout_seconds=5.0, now_ms=2000,
-    )
-    assert ledger.applied == []
 
 
-async def test_a_unit_fold_writes_nothing_when_the_session_expressed_nothing():
-    from nora.testing.standing_ledger import InMemoryStandingLedger
-    ledger, _ = await _unit_fold(
-        ledger=InMemoryStandingLedger(), items=[],
-    )
-    assert ledger.applied == []
 
 
-async def test_a_unit_fold_refuses_when_no_saved_record_exists():
-    """No saved Record, no fold: `turn(...)` citations would rest on a
-    handle nothing persisted, so the whole call is «could not check»."""
-    from nora.testing.standing_ledger import InMemoryStandingLedger
-    from nora.testing.tag_traces import FakeTagTraceStore
-
-    ledger = InMemoryStandingLedger()
-    client = _Client(debrief.Completion(
-        json.dumps({"items": [{"kind": "decision", "subject": "x",
-                               "sections": {"Options": "a", "Leaning": "b"}}]}),
-        "stop"))
-    metrics = Metrics()
-    trace = dataclasses.replace(_trace(), unit="u1", tag_id="never-saved")
-    await debrief.fold_unit(
-        trace=trace, unit="u1", rooms=(("signal", "room-a"),),
-        ledger=ledger, target=_unit_target(), tag_traces=FakeTagTraceStore(),
-        client=client, objective=_Objective(), metrics=metrics,
-        display_name="Nora", timeout_seconds=5.0,
-        store_timeout_seconds=5.0, now_ms=2000,
-    )
-    assert ledger.applied == []
-    assert _counter(metrics, "nora_debrief_total", outcome="unavailable") == 1
 
 
-async def test_a_truncated_unit_fold_writes_nothing():
-    from nora.testing.standing_ledger import InMemoryStandingLedger
-    ledger, _ = await _unit_fold(
-        ledger=InMemoryStandingLedger(),
-        items=[{"kind": "decision", "subject": "x",
-                "sections": {"Options": "a", "Leaning": "b"}}],
-        status="length",
-    )
-    assert ledger.applied == []
 
 
-async def test_a_unit_fold_replay_writes_no_new_revision():
-    """Re-folding the same session items against the same prior is
-    idempotent: identical content never opens a revision."""
-    from nora.domain.standing_ledger import LedgerEntry
-    from nora.testing.standing_ledger import InMemoryStandingLedger
-
-    prior = LedgerEntry(
-        id="d1", kind="decision", unit="u1", scope="unit",
-        platform="signal", conversation_id="", revision=2, status="open",
-        subject="which venue",
-        body="## Options\n- amber turn(t1)\n## Leaning\n- amber turn(t1)",
-        opened_at=1, last_revised_at=1,
-    )
-    ledger, _ = await _unit_fold(
-        ledger=InMemoryStandingLedger((prior,)),
-        items=[{"kind": "decision", "subject": "which venue",
-                "id": "d1", "status": "open",
-                "sections": {"Options": "amber", "Leaning": "amber"}}],
-    )
-    assert ledger.applied == []
 
 
-async def test_a_failed_open_cannot_close_an_earlier_batch_entry():
-    from nora.testing.standing_ledger import InMemoryStandingLedger
-
-    ledger, _ = await _unit_fold(
-        ledger=InMemoryStandingLedger(),
-        items=[
-            {"kind": "decision", "subject": "generated ongoing choice",
-             "sections": {"Options": "amber or blue", "Leaning": "amber"}},
-            {"kind": "decision", "subject": "generated separate choice",
-             "status": "closed", "outcome": "chose generated blue",
-             "sections": {"Options": "x" * (STANDING_BODY_CEILING_CHARS + 1),
-                          "Leaning": "blue"}},
-        ],
-    )
-    assert len(ledger.entries) == 1
-    assert ledger.entries[0].subject == "generated ongoing choice"
-    assert ledger.entries[0].status == "open"
 
 
 async def test_an_unresolved_requirement_stays_unknown_even_with_entries():

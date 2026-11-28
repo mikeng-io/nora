@@ -54,7 +54,6 @@ from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from typing import Any, Protocol, TypeVar
 
-from ..domain.entries import Entry
 from ..domain.lineage import (
     BODY,
     FACE,
@@ -224,16 +223,6 @@ def memo_permits(revision: MemoRevision, target: RenderRoom | None) -> bool:
         return True
     entries = revision.lineage.section(ROW)
     return bool(target is not None and entries and section_permits(entries, target, origin=None))
-
-
-def topic_permits(entry: Entry, target: RenderRoom | None) -> bool:
-    """An account is shown where its citations' lineage passes; unknown, nowhere.
-    Unlike a memo it has no uncited legacy: `check_entry` requires citations, so
-    an empty lineage is a write that never resolved and is shown nowhere."""
-    return bool(
-        target is not None
-        and section_permits(entry.head.lineage.section(ROW), target, origin=None)
-    )
 
 
 def excluded(exclude_persons: Iterable[str], target: RenderRoom) -> bool:

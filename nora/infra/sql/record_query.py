@@ -36,8 +36,13 @@ import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import JSONB, array
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from nora.domain.cognition_ground import RECORD_REF_TABLES
-from nora.domain.record_query import RECORD_QUERY_MAX, RecordHit, RecordQuery, RecordRefHit
+from nora.domain.record_query import (
+    RECORD_QUERY_MAX,
+    RECORD_REF_TABLES,
+    RecordHit,
+    RecordQuery,
+    RecordRefHit,
+)
 from nora.infra.sql.audit import (
     reaction_states,
     transcript_row,

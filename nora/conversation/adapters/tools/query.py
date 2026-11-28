@@ -33,7 +33,6 @@ from nora.agent.toolkit.transcript import (
     _transcript_messages,
 )
 from nora.agent.turn_recording import record_requirement
-from nora.domain.cognition_session import COGNITION_ADAPTOR
 from nora.domain.lineage import (
     LiveRoom,
     RoomFacts,
@@ -345,7 +344,6 @@ def _make_record_query(deps):
 
 def _make__record_messages(deps):
     display_name = deps.display_name
-    dream_adaptor = deps.dream_adaptor
     on_rows = deps.on_rows
 
     def _record_messages(
@@ -369,7 +367,6 @@ def _make__record_messages(deps):
             item = _transcript_messages(
                 [row],
                 now=now,
-                with_ids=dream_adaptor == COGNITION_ADAPTOR,
                 display_name=display_name,
                 on_rows=on_rows if not hit.deleted else None,
             )[0][0]

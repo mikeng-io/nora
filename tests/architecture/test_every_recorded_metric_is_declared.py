@@ -104,7 +104,6 @@ _MIN_DISTINCT_NAMES = 117
 _UNRESOLVABLE: frozenset[tuple[str, str, str, str]] = frozenset(
     {
         ("nora/instructions/reload.py", "_on_failure", "inc", "self._failure_counter"),
-        ("nora/app/cognition_session.py", "_inc", "inc", "name"),
         ("nora/obs/metrics.py", "inc", "inc", "value"),
         ("nora/obs/metrics.py", "observe", "observe", "value"),
         ("nora/presence/collector.py", "_count", "inc", "name"),

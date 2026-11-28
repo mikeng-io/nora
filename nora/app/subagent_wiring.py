@@ -34,7 +34,7 @@ def subagent_budget(b: Any) -> Any:
     """`[dreamer.budgets.subagent]` (a `DreamBudgetConfig`) as the worker's own bound: rounds,
     tokens, output tokens and the wall clock, and nothing else. The config refuses a block that
     sets a call ceiling, so no field is dropped here in silence."""
-    from nora.app.cognition_session import AdaptorBudget
+    from nora.agent.dreamer import AdaptorBudget
 
     return AdaptorBudget(
         turns=b.turns, total_tokens=b.total_tokens, output_tokens=b.output_tokens,

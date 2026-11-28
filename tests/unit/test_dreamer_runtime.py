@@ -11,7 +11,6 @@ from nora.agent.dreamer import (
     AdaptorGrant,
     HomeRoom,
     RegistryToolSource,
-    cognition_grant,
 )
 from nora.obs.metrics import Metrics
 
@@ -74,7 +73,7 @@ def test_a_SCOPE_keyed_grant_resolves_the_adaptors_OWN_room():
 
     source.build(
         key="g1-alias", names=frozenset({"where_is"}),
-        adaptor="cognition", grant=cognition_grant(),
+        adaptor="cognition", grant=AdaptorGrant(home_room=True),
     )
 
     (call,) = registry.calls

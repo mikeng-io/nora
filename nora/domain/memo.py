@@ -24,9 +24,8 @@ kept when the room asks her to keep it.
 
 **What a `Kept` line may hold** (DEC-230, DEC-306): anything said,
 verbatim, a password, a phone number or a booking reference included: it was
-said in the group and is already shared with it. So the Cognition session's
-identifier screen reads a memo's title and `## Conditions` and never its `##
-Kept` lines (`nora.app.cognition_session`). What leaves in a reply is still
+said in the group and is already shared with it. So the identifier screen reads a
+memo's title and `## Conditions` and never its `## Kept` lines. What leaves in a reply is still
 R-18's (`nora.agent.egress`): a key-shaped value read from a memo is refused at
 the reply like any other (DEC-226).
 

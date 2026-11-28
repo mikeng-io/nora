@@ -22,9 +22,8 @@ CHANNEL = "100000000000000002"
 
 
 @pytest.mark.parametrize("available", [True, False])
-@pytest.mark.parametrize("caller", ["obtain", "replay"])
 async def test_subject_uses_composed_policy_with_real_guild_directory(
-    clean_pg_url, evaluation_config, tmp_path, monkeypatch, available, caller,
+    clean_pg_url, evaluation_config, tmp_path, monkeypatch, available,
 ):
     monkeypatch.setenv("OMNIROUTE_API_KEY", "generated-token")
     policy = ('default = "deny"\n[[conversations]]\nplatform = "discord"\n'
@@ -74,15 +73,7 @@ async def test_subject_uses_composed_policy_with_real_guild_directory(
     monkeypatch.setattr(module, "build_dependencies", observe)
     environment = IsolatedServices(database_url=clean_pg_url, applications=apps, redis=True)
     async def acquire():
-        if caller == "obtain":
-            return await obtain(replace(spec, environment=environment))
-        from types import SimpleNamespace
-
-        from scripts.cognition_loop.run import _compose
-
-        args = SimpleNamespace(workdir=tmp_path, overrides=spec.overrides, environment=environment)
-        return await _compose(
-            args, clean_pg_url, 2_000_000_000_000, spec.room, policy, spec.identity)
+        return await obtain(replace(spec, environment=environment))
 
     async with environment:
         if available:

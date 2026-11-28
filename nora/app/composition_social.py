@@ -8,7 +8,6 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from nora.app.composition_readers import (
-    social_person_rooms,
     social_person_units,
     social_unit_rooms,
 )
@@ -116,7 +115,7 @@ class PollerWiring:
 def poller(
     allowlist: Any, blobs: Any, cfg: Any, comprehension: Any,
     engine: Any, media_objects: Any, media_sources: Any, metrics: Any,
-    persons: Any, social_subjects: Any, stimulus_store: Any,
+    persons: Any, social_subjects: Any,
 ) -> PollerWiring:
 
     # The social stream's poller (docs/design/cognition/loop.md): built here,
@@ -154,15 +153,12 @@ def poller(
             media_objects=media_objects,
         )
         # Perception needs `[media] comprehension` (`comprehension` is None
-        # without it, and then items stay unperceived and their reads are
-        # announced as recorded); the stimulus needs `[cognition] enabled`.
+        # without it, and then items stay unperceived).
         social_perception = SocialPerception(
             store=social_store,
             media_objects=media_objects,
             comprehension=comprehension,
-            stimuli=stimulus_store,
             units=LiveMapping(lambda: social_person_units(allowlist)),
-            rooms=LiveMapping(lambda: social_person_rooms(allowlist)),
             daily_cap=cfg.social.poll.perception_daily_cap,
             tz=ZoneInfo(cfg.cognition.timezone),
             chunk_seconds=cfg.media.describe.video.chunk_seconds,

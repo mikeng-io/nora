@@ -217,12 +217,10 @@ def test_generated_subject_answers_every_production_declaration(tmp_path, evalua
     # These three builders share the scripted turn, cognition and fold journey.
     scripted = {
         "nora/agent/prefill.py",
-        "nora/language/cognition_render.py",
         "nora/language/comprehend_render.py",
     }
     # These declarations are reached by an offline diagnostic or an eval arm.
     offline = {
-        "nora/language/confirmation_render.py",
         "nora/subject/context_selector_render.py",
         "scripts/memory_graph_spike.py",
     }

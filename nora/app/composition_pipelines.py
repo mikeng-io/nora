@@ -113,7 +113,7 @@ def build_ingest(
     _spawn: Any, access: Any, allowlist: Any, audit: Any, blobs: Any,
     cfg: Any, comprehension: Any, media_objects: Any, media_sources: Any,
     metrics: Any, policy: Any,
-    sticker_reader: Any, stimulus_wiring: Any, transcriber: Any,
+    sticker_reader: Any, transcriber: Any,
 ) -> IngestWiring:
     ingest = IngestPipeline(
         audit=audit,
@@ -129,7 +129,6 @@ def build_ingest(
         transcriber=transcriber,
         comprehension=comprehension,
         language=cfg.speech.stt.language,
-        stimulus_wiring=stimulus_wiring,
     )
     return IngestWiring(ingest=ingest)
 
@@ -137,7 +136,6 @@ def build_ingest(
 @dataclass(frozen=True)
 class StandingWiring:
     debrief_wiring: Any
-    standing_fold: Any
 
 
 async def standing(
@@ -164,38 +162,7 @@ async def standing(
             working_set_max_chars=cfg.standing.working_set_max_chars,
             content_checks=content_checks,
         )
-    # The Cognition session's completion hook (docs/design/cognition/graph.md 20-standing.md
-    # §3): the tools-less Standing fold, run once per room the finished session
-    # actually bound. The tag path's own per-turn fold went through graph
-    # admission with the debrief (NOR-36); this is the session's copy.
-    standing_fold = None
-    if debrief_wiring is not None:
-
-        async def standing_fold(
-            trace: Any, unit: str, rooms: tuple[tuple[str, str], ...],
-        ) -> None:
-            from nora.engagement.stages import debrief as _debrief_stage
-
-            if not rooms:
-                return
-            target = lineage.render_room(platform=rooms[0][0], conversation_id=rooms[0][1])
-            await _debrief_stage.fold_unit(
-                trace=trace,
-                unit=unit,
-                rooms=rooms,
-                ledger=ledger_store,
-                target=target,
-                tag_traces=tag_trace_store,
-                client=debrief_wiring.client,
-                objective=debrief_wiring.objective,
-                metrics=metrics,
-                display_name=cfg.doctrine.display_name,
-                timeout_seconds=debrief_wiring.timeout_seconds,
-                store_timeout_seconds=debrief_wiring.store_timeout_seconds,
-                now_ms=int(clock().timestamp() * 1000),
-            )
-
-    return StandingWiring(debrief_wiring=debrief_wiring, standing_fold=standing_fold)
+    return StandingWiring(debrief_wiring=debrief_wiring)
 
 
 def _debrief_client(cfg: Any) -> _DebriefModelClient:

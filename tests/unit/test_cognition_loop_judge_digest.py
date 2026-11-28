@@ -658,3 +658,10 @@ def test_instruction_evidence_uses_the_first_actual_request_without_assembly_fal
     trajectory["model_calls"] = [{"messages": [{"role": "user", "content": "Generated"}]}]
     assert judge_payload(_expectation(), _diff(), _state(), trajectory)["subject_instructions"] == {
         "status": "unavailable", "cause": "subject_instructions_not_captured", "messages": None}
+
+
+def test_the_judge_is_given_the_instructions_the_subject_actually_received():
+    payload = judge_payload(_expectation(), _diff(), _state(), _trajectory())
+    instructions = payload["subject_instructions"]
+    assert instructions["status"] == "observed"
+    assert instructions["messages"], "the transmitted system text must reach the judge"

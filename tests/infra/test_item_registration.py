@@ -476,3 +476,25 @@ async def test_one_item_per_observing_unit(engine: AsyncEngine, name: str) -> No
             network="instagram", since=datetime(1970, 1, 1, tzinfo=UTC),
         )
         assert len(calls) == 1
+
+
+async def test_a_person_item_raises_a_stimulus_and_nora_s_own_item_raises_none(
+    engine: AsyncEngine,
+) -> None:
+    registration = _registration()
+    table = METADATA.tables["nora_act"]
+    other = METADATA.tables["social_item"]
+    async with engine.begin() as conn:
+        await registration.planes(
+            conn, other, unit=_UNIT, occurred_at=_AT, identities=(_PERSON,), room=_ROOM,
+        )
+        await registration.planes(
+            conn, table, unit=_UNIT, occurred_at=_AT, identities=(_PERSON,), room=_ROOM,
+        )
+        await registration.planes(
+            conn, other, unit=_UNIT, occurred_at=_AT, identities=(_PERSON,), room=_ROOM,
+            own=True,
+        )
+    async with engine.connect() as conn:
+        rows = (await conn.execute(sa.select(GRAPH_STIMULUS))).mappings().all()
+    assert [(row["kind"], row["source"]) for row in rows] == [("new_item", "social_item")]

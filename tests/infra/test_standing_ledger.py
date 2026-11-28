@@ -150,7 +150,6 @@ async def plant(ledger, ledger_db):
 
 
 async def test_retention_is_byte_exact_across_unrelated_revisions(ledger, ledger_db):
-    import json
     from dataclasses import asdict
 
     def exact_bytes(entry):
@@ -289,9 +288,7 @@ async def test_unit_entry_lineage_denies_extra_or_unknown_listener(ledger, ledge
 
 @pytest.mark.parametrize("restriction", ["exclusion", "location", "unresolved"])
 async def test_cited_turn_exclusions_and_location_survive_in_entry(ledger, ledger_db, restriction):
-    from nora.domain.lineage import message as origin_message
     from nora.domain.tag_trace import TagTrace
-    from nora.domain.turn_record import DisclosureRequirement
     from nora.infra.sql.tag_traces import SqlTagTraceStore
 
     traces = SqlTagTraceStore(ledger_db)
@@ -465,7 +462,6 @@ async def toolset(ledger, ledger_db, *, room_id="room-a", context=None, tagger=N
     from nora.agent.room import Room
     from nora.agent.tools import build_tools
     from nora.engagement.self_presence import PresenceReader
-    from nora.infra.sql.standing import SqlStandingStore
     from nora.infra.transit import TransitClient
     from nora.testing import FakeAdapter
     from tests.fakes import SinkSender
@@ -626,7 +622,6 @@ async def test_called_floor_ignores_wired_legacy_standing(
     from nora.app.assembler import build_assembler
     from nora.domain.models import NormalizedMessage
     from nora.domain.standing import Standing
-    from nora.infra.sql.standing import SqlStandingStore
 
     entry, _ = await plant(ledger, ledger_db)
     legacy = SqlStandingStore(ledger_db)
@@ -686,9 +681,7 @@ async def test_thread_has_no_body_and_whole_standing_writes_are_refused(ledger, 
 
 
 async def test_revising_one_section_preserves_evidence_after_source_retention(ledger, ledger_db):
-    from nora.domain.tag_trace import TagTrace
     from nora.infra.sql.schema import TAG_TRACE
-    from nora.infra.sql.tag_traces import SqlTagTraceStore
 
     traces = SqlTagTraceStore(ledger_db)
     await traces.save(
@@ -859,171 +852,9 @@ class _FoldObjective:
         return "fold the retained Record faithfully"
 
 
-async def test_the_unit_fold_writes_scope_unit_entries_from_the_saved_record(
-    ledger, ledger_db,
-):
-    """A completed Cognition loop materializes expressed decisions through
-    `fold_unit` at `scope="unit"` under the existing validated writer: the
-    saved Record's requirements reach the entry's lineage and exclusions,
-    and the fold never touches room Standing."""
-    traces = SqlTagTraceStore(ledger_db)
-    req = DisclosureRequirement(
-        "signal:room-a", (origin_message("signal:room-a"),),
-        exclude_persons=("ana",),
-    )
-    trace = TagTrace(
-        tag_id="generated-session", conversation_id="",
-        messages=({
-            "role": "assistant",
-            "content": [
-                {"text": "generated session content"},
-                {"toolUse": {"toolUseId": "call",
-                             "name": "generated_tool", "input": {}}},
-            ],
-        },),
-        transcript=(), outcome="silent", created_at=1000,
-        occasion="cognition", unit="u",
-        bound_rooms=("signal:room-a",),
-        requirements={"call": [req.to_json()]},
-    )
-    await traces.save(trace)
-
-    client = _FoldClient(json.dumps({"items": [{
-        "kind": "decision",
-        "subject": "which venue",
-        "status": "open",
-        "sections": {"Options": "amber, blue", "Leaning": "amber"},
-    }]}))
-    await debrief.fold_unit(
-        trace=trace, unit="u",
-        rooms=(("signal", "room-a"),),
-        ledger=ledger, target=target(), tag_traces=traces,
-        client=client, objective=_FoldObjective(), metrics=Metrics(),
-        display_name="Nora", timeout_seconds=5.0,
-        store_timeout_seconds=5.0, now_ms=2000,
-    )
-    entries = await ledger.read(
-        unit="u", platform="signal", conversation_id="room-a")
-    unit_entries = [e for e in entries if e.scope == "unit"]
-    assert len(unit_entries) == 1
-    entry = unit_entries[0]
-    assert entry.kind == "decision" and entry.status == "open"
-    assert entry.subject == "which venue"
-    assert "amber" in entry.body
-    # The Record's own exclusions reach the entry — derived by code from
-    # the cited `turn(...)` requirement, never asserted by the fold: the
-    # excluded person cannot read it, everyone else can.
-    assert not ledger_permits(
-        entry, target("room-b", people=frozenset({"ana"})))
-    assert ledger_permits(entry, target("room-b"))
-    # Room Standing was never touched.
-    standing = SqlStandingStore(ledger_db)
-    assert await standing.read(
-        platform="signal", conversation_id="room-a") is None
 
 
-async def test_the_unit_fold_revises_and_closes_under_cas(ledger, ledger_db):
-    traces = SqlTagTraceStore(ledger_db)
-    trace = TagTrace(
-        tag_id="generated-session", conversation_id="",
-        messages=({"role": "assistant",
-                   "content": [{"text": "generated session content"}]},),
-        transcript=(), outcome="silent", created_at=1000,
-        occasion="cognition", unit="u",
-        bound_rooms=("signal:room-a",), requirements={},
-    )
-    await traces.save(trace)
-
-    open_client = _FoldClient(json.dumps({"items": [{
-        "kind": "decision", "subject": "which venue", "status": "open",
-        "sections": {"Options": "amber, blue", "Leaning": "none yet"},
-    }]}))
-    await debrief.fold_unit(
-        trace=trace, unit="u", rooms=(("signal", "room-a"),),
-        ledger=ledger, target=target(), tag_traces=traces,
-        client=open_client, objective=_FoldObjective(),
-        metrics=Metrics(), display_name="Nora",
-        timeout_seconds=5.0, store_timeout_seconds=5.0, now_ms=2000,
-    )
-    entries = await ledger.read(
-        unit="u", platform="signal", conversation_id="room-a")
-    entry = next(e for e in entries if e.scope == "unit")
-
-    close_client = _FoldClient(json.dumps({"items": [{
-        "kind": "decision", "subject": "which venue", "status": "closed",
-        "outcome": "chose amber", "id": entry.id,
-    }]}))
-    await debrief.fold_unit(
-        trace=trace, unit="u", rooms=(("signal", "room-a"),),
-        ledger=ledger, target=target(), tag_traces=traces,
-        client=close_client, objective=_FoldObjective(),
-        metrics=Metrics(), display_name="Nora",
-        timeout_seconds=5.0, store_timeout_seconds=5.0, now_ms=2000,
-    )
-    entries = await ledger.read(
-        unit="u", platform="signal", conversation_id="room-a")
-    closed = next(e for e in entries if e.id == entry.id)
-    assert closed.status == "closed" and closed.revision == entry.revision + 1
-    assert "Closed as" in closed.body and "chose amber" in closed.body
 
 
-async def test_the_unit_fold_writes_nothing_without_a_saved_record(
-    ledger, ledger_db,
-):
-    """No persisted Record → the citations the entries would carry rest on
-    nothing, so the whole fold is «could not check», never a write."""
-    trace = TagTrace(
-        tag_id="never-saved", conversation_id="",
-        messages=({"role": "assistant",
-                   "content": [{"text": "generated content"}]},),
-        transcript=(), outcome="silent", created_at=1000,
-        occasion="cognition", unit="u",
-        bound_rooms=("signal:room-a",), requirements={},
-    )
-    metrics = Metrics()
-    await debrief.fold_unit(
-        trace=trace, unit="u", rooms=(("signal", "room-a"),),
-        ledger=ledger, target=target(),
-        tag_traces=SqlTagTraceStore(ledger_db),
-        client=_FoldClient(json.dumps({"items": [{
-            "kind": "decision", "subject": "x", "status": "open",
-            "sections": {"Options": "a", "Leaning": "b"}}]})),
-        objective=_FoldObjective(), metrics=metrics, display_name="Nora",
-        timeout_seconds=5.0, store_timeout_seconds=5.0, now_ms=2000,
-    )
-    assert await ledger.read(
-        unit="u", platform="signal", conversation_id="room-a") == ()
-    assert metrics.get("nora_debrief_total", outcome="unavailable") == 1
 
 
-async def test_the_unit_fold_writes_a_new_settled_decision(ledger, ledger_db):
-    """A decision FIRST settled in this session writes its whole lifecycle:
-    grounded open then close under the store's own id/revision — it does
-    not vanish for lacking a prior entry."""
-    traces = SqlTagTraceStore(ledger_db)
-    trace = TagTrace(
-        tag_id="generated-session-2", conversation_id="",
-        messages=({"role": "assistant",
-                   "content": [{"text": "generated session content"}]},),
-        transcript=(), outcome="silent", created_at=1000,
-        occasion="cognition", unit="u",
-        bound_rooms=("signal:room-a",), requirements={},
-    )
-    await traces.save(trace)
-    await debrief.fold_unit(
-        trace=trace, unit="u", rooms=(("signal", "room-a"),),
-        ledger=ledger, target=target(), tag_traces=traces,
-        client=_FoldClient(json.dumps({"items": [{
-            "kind": "decision", "subject": "generated venue choice",
-            "status": "closed", "outcome": "chose generated amber",
-            "sections": {"Options": "generated amber or blue",
-                         "Leaning": "generated amber"}}]})),
-        objective=_FoldObjective(), metrics=Metrics(), display_name="Nora",
-        timeout_seconds=5.0, store_timeout_seconds=5.0, now_ms=2000,
-    )
-    entries = await ledger.read(
-        unit="u", platform="signal", conversation_id="room-a")
-    unit_entries = [e for e in entries if e.scope == "unit"]
-    assert len(unit_entries) == 1
-    assert unit_entries[0].status == "closed"
-    assert "chose generated amber" in unit_entries[0].body

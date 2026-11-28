@@ -276,3 +276,14 @@ def test_a_body_exactly_at_the_cap_is_accepted():
     )
 
     assert len(revision.body) == BODY_MAX_CHARS
+
+
+def test_a_note_keeps_a_bounded_set_of_object_pointers():
+    from nora.domain.notes import NOTE_OBJECT_REFS_MAX, SourceRef
+
+    refs = tuple(
+        SourceRef(platform="signal", conversation_id="g1", handle=f"poll:{i}", thread="")
+        for i in range(NOTE_OBJECT_REFS_MAX + 1)
+    )
+    with pytest.raises(ValueError, match="object refs"):
+        _note(object_refs=refs)

@@ -1,12 +1,5 @@
 [
   {
-    "name": "API punctuation remains an admissible exact source view",
-    "file": "nora/domain/prompt.py",
-    "old": "    return span in body or span in undash(body)",
-    "new": "    return span in body",
-    "target": "tests/unit/test_cognition_source_rows.py::test_api_punctuation_quotes_keep_custody_at_every_admission_gate"
-  },
-  {
     "name": "callback failures are not excused as pre-dispatch rejections",
     "file": "nora/agent/replay_capture.py",
     "old": "    return frames[-2:] == [DecoratedFunctionTool.stream.__code__,\n                           FunctionToolMetadata.validate_input.__code__]",
@@ -40,5 +33,12 @@
     "old": "elif e.span is not None and not contains_source_span(e.span, source.text):",
     "new": "elif e.span is not None and e.span not in source.text:",
     "target": "tests/contract/test_memory_graph_contract.py::test_api_punctuation_attribute_keeps_store_provenance"
+  },
+  {
+    "name": "API punctuation remains an admissible exact source view",
+    "file": "nora/domain/prompt.py",
+    "old": "    return span in body or span in undash(body)",
+    "new": "    return span in body",
+    "target": "tests/unit/test_prompt_and_declared_pins.py::test_a_copied_quote_may_use_the_comma_spelling_of_an_em_dash"
   }
 ]

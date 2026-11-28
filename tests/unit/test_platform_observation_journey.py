@@ -12,15 +12,10 @@ real room's or a production row.
 
 from __future__ import annotations
 
-import dataclasses
 import datetime as dt
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from nora.agent.lineage import LineagePolicy
-from nora.app.cognition_grounding import build_grounder
-from nora.domain.cognition_ground import Grounding
-from nora.domain.cognition_session import Room, build_situation
 from nora.domain.models import EditTarget, PersonRef
 from nora.domain.observations import (
     ArtifactPayload,
@@ -32,16 +27,12 @@ from nora.domain.observations import (
     RoomPayload,
     SourceScope,
 )
-from nora.domain.stimuli import Stimulus
-from nora.language.cognition_render import render_agenda
 from nora.persons import Persons
 from nora.testing.observations import FakeObservationStore
-from tests.unit.cognition_view import items
 
 HK = ZoneInfo("Asia/Hong_Kong")
 NOW = int(dt.datetime(2026, 9, 30, 15, 30, tzinfo=HK).timestamp() * 1000)
 MIN = 60_000
-ROOM = Room("signal", "room-a")
 SCOPE = SourceScope(platform="signal", account_key="acct",
                     conversation_id="room-a")
 
@@ -60,13 +51,6 @@ def _obs(*, kind: str, ref: str, op: str, payload: Any, ago: float,
     )
 
 
-def _stim(sid: int, obs_id: int, kind: str, ago: float) -> Stimulus:
-    return Stimulus(
-        id=sid, unit="u", kind="observation", item=kind,
-        ref=f"platform_observation:{obs_id}", at_ms=NOW - int(ago * MIN),
-        recorded_at_ms=NOW - int(ago * MIN), platform=ROOM.platform,
-        conversation_id=ROOM.conversation_id,
-    )
 
 
 _PERSONS = Persons(
@@ -75,45 +59,10 @@ _PERSONS = Persons(
 )
 
 
-def _grounder(store: FakeObservationStore):
-    async def notes(unit: str) -> Any:
-        return ()
-
-    async def events(unit: str, platform: str, cid: str) -> Any:
-        return ()
-
-    class _NoRecords:
-        async def by_refs(self, refs: Any, rooms: Any, **kw: Any) -> Any:
-            return ()
-
-        async def own_sends(self, rooms: Any, *, start_ms: int,
-                            end_ms: int, limit: int, **kw: Any) -> Any:
-            return ()
-
-    return build_grounder(
-        records=_NoRecords(), persons=_PERSONS, media_join=None,
-        note_index=notes, events_in=events, lineage=LineagePolicy(
-            rooms=(), mode="off"),
-        unit_rooms=lambda unit: {(ROOM.platform, ROOM.conversation_id)},
-        room_label=lambda platform, cid: "Room A",
-        observations=store,
-    )
 
 
-def _grounding(store: FakeObservationStore, stimuli: Any) -> Any:
-    sit = build_situation(unit="u", pending=stimuli, home_room=ROOM,
-                          now_ms=NOW, last_session_ms=None)
-    return sit, _grounder(store)
 
 
-def _prompt(stimuli: Any, grounding: Grounding) -> str:
-    sit = build_situation(unit="u", pending=stimuli, home_room=ROOM,
-                          now_ms=NOW, last_session_ms=None)
-    return render_agenda(
-        sit.agenda.items, stimuli={s.id: s for s in stimuli},
-        grounding=dataclasses.replace(grounding, room_labels={
-            "signal:room-a": "Room A"}),
-        now_ms=NOW, last_session_ms=None, tz=HK)
 
 
 async def _append_journey(store: FakeObservationStore) -> dict[str, int]:
@@ -166,105 +115,8 @@ async def _append_journey(store: FakeObservationStore) -> dict[str, int]:
     return ids
 
 
-async def test_the_mixed_journey_reads_back_from_append_to_agenda():
-    store = FakeObservationStore()
-    ids = await _append_journey(store)
-
-    # The folded head: the poll is recorded CLOSED (a source state, never a
-    # settled activity — nothing here decides the plan happened).
-    head = await store.current(scope=SCOPE, kind="poll", object_ref="p1")
-    assert head is not None and head.state.get("state") == "closed"
-    assert head.ordering == "ordered"
-
-    # The stimulus family: one `observation` stimulus per row, grouped by
-    # OBJECT KIND in one room-bound item — a vote/close needs no message.
-    stimuli = [
-        _stim(1, ids["poll_create"], "poll", 120),
-        _stim(2, ids["vote"], "poll", 60),
-        _stim(3, ids["close"], "poll", 30),
-        _stim(4, ids["room_topic"], "room", 110),
-        _stim(5, ids["pin"], "pin", 100),
-        _stim(6, ids["member_join"], "membership", 95),
-        _stim(7, ids["share"], "artifact", 119),
-    ]
-    sit, ground = _grounding(store, stimuli)
-    g = await ground("u", sit.agenda.items, stimuli)
-
-    assert set(g.observations) == {s.ref for s in stimuli}
-    vote = g.observations[_stim(0, ids["vote"], "poll", 0).ref]
-    assert vote.kind == "poll" and "vote" in vote.summary
-    assert "p1" not in vote.handle  # the platform ref never reaches a prompt
-    # The grounder names only actors the source named AND the roster knows.
-    creator = g.observations[f"platform_observation:{ids['poll_create']}"]
-    assert creator.actor == "Ada"
-    # The unknown actor stays unnamed, never a guessed name.
-    join = g.observations[f"platform_observation:{ids['member_join']}"]
-    assert join.actor is None and join.actor_status == "known"
-
-    # The Standing input: the room's folded objects beside the position.
-    objects = g.source_objects["signal:room-a"]
-    kinds = {o.kind for o in objects}
-    assert {"poll", "room", "pin", "membership", "artifact"} <= kinds
-
-    # What the model actually reads (the proof is the rendered prompt).
-    prompt = _prompt(stimuli, g)
-    assert "<observation" in prompt
-    assert "source_object" in prompt and "closed" in prompt
-    assert "3 poll source events in this room" in prompt
-    assert 'agenda_room="signal:room-a"' in prompt
-    assert "acct" not in prompt  # raw actors remain withheld
 
 
-async def test_an_event_and_its_answers_reach_the_assembled_state_named():
-    """SOURCE → fold → the Standing a model reads: the event's own fields,
-    its lifecycle status and WHO answered what — named through the roster
-    by the one bounded projection — never a bare count, a raw stanza id,
-    or an answer the source took back."""
-    store = FakeObservationStore()
-
-    async def put(name: str, obs: Observation) -> None:
-        rid = await store.append(
-            observation=obs, event_id=f"evt-{name}",
-            source_digest=f"d-{name}")
-        assert rid is not None
-
-    await put("create", _obs(
-        kind="artifact", ref="event:e9", op="create",
-        payload=ArtifactPayload(
-            artifact_kind="event", custody="declared",
-            metadata={"name": "Breakfast", "status": "canceled",
-                      "start_time_s": NOW // 1000 + 3600}),
-        ago=30, actor="+852111", actor_status="known", position=1))
-    rid_going = await store.append(observation=_obs(
-        kind="artifact", ref="event:e9", op="revise",
-        payload=ArtifactPayload(
-            artifact_kind="event", custody="declared",
-            metadata={"response": "going", "extra_guest_count": 2}),
-        ago=10, actor="+852111", actor_status="known", position=2),
-        event_id="evt-going", source_digest="d-going")
-    assert rid_going is not None
-
-    stimuli = [_stim(9, rid_going, "artifact", 10)]
-    sit, ground = _grounding(store, stimuli)
-    g = await ground("u", sit.agenda.items, stimuli)
-
-    # The stimulus line: the delta names Ada and her answer.
-    obs = g.observations[f"platform_observation:{rid_going}"]
-    assert obs.actor == "Ada"
-    assert "going" in obs.summary and "2 extra" in obs.summary
-
-    # The Standing object's state line: the SAME projection — status, the
-    # named responder's answer, her guests — not "event (1 field)".
-    (obj,) = [o for o in g.source_objects["signal:room-a"]
-              if o.kind == "artifact"]
-    assert "Breakfast" in obj.state and "canceled" in obj.state
-    assert "Ada" in obj.state and "going" in obj.state
-    assert "2 recorded extra guest" in obj.state
-    assert "e9" not in obj.state and "acct" not in obj.state
-
-    prompt = _prompt(stimuli, g)
-    assert "Breakfast" in prompt and "going" in prompt
-    assert "event:e9" not in prompt
 
 
 async def test_replay_and_window_and_bound_stay_honest():
@@ -312,50 +164,5 @@ async def test_replay_and_window_and_bound_stay_honest():
     assert await store.heads(scope=other) == []
 
 
-async def test_ordering_gap_and_anonymous_actor_are_stated_not_smoothed():
-    store = FakeObservationStore()
-    base = await store.append(
-        observation=_obs(kind="poll", ref="p1", op="create",
-                         payload=PollPayload(question="Q?", options=(("a", "A"),)), ago=60,
-                         position=5),
-        event_id="e1", source_digest="d1")
-    # An OLDER revision arriving after a newer one is retained and marked —
-    # a gap, never silently applied over the newer state.
-    stale = await store.append(
-        observation=_obs(kind="poll", ref="p1", op="revise",
-                         payload=PollPayload(state="open"), ago=10,
-                         position=2),
-        event_id="e2", source_digest="d2")
-    assert base is not None and stale is not None
-    head = await store.current(scope=SCOPE, kind="poll", object_ref="p1")
-    assert head is not None and head.ordering == "gap"
-
-    # An ANONYMOUS actor: the row carries the status, the grounder names
-    # nobody, the prompt says anonymous — never an invented member.
-    vote = await store.append(
-        observation=_obs(kind="poll", ref="p1", op="add",
-                         payload=PollPayload(voter_ref="v2", option_ref="a",
-                                             anonymous=True),
-                         ago=5, actor_status="anonymous", position=6),
-        event_id="e3", source_digest="d3")
-    assert vote is not None
-    s = _stim(1, vote, "poll", 5)
-    sit, ground = _grounding(store, [s])
-    g = await ground("u", sit.agenda.items, [s])
-    event = g.observations[s.ref]
-    assert event.actor is None and event.actor_status == "anonymous"
-    prompt = _prompt([s], g)
-    assert 'actor="anonymous"' in prompt
 
 
-async def test_a_stimulus_whose_row_is_gone_is_unreadable_not_guessed():
-    store = FakeObservationStore()
-    s = _stim(1, 999, "poll", 5)  # no such observation row
-    sit = build_situation(unit="u", pending=[s], home_room=ROOM,
-                          now_ms=NOW, last_session_ms=None)
-    g = await _grounder(store)("u", sit.agenda.items, [s])
-    assert g.observations == {}
-    prompt = _prompt([s], g)
-    assert "<observation" not in prompt
-    (item,) = items(prompt)
-    assert item.attrib["unreadable"] == "1"

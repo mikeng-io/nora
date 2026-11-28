@@ -158,7 +158,6 @@ mode = "off"
 enabled = false
 
 [cognition]
-enabled = false
 tick_seconds = 30                     # how often the evaluator checks every unit; one read per unit, no model call
 quiet_seconds = 1800
 cue_quiet_seconds = 120               # strong cue (date/time, place link, keep instruction, pending RSVP), then this much quiet
@@ -190,7 +189,6 @@ own_sends_max = 6
 dir = "nora/dreamer"
 reload = "mtime"
 strict = true
-enabled = false
 store_timeout_seconds = 15.0
 # max_unit_hold_seconds = 1200.0
 reasoning_effort = "none"
@@ -238,7 +236,7 @@ stale_seconds = 604800
 horizon_seconds = 5184000
 batch_limit = 100
 correction_quiet_seconds = 600
-check_model = ""
+check_model = "nora-judge"
 check_reasoning_effort = ""            # "" = low
 check_timeout_seconds = 60
 check_max_tokens = 2048

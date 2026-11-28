@@ -23,7 +23,7 @@ from nora.subject.environment import IsolatedServices
 from nora.subject.eval_evidence import EvidenceError
 from nora.subject.journey import JourneyDriver
 from nora.subject.obtain import SubjectSpec, build_config, default_policy, obtain
-from tests.integration.subject.test_recorded_wake_runtime import services
+from tests.integration.subject.protocol_services import services
 
 # The driver runs `prepare_effect_reads`, which creates eval indexes —
 # DDL — so every case here owns a dedicated database.
@@ -40,7 +40,7 @@ async def _world(clean_pg_url: str, tmp_path: Path, name: str):
               + "home_room = true\n")
     overrides = {
         "platforms.signal.mode": "bridge", "platforms.signal.enabled": True,
-        "cognition.enabled": True, "obs.metrics.port": port,
+        "obs.metrics.port": port,
     }
     spec = SubjectSpec(database_url=clean_pg_url, workdir=tmp_path / name,
                        policy=policy, overrides=overrides)

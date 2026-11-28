@@ -18,9 +18,8 @@ from typing import Any
 import pytest
 
 from nora.agent import factory
-from nora.agent.dreamer import as_strands_tools
+from nora.agent.dreamer import AdaptorBudget, as_strands_tools
 from nora.app.cognition_agent_runner import DreamerAgentRunner
-from nora.app.cognition_session import AdaptorBudget
 from nora.obs.metrics import Metrics
 from tests.fakes import dreamer_runtime_for
 
@@ -80,7 +79,7 @@ async def test_a_model_failure_is_raised_and_counted_not_returned(monkeypatch):
     metrics = Metrics()
     with pytest.raises(RuntimeError, match="fell over"):
         await _run(_runner(metrics))
-    assert metrics.get("nora_errors_total", stage="cognition_session") == 1
+    assert metrics.get("nora_errors_total", stage="cognition_pass") == 1
 
 
 async def test_a_timeout_is_raised_not_returned_as_a_stop_reason(monkeypatch):
@@ -162,7 +161,7 @@ def _raises(exc: BaseException) -> Any:
 
 
 async def _spent_by(runner: DreamerAgentRunner) -> tuple[Any, Any]:
-    from nora.app.cognition_session import SESSION_TOKENS, TokenSpend
+    from nora.app.cognition_agent_runner import SESSION_TOKENS, TokenSpend
     spend = TokenSpend()
     token = SESSION_TOKENS.set(spend)
     try:
@@ -208,7 +207,7 @@ async def test_a_cancelled_loop_leaves_its_partial_record_and_its_spend(
 
     monkeypatch.setattr(factory, "invoke", invoke)
 
-    from nora.app.cognition_session import SESSION_TOKENS, TokenSpend
+    from nora.app.cognition_agent_runner import SESSION_TOKENS, TokenSpend
     spend = TokenSpend()
     token = SESSION_TOKENS.set(spend)
     try:
@@ -244,3 +243,28 @@ async def test_a_run_outside_a_session_leaves_nothing_anywhere(monkeypatch):
     _spend_patch(monkeypatch, {"totalTokens": 5}, _raises(RuntimeError("down")))
     with pytest.raises(RuntimeError):
         await _run(_runner(Metrics()))
+
+
+async def test_the_root_span_is_a_generation_so_the_trace_reaches_langfuse(monkeypatch):
+    from contextlib import contextmanager
+
+    from nora.app import cognition_agent_runner as module
+    from nora.obs.tracing import TRACE_KIND
+
+    seen: list[dict[str, Any]] = []
+
+    @contextmanager
+    def span(name: str, **attributes: Any):
+        seen.append(attributes)
+        yield
+
+    class Result:
+        stop_reason = "end_turn"
+
+    async def invoke(*args: Any, **kwargs: Any) -> Any:
+        return Result()
+
+    monkeypatch.setattr(module, "span", span)
+    _patch(monkeypatch, invoke)
+    await _run(_runner(Metrics()))
+    assert seen and seen[0][TRACE_KIND] == "generation"

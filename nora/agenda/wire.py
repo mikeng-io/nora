@@ -1,19 +1,14 @@
 from dataclasses import dataclass
 from typing import Any
 
-from nora.agenda.adapters.tools.session import session_verbs as _session_verbs
 from nora.app.composition_helpers import _room_claims
 from nora.app.gatherings import GatheringService
 from nora.domain.live import LiveMapping
-from nora.domain.reminders import ReminderCaps, ReminderStore
+from nora.domain.reminders import ReminderStore
 from nora.infra.sql.gatherings import SqlGatheringStore
 from nora.infra.sql.reminders import SqlReminderStore
 
-"""Compose this area's session verbs and stores from shared dependencies."""
-
-
-def session_verbs(deps):
-    return _session_verbs(deps)
+"""Compose this area's stores from shared dependencies."""
 
 
 @dataclass(frozen=True)
@@ -27,20 +22,6 @@ def reminders(engine) -> RemindersWiring:
     # record store and the presence reader are still using. Built HERE, beside the other…
     reminders: ReminderStore = SqlReminderStore(engine)
     return RemindersWiring(reminders=reminders)
-
-
-@dataclass(frozen=True)
-class ReminderCapsWiring:
-    reminder_caps: Any
-
-
-def reminder_caps(cfg) -> ReminderCapsWiring:
-
-    # The reminder caps as the DOMAIN value, built once so every reminder writer (the
-    # tag path's `ToolRegistry` and the Cognition session) holds the exact SAME
-    # `ReminderCaps`, not two instances equal only by both reading `cfg.reminders`.
-    reminder_caps = ReminderCaps(**cfg.reminders.model_dump())
-    return ReminderCapsWiring(reminder_caps=reminder_caps)
 
 
 @dataclass(frozen=True)

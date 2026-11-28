@@ -49,13 +49,6 @@
     "target": "tests/integration/test_rollup_read.py::test_a_room_that_may_not_be_shown_a_row_is_told_rows_were_left_out_and_nothing_else"
   },
   {
-    "name": "rollup_read: a name resolves among everyone, not this room's people (R-21)",
-    "file": "nora/memory/adapters/tools/standing.py",
-    "old": "\n        c.matches = c.view.find(c.name) or tuple(\n            p for p in c.view.people if c.by_id and p.person_id == c.name\n        )\n        ",
-    "new": "            c.matches = tuple(p for p in persons.by_person.values() if p.c.name == c.name)\n",
-    "target": "tests/integration/test_rollup_read.py::test_a_name_resolves_only_among_this_rooms_people"
-  },
-  {
     "name": "rollup_read: a build that does not exist reads as an empty interval",
     "file": "nora/memory/adapters/tools/standing.py",
     "old": "\n    if c.got.build_id is None or c.got.through_ms is None:\n        ",
@@ -168,13 +161,6 @@
     "target": "tests/test_composition.py::test_the_composed_registry_holds_the_rollup_read_and_the_standing_head"
   },
   {
-    "name": "audit: the rollup_read audit line is dropped",
-    "file": "nora/app/cognition_wiring.py",
-    "old": "    \"rollup_read\": \"SQL SELECT of the CURRENT rollup build's rows (`rollup_build` \"\n                   \"status=current) and derived places; counters only. It starts, \"\n                   \"advances and switches no build, and folds nothing. No write.\",\n",
-    "new": "",
-    "target": "tests/unit/test_cognition_wiring.py::test_every_tool_in_the_catalogue_has_an_audited_side_effect_line"
-  },
-  {
     "name": "rollup_read tool: everyone in a room with nobody resolved reads every row (M2, tool layer)",
     "file": "nora/memory/adapters/tools/standing.py",
     "old": "if not c.people:",
@@ -236,5 +222,12 @@
     "old": "            return self.dreamer or (self.tag_turn and not self.worker)\n",
     "new": "            return True\n",
     "target": "tests/unit/test_tool_surface.py::test_rollup_read_is_a_tag_turns_tool_and_no_other_occasions"
+  },
+  {
+    "name": "rollup_read: a name resolves among everyone, not this room's people (R-21)",
+    "file": "nora/memory/adapters/tools/standing.py",
+    "old": "        c.matches = c.view.find(c.name)\n",
+    "new": "        c.matches = tuple(p for p in c.persons.by_person.values() if p.name == c.name)\n",
+    "target": "tests/integration/test_rollup_read.py::test_a_name_resolves_only_among_this_rooms_people"
   }
 ]

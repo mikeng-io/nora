@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import pytest
 
-from nora.access import IdentityAccess
 from nora.platform.discord.channels import StaticChannelDirectory
 from nora.policy import PolicyError, load_policy
 
@@ -273,11 +272,7 @@ def test_an_entry_with_neither_id_nor_guild_is_refused(tmp_path):
 # ── the absorb boundary in the live pipeline ─────────────────────────────
 
 from nora.domain.models import NormalizedMessage, PersonRef  # noqa: E402
-from nora.ingest.pipeline import IngestPipeline  # noqa: E402
-from nora.ingest.policy import TriggerTextPolicy  # noqa: E402
-from nora.obs.metrics import Metrics  # noqa: E402
 from nora.persons import Persons  # noqa: E402
-from nora.testing.fakes import FakeRecordStore  # noqa: E402
 
 
 def _pipeline_policy(tmp_path, extra=""):
@@ -305,62 +300,17 @@ def _persons():
     )
 
 
-def _pipeline(allowlist, spawned, stimulus_calls, monkeypatch, audit=None):
-    import nora.ingest.stages.stimulus as stimulus_stage
-
-    async def _spy(**kwargs):
-        stimulus_calls.append(kwargs)
-
-    monkeypatch.setattr(stimulus_stage, "run", _spy)
-    return IngestPipeline(
-        audit=audit or FakeRecordStore(),
-        policy=TriggerTextPolicy("nora.000"), allowlist=allowlist,
-        access=IdentityAccess.for_files(persons=_persons(), policy=allowlist),
-        metrics=Metrics(), spawn=spawned.append,
-        stimulus_wiring=object(),
-    )
 
 
-async def test_a_mention_only_channel_records_but_is_never_absorbed(tmp_path, monkeypatch):
-    """The server-entry default: transcript kept, tag path open, but no
-    stimulus — `Conversation.absorbed` is False."""
-    spawned, stimuli = [], []
-    pipeline = _pipeline(
-        _pipeline_policy(tmp_path), spawned, stimuli, monkeypatch,
-    )
-
-    result = await pipeline.run(message=_discord_msg(CHANNEL_A))
-
-    assert result.message is not None          # admitted and recorded
-    for coro in spawned:
-        await coro
-    assert stimuli == []                       # and never a stimulus
 
 
-async def test_an_ambient_channel_is_stimulated(tmp_path, monkeypatch):
-    """`ambient = [...]` is the opt-in: the same turn is absorbed."""
-    spawned, stimuli = [], []
-    pipeline = _pipeline(
-        _pipeline_policy(tmp_path, extra='ambient = ["discussion"]\n'),
-        spawned, stimuli, monkeypatch,
-    )
-
-    await pipeline.run(message=_discord_msg(CHANNEL_B))
-
-    for coro in spawned:
-        await coro
-    assert len(stimuli) == 1
 
 
 # ── `rooms()` is the enumeration every room consumer reads ─────────────
 
-import dataclasses  # noqa: E402
 
-import nora.ingest.stages.scope as scope_stage  # noqa: E402
 from nora.app.composition_readers import scope_home_rooms, social_unit_rooms  # noqa: E402
 from nora.app.documents_service import room_label, rooms_named  # noqa: E402
-from nora.config_reload import LivePolicy  # noqa: E402
-from nora.domain.models import EditTarget  # noqa: E402
 from nora.engagement.self_presence import PresenceReader  # noqa: E402
 
 
@@ -415,58 +365,10 @@ def _denying_policy(tmp_path):
     return load_policy(p)
 
 
-async def _run_past_a_swap(tmp_path, monkeypatch, message, audit=None):
-    """The hot-reload race, faithfully: `LivePolicy.swap` between the scope
-    read (old snapshot admits) and the absorb read (current snapshot denies)."""
-    live = LivePolicy(
-        _pipeline_policy(tmp_path, extra='ambient = ["discussion"]\n')
-    )
-    later = _denying_policy(tmp_path)
-    real_run = scope_stage.run
-
-    async def _swap_after_scope(**kwargs):
-        admitted = await real_run(**kwargs)
-        live.swap(later)
-        return admitted
-
-    monkeypatch.setattr(scope_stage, "run", _swap_after_scope)
-    spawned, stimuli = [], []
-    pipeline = _pipeline(live, spawned, stimuli, monkeypatch, audit=audit)
-    result = await pipeline.run(message=message)
-    for coro in spawned:
-        await coro
-    return result, stimuli
 
 
-async def test_a_room_vanishing_between_scope_and_the_absorb_read_is_not_absorbed(
-    tmp_path, monkeypatch,
-):
-    """A message the CURRENT policy denies is never stimulated — the
-    absorb read fails closed, never `or room.absorbed` on a missing room."""
-    result, stimuli = await _run_past_a_swap(
-        tmp_path, monkeypatch, _discord_msg(CHANNEL_B),
-    )
-    assert result.message is not None          # recorded
-    assert stimuli == []
 
 
-async def test_an_edit_whose_room_vanishes_mid_turn_is_not_absorbed(
-    tmp_path, monkeypatch,
-):
-    store = FakeRecordStore()
-    original = dataclasses.replace(
-        _discord_msg(CHANNEL_B, body="first"), message_id="edit-target-1",
-    )
-    await store.append(message=original, person_id="miles")
-    edit = dataclasses.replace(
-        _discord_msg(CHANNEL_B, body="second"),
-        timestamp=5, edit_of=EditTarget(message_id="edit-target-1"),
-    )
-    result, stimuli = await _run_past_a_swap(
-        tmp_path, monkeypatch, edit, audit=store,
-    )
-    assert result.message is not None          # the edit itself is recorded
-    assert stimuli == []
 
 
 # ── `nora groups` ────────────────────────────────────────────────────────

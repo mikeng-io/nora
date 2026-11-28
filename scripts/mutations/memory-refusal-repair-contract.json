@@ -1,72 +1,9 @@
 [
- {
-  "name": "happened_at carries its quote-or-null description into the schema",
-  "file": "nora/app/comprehend.py",
-  "old": "    expression: str | None = Field(default=None, description=(\n        \"The exact time words copied from that row's body — «tomorrow», «on \"\n        \"Saturday» — or null when the row states none. Never the row's `at` \"\n        \"metadata and never a date you computed: code resolves the quoted \"\n        \"words against that row's send time. The only nullable field here.\"))",
-  "new": "    expression: str | None = None",
-  "target": "tests/unit/test_orient_kind_table.py::test_the_generated_schema_carries_the_field_descriptions"
- },
- {
-  "name": "a refused statement carries its field and repair",
-  "file": "nora/app/cognition_memory.py",
-  "old": "            if entry.get(\"status\") == \"refused\":\n                out.update(repair_of(entry))\n                out[\"cite\"] = entry.get(\"cite\", cite_ids(i))",
-  "new": "            if entry.get(\"status\") == \"refused\":\n                out[\"cite\"] = cite_ids(i)",
-  "target": "tests/unit/test_orient_kind_table.py::test_a_refusal_names_the_field_its_repair_and_the_cited_rows"
- },
- {
-  "name": "the primary refusal list carries field, repair and cites",
-  "file": "nora/app/cognition_memory.py",
-  "old": "            {\"statement\": index, \"kind\": entry[\"kind\"], \"reason\": entry[\"reason\"],\n             **({\"part\": entry[\"part\"]} if entry.get(\"part\") else {}),\n             **({\"attribute\": entry[\"attribute\"]}\n                if entry.get(\"attribute\") else {}),\n             **repair_of(entry),\n             \"cite\": entry.get(\"cite\", cite_ids(index))}\n            for index, entry in report.items() if entry[\"status\"] == \"refused\"",
-  "new": "            {\"statement\": index, \"kind\": entry[\"kind\"], \"reason\": entry[\"reason\"]}\n            for index, entry in report.items() if entry[\"status\"] == \"refused\"",
-  "target": "tests/unit/test_orient_kind_table.py::test_a_saved_sibling_does_not_erase_the_refused_statements_repair"
- },
- {
-  "name": "a reading drop is legible in the refused list",
-  "file": "nora/app/cognition_memory.py",
-  "old": "                local_refusals.append({\"kind\": \"reading\", \"reason\": drops[0]})",
-  "new": "                pass",
-  "target": "tests/unit/test_orient_kind_table.py::test_a_refusal_names_the_field_its_repair_and_the_cited_rows"
- },
- {
-  "name": "a malformed cite container never raises over saved siblings",
-  "file": "nora/app/cognition_memory.py",
-  "old": "            cites = raw.get(\"cite\")\n            if not isinstance(cites, (list, tuple)):\n                return []\n            return [c[\"source\"] for c in cites\n                    if isinstance(c, dict) and \"source\" in c]",
-  "new": "            return [c[\"source\"] for c in raw.get(\"cite\", ())\n                    if isinstance(c, dict) and \"source\" in c]",
-  "target": "tests/unit/test_orient_kind_table.py::test_a_malformed_cite_container_returns_a_schema_refusal"
- },
- {
-  "name": "a saved statement's refused parts carry field and repair",
-  "file": "nora/app/cognition_memory.py",
-  "old": "            if entry.get(\"refused_parts\"):\n                out[\"refused_parts\"] = [\n                    {**part, **repair_of(part),\n                     \"cite\": part.get(\"cite\", cite_ids(i))}\n                    for part in entry[\"refused_parts\"]\n                ]",
-  "new": "",
-  "target": "tests/unit/test_orient_kind_table.py::test_a_refused_attribute_part_carries_the_generic_message"
- },
- {
-  "name": "a refused part reports its own cited rows",
-  "file": "nora/app/cognition_memory.py",
-  "old": "                     \"cite\": part.get(\"cite\", cite_ids(i))}",
-  "new": "                     \"cite\": cite_ids(i)}",
-  "target": "tests/unit/test_orient_kind_table.py::test_a_refused_attribute_part_carries_the_generic_message"
- },
- {
-  "name": "the quoted-sample exemption is scoped to the named constant",
-  "file": "tests/architecture/test_one_block_injector.py",
-  "old": "        if (opens[tag] - (allowed := _sample_sites(tree, rel, tag)\n                          | _reader_sites(tree, rel, tag)))\n        and (closes[tag] - allowed)))",
-  "new": "        if opens[tag] and closes[tag]))",
-  "target": "tests/architecture/test_one_block_injector.py::test_a_quoted_sample_constant_exempts_only_itself"
- },
- {
-  "name": "an attribute part gets the generic true message",
-  "file": "nora/app/cognition_memory.py",
-  "old": "            if entry.get(\"attribute\"):\n                return {\n                    \"field\": f\"attributes.{entry['attribute']}\",\n                    \"repair\": ATTRIBUTE_PART_REPAIR.format(\n                        reason=entry.get(\"reason\", \"\")),\n                }",
-  "new": "",
-  "target": "tests/unit/test_orient_kind_table.py::test_a_refused_attribute_part_carries_the_generic_message"
- },
- {
-  "name": "the citation description states the reading quote contract",
-  "file": "nora/app/comprehend.py",
-  "old": "        \"Words copied exactly from that row's shown body, or null only where \"\n        \"the statement kind allows an unquoted citation: a reading requires \"\n        \"a quote covering every cited row; a relation or correction may cite \"\n        \"a row without one.\"))",
-  "new": "        \"Words copied exactly from that row's shown body, or null when the \"\n        \"row is cited without a quoted span.\"))",
-  "target": "tests/unit/test_orient_kind_table.py::test_the_generated_schema_carries_the_field_descriptions"
- }
+  {
+    "name": "the quoted-sample exemption is scoped to the named constant",
+    "file": "tests/architecture/test_one_block_injector.py",
+    "old": "        if (opens[tag] - (allowed := _sample_sites(tree, rel, tag)\n                          | _reader_sites(tree, rel, tag)))\n        and (closes[tag] - allowed)))",
+    "new": "        if opens[tag] and closes[tag]))",
+    "target": "tests/architecture/test_one_block_injector.py::test_a_quoted_sample_constant_exempts_only_itself"
+  }
 ]

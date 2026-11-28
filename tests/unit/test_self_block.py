@@ -4,10 +4,6 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from nora.domain.cognition_ground import Grounding
-from nora.language.cognition_render import _BLOCKS as COGNITION_BLOCKS
-from nora.language.cognition_render import render_agenda
-
 NOW = datetime(2026, 10, 7, 12, 0, tzinfo=UTC)
 UNIT = "friends"
 
@@ -62,39 +58,12 @@ def _policy(tmp_path):
     return load_policy(f)
 
 
-def test_the_profile_is_the_first_row_of_the_cognition_table():
-    assert COGNITION_BLOCKS[0].name == "graph_profile"
-    assert COGNITION_BLOCKS[0].order == min(d.order for d in COGNITION_BLOCKS)
 
 
-def _cognition_prompt(grounding: Grounding | None) -> str:
-    return render_agenda(
-        [], grounding=grounding, now_ms=int(NOW.timestamp() * 1000),
-        last_session_ms=None,
-    )
 
 
-def test_a_cognition_prompt_opens_with_her_account_before_the_clock():
-    from nora.domain.blocks import ContextBlock
-    from nora.testing.context_blocks import compose_fixture
-
-    prompt = _cognition_prompt(Grounding(graph_profiles=(
-        ContextBlock("graph_profile", compose_fixture("she keeps it short here"),
-                     attrs=(("of", "nora"),)),
-    )))
-    assert prompt.startswith("<graph_profile ")
-    assert prompt.index("<graph_profile ") < prompt.index("<clock")
-    assert "she keeps it short here" in prompt
-    assert 'of="nora"' in prompt
-    assert COGNITION_BLOCKS[0].name == "graph_profile"
 
 
-def test_a_cognition_prompt_has_no_self_block_without_an_account():
-    for grounding in (Grounding(), None):
-        first = _cognition_prompt(grounding).splitlines()[0]
-        assert first.startswith("<graph_profile ")
-        assert first.endswith("/>")
-        assert 'of="' not in first
 
 
 # ---- R-31: the account is unit-wide, so a room shows it only where it may -----

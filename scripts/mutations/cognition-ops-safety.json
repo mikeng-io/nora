@@ -21,66 +21,10 @@
     "target": "tests/architecture/test_the_stop_grace_covers_the_shutdown.py"
   },
   {
-    "name": "reclaim_orphans releases nothing",
-    "file": "nora/app/wake.py",
-    "old": "        try:\n            orphans = await asyncio.wait_for(\n                self._store.open_wakes(recorded_before_ms=process_started_ms),",
-    "new": "        return 0\n        try:\n            orphans = await asyncio.wait_for(\n                self._store.open_wakes(recorded_before_ms=process_started_ms),",
-    "target": "tests/unit/test_cognition_restart_reclaim.py"
-  },
-  {
-    "name": "App.run never recovers stale graph wake claims",
-    "file": "nora/__main__.py",
-    "old": "            await deps.wake_poller.recover()\n",
-    "new": "",
-    "target": "tests/integration/test_wake_composition.py::test_app_recovers_and_starts_the_graph_poller_without_a_legacy_wake"
-  },
-  {
-    "name": "reclaim records a FAILED (infra) wake: a restart penalises the unit",
-    "file": "nora/app/wake.py",
-    "old": "outcome=\"cancelled\", at_ms=now_ms,\n                            detail=restart_detail(\n                                \"no process owns this wake: the one that ran it ended\",\n                            ),\n                            cause=NO_CAUSE,",
-    "new": "outcome=\"failed\", at_ms=now_ms,\n                            detail=restart_detail(\n                                \"no process owns this wake: the one that ran it ended\",\n                            ),\n                            cause=\"infra\",",
-    "target": "tests/unit/test_cognition_restart_reclaim.py"
-  },
-  {
-    "name": "reclaim records CLOSED: the watermark advances past unseen stimuli",
-    "file": "nora/app/wake.py",
-    "old": "outcome=\"cancelled\", at_ms=now_ms,",
-    "new": "outcome=\"closed\", at_ms=now_ms,",
-    "target": "tests/unit/test_cognition_restart_reclaim.py"
-  },
-  {
-    "name": "open_wakes lists untracked wakes too",
-    "file": "nora/infra/sql/stimuli.py",
-    "old": "                COGNITION_WAKE.c.tracked == 1,\n                COGNITION_WAKE.c.recorded_at < _at(recorded_before_ms),",
-    "new": "                COGNITION_WAKE.c.recorded_at < _at(recorded_before_ms),",
-    "target": "tests/contract/test_stimulus_session_lifecycle_contract.py"
-  },
-  {
-    "name": "open_wakes ignores outcomes",
-    "file": "nora/infra/sql/stimuli.py",
-    "old": "                ~sa.exists().where(COGNITION_WAKE_OUTCOME.c.wake_id == COGNITION_WAKE.c.id),\n            )\n            .order_by(COGNITION_WAKE.c.id)",
-    "new": "            )\n            .order_by(COGNITION_WAKE.c.id)",
-    "target": "tests/contract/test_stimulus_session_lifecycle_contract.py"
-  },
-  {
-    "name": "in-memory open_wakes lists expired/other-process wakes wrongly (ignores the cut)",
-    "file": "nora/testing/stimuli.py",
-    "old": "                and w.recorded_at_ms < recorded_before_ms\n",
-    "new": "\n",
-    "target": "tests/contract/test_stimulus_session_lifecycle_contract.py tests/unit/test_cognition_restart_reclaim.py"
-  },
-  {
-    "name": "backlog gauge counts an inert time stimulus",
-    "file": "nora/app/wake.py",
-    "old": "        eligible = [s.pending_since_ms for s in view.pending if can_wake(s, view)]",
-    "new": "        eligible = [s.pending_since_ms for s in view.pending if not s.waits]",
-    "target": "tests/unit/test_wake_evaluator.py::test_an_inert_time_stimulus_does_not_age_the_backlog_gauge tests/unit/test_wake_evaluator.py::test_the_backlog_gauge_still_counts_a_time_stimulus_once_its_kind_is_ready tests/unit/test_wake_evaluator.py::test_the_backlog_gauge_skips_the_inert_kind_and_keeps_the_next_oldest"
-  },
-  {
-    "name": "inert kinds are never inert (the shared rule returns an empty set)",
-    "file": "nora/domain/stimuli.py",
-    "old": "    return frozenset({\"time\"}) if tracked and not floors_ready else frozenset()",
-    "new": "    return frozenset()",
-    "target": "tests/unit/test_wake_evaluator.py"
+    "name": "WakePoller.recover never recovers stale graph wake claims at startup",
+    "file": "nora/app/wake_poller.py",
+    "old": "    async def recover(self) -> None:\n        await self._recover_at(self._clock())",
+    "new": "    async def recover(self) -> None:\n        return None",
+    "target": "tests/unit/test_element_escaping.py::test_the_poller_recovers_stale_claims_when_asked_at_startup"
   }
 ]

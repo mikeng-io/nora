@@ -597,9 +597,9 @@ async def test_only_explicit_subject_overrides_are_applied(monkeypatch, one_path
     monkeypatch.setitem(ENTRY_POINTS, "dreamer", EntryPoint(drive=fake_drive))
     monkeypatch.setattr(backbone, "obtain", capturing_obtain)
     await backbone._drive(
-        _case("redirect-probe"), _spec("dreamer", overrides={"cognition.enabled": True}),
+        _case("redirect-probe"), _spec("dreamer", overrides={"heartbeat.enabled": True}),
     )
-    assert captured["spec"].overrides == {"cognition.enabled": True}
+    assert captured["spec"].overrides == {"heartbeat.enabled": True}
 
 
 async def test_drive_reads_the_deployments_own_files_when_spec_states_none(

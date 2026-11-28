@@ -1,54 +1,5 @@
 [
   {
-    "name": "replay obtains the production graph inside its owned service environment",
-    "file": "scripts/cognition_loop/run.py",
-    "old": "        environment=getattr(spec_args, \"environment\", None),\n",
-    "new": "        environment=None,\n",
-    "target": "tests/integration/subject/test_composed_policy.py::test_subject_uses_composed_policy_with_real_guild_directory"
-  },
-  {
-    "name": "the active case scope reaches every replay wake",
-    "file": "scripts/cognition_loop/run.py",
-    "old": "                args.environment = environment\n",
-    "new": "                args.environment = None\n",
-    "target": "tests/integration/subject/test_replay_service_scope.py::test_replay_owns_one_scope_and_retains_candidate_sql"
-  },
-  {
-    "name": "replay requires recorded services before reading historical inputs",
-    "file": "scripts/cognition_loop/run.py",
-    "old": "    if recording is None:\n",
-    "new": "    if False:\n",
-    "target": "tests/integration/subject/test_replay_service_scope.py::test_missing_replay_recording_stops_before_source_reads"
-  },
-  {
-    "name": "replay judges use the obtained subject configuration",
-    "file": "scripts/cognition_loop/run.py",
-    "old": "                judges = judges.bind(subject.cfg)\n",
-    "new": "                pass\n",
-    "target": "tests/unit/test_cognition_loop_run.py::test_a_live_wake_threads_the_earlier_wakes_and_clock_to_the_judge"
-  },
-  {
-    "name": "source room hints do not override composed unit authority",
-    "file": "scripts/cognition_loop/run.py",
-    "old": "            if subject.unit != case.unit:\n",
-    "new": "            if False:\n",
-    "target": "tests/unit/test_cognition_loop_delivery.py::test_replay_rejects_a_room_resolved_into_another_unit"
-  },
-  {
-    "name": "protocol execution is not a behavioral quality score",
-    "file": "scripts/cognition_loop/run.py",
-    "old": "\"status\": roll.verdict, \"mode\": \"recorded-wake-protocol\", \"behavior\": \"UNMEASURED\",",
-    "new": "\"status\": roll.verdict, \"mode\": \"recorded-wake-protocol\", \"behavior\": \"PASS\",",
-    "target": "tests/integration/subject/test_replay_service_scope.py::test_missing_replay_recording_stops_before_source_reads"
-  },
-  {
-    "name": "the campaign names its narrower replay claim",
-    "file": "scripts/cognition_loop/__main__.py",
-    "old": "                \"behavior\": \"UNMEASURED\", \"claim\": \"recorded-wake-replay\",\n",
-    "new": "                \"behavior\": \"PASS\", \"claim\": \"autonomous-journey\",\n",
-    "target": "tests/unit/test_cognition_loop_run.py::test_run_materialises_the_config_and_folds_the_status"
-  },
-  {
     "name": "the HTML carries the behavioral measurement limit",
     "file": "scripts/cognition_loop/html.py",
     "old": "            (\"model behavior\", run.get(\"behavior\")),\n",

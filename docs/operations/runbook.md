@@ -673,7 +673,7 @@ to pending; the model client and the store close. Compose gives the `nora` servi
 `stop_grace_period: 75s` for that. A **second** signal ends the process at once. If
 the process was killed anyway (SIGKILL after the grace, the host rebooting), the next
 process **reclaims at boot**: every wake with no outcome that was recorded before it
-started is recorded `cancelled` / `restart` (`nora_cognition_wake_reclaimed_total`).
+started is recorded `cancelled` / `restart`.
 A `cancelled` outcome neither counts toward the failure backoff nor strikes a
 stimulus, so a restart never penalises a unit. Read the cause in
 `cognition_wake_outcome`: `outcome = 'cancelled' AND detail LIKE 'restart%'`. **Not

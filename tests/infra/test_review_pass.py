@@ -8,11 +8,11 @@ from pathlib import Path
 import pytest
 
 from nora.access import IdentityAccess
+from nora.agent.dreamer import AdaptorBudget
 from nora.agent.factory import RetryPolicy
 from nora.agent.lineage import LineagePolicy
 from nora.agent.room import Room
 from nora.app.cognition_agent_runner import DreamerAgentRunner
-from nora.app.cognition_session import AdaptorBudget
 from nora.app.composition_review import build_review_runner
 from nora.app.review_pass import REVIEW_RETRY_SECONDS, ReviewPass
 from nora.app.startup import StartupError

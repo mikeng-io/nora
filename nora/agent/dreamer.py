@@ -22,7 +22,6 @@ from .ports import ToolSpec, adapt
 from .reasoning_strip import ReasoningStripWatch
 from .registry import ToolRegistry
 from .tag_trace_extract import extract_tag_trace
-from .token_reservation import TokenReservation
 from .turn_recording import TurnRecording
 
 log = logging.getLogger("nora.dreamer")
@@ -37,8 +36,8 @@ _TOOL_RESULT_CAPS: Mapping[str, int] = {
     "memory_read": MAX_MEMORY_RESULT_CHARS,
 }
 
-#: The same table under a public name, for the Cognition session's guard
-#: (`nora.app.cognition_wiring`): one table, two readers, never a second copy.
+#: The same table under a public name, for the wake and review guards: one table,
+#: never a second copy.
 TOOL_RESULT_CAPS: Mapping[str, int] = _TOOL_RESULT_CAPS
 
 @dataclass(frozen=True)
@@ -77,16 +76,6 @@ class AdaptorGrant:
     """Permission to bind read tools to the agenda room."""
 
     home_room: bool = False
-
-
-def cognition_grant() -> AdaptorGrant:
-    """The Cognition adaptor's grant: a real room, and NO act verb. Its write, pace
-    and act verbs are not registry tools at all: the session holds them as its own
-    closures (`nora.app.cognition_session`), so nothing here widens the read-only
-    ceiling. It is SCOPE-resolved (`RegistryToolSource.build` with the agenda
-    item's room as the key), so lineage and the roster's disclosure guard are the
-    room's own."""
-    return AdaptorGrant(home_room=True)
 
 
 class DreamToolSource(Protocol):
@@ -222,7 +211,6 @@ class DreamerRuntime:
         trace_attributes: Mapping[str, str] | None = None,
         agent_name: str = "session", spend: Any = None,
         max_trace_chars: int = 10_000,
-        reservation: TokenReservation | None = None,
         tool_hooks: Sequence[Any] = (),
     ) -> AgentRunResult:
         """Run the bounded agent loop.
@@ -255,7 +243,7 @@ class DreamerRuntime:
             tools=as_strands_tools(tools, strands_tools),
             guard=g, budget=budget,
             trace_attributes=attributes, agent_name=agent_name,
-            max_trace_chars=max_trace_chars, reservation=reservation,
+            max_trace_chars=max_trace_chars,
             spend=spend, tool_hooks=tool_hooks,
         )
 
@@ -263,11 +251,11 @@ class DreamerRuntime:
         self, *, system_prompt: str, prompt: str, tools: list[Any],
         guard: DreamGuard, budget: AdaptorBudget,
         trace_attributes: Mapping[str, str], agent_name: str,
-        max_trace_chars: int, reservation: TokenReservation | None,
+        max_trace_chars: int,
         spend: Any, tool_hooks: Sequence[Any] = (),
     ) -> AgentRunResult:
         """One bounded agent loop: `_invoke_once` creates the agent and runs
-        it inside the deadline and the reservation, then this reads its
+        it inside the deadline, then this reads its
         usage and its trace — on EVERY exit, failure and cancellation
         included, because a failed session is the costliest kind and its
         usage lives in the agent.
@@ -278,20 +266,15 @@ class DreamerRuntime:
         recording = TurnRecording()
         created: dict[str, Any] = {}
         result: Any = None
-        extra = (reservation,) if reservation is not None else ()
         try:
             _agent, _baseline, result = await self._invoke_once(
                 system_prompt=system_prompt, prompt=prompt, tools=tools,
                 guard=guard, budget=budget, trace_attributes=trace_attributes,
                 agent_name=agent_name,
-                tool_hooks=(*tool_hooks, recording, *extra),
+                tool_hooks=(*tool_hooks, recording),
                 agent_out=created,
             )
-            stop_reason = (
-                "limit_total_tokens"
-                if reservation is not None and reservation.stopped
-                else getattr(result, "stop_reason", None)
-            )
+            stop_reason = getattr(result, "stop_reason", None)
             if stop_reason is not None:
                 self._metrics.inc(
                     "nora_dream_stop_reason_total",
@@ -320,8 +303,7 @@ class DreamerRuntime:
             )
             requirements = recording.to_json()
             total = (
-                reservation.spent if reservation is not None
-                else _total_tokens(result) if result is not None
+                _total_tokens(result) if result is not None
                 else _usage(_agent_usage(agent)) if agent is not None
                 else None
             )

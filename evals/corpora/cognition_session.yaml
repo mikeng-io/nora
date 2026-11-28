@@ -405,10 +405,10 @@ cases:
   input: recorded wake replay
   expected_output: 'Node 33 miss 1: the batch states someone needs an item returned; Orient records it
     as a reading.'
-  snapshot:
-    platform: signal
-    conversation_id: MuM4gROdh0/9GIRlOa9ckXgykZMkkNmZquM4gROdh08=
-    before_ms: 1793627411166
+  parked:
+    reason: P-A
+    why: The legacy Cognition session this case ran on was removed; no entry point runs it.
+    returns_when: A graph wake entry replays the recorded wake.
   metadata:
     wake: 823
     held_out: false
@@ -426,10 +426,10 @@ cases:
   input: recorded wake replay
   expected_output: 'Node 33 miss 2: the batch states who restored and holds a game backup; Orient records
     it.'
-  snapshot:
-    platform: signal
-    conversation_id: MuM4gROdh0/9GIRlOa9ckXgykZMkkNmZquM4gROdh08=
-    before_ms: 1793631263579
+  parked:
+    reason: P-A
+    why: The legacy Cognition session this case ran on was removed; no entry point runs it.
+    returns_when: A graph wake entry replays the recorded wake.
   metadata:
     wake: 824
     held_out: false
@@ -447,10 +447,10 @@ cases:
   input: recorded wake replay
   expected_output: 'Node 33 miss 3: a member restates a brand preference; a reading (no relation admits
     a brand).'
-  snapshot:
-    platform: signal
-    conversation_id: MuM4gROdh0/9GIRlOa9ckXgykZMkkNmZquM4gROdh08=
-    before_ms: 1793676844113
+  parked:
+    reason: P-A
+    why: The legacy Cognition session this case ran on was removed; no entry point runs it.
+    returns_when: A graph wake entry replays the recorded wake.
   metadata:
     wake: 843
     held_out: false
@@ -468,10 +468,10 @@ cases:
   input: recorded wake replay
   expected_output: 'Node 33 borderline: repair-or-rebuy is weighed, not decided; any reading keeps a tentative
     how, never a purchase.'
-  snapshot:
-    platform: signal
-    conversation_id: MuM4gROdh0/9GIRlOa9ckXgykZMkkNmZquM4gROdh08=
-    before_ms: 1793681527377
+  parked:
+    reason: P-A
+    why: The legacy Cognition session this case ran on was removed; no entry point runs it.
+    returns_when: A graph wake entry replays the recorded wake.
   metadata:
     wake: 847
     held_out: false
@@ -485,10 +485,10 @@ cases:
   expect: reply
   input: recorded wake replay
   expected_output: 'Node 33 control: the batch states nothing durable about anyone; no reading, no note.'
-  snapshot:
-    platform: signal
-    conversation_id: MuM4gROdh0/9GIRlOa9ckXgykZMkkNmZquM4gROdh08=
-    before_ms: 1793636850757
+  parked:
+    reason: P-A
+    why: The legacy Cognition session this case ran on was removed; no entry point runs it.
+    returns_when: A graph wake entry replays the recorded wake.
   metadata:
     wake: 831
     held_out: false
@@ -511,10 +511,10 @@ cases:
   input: recorded wake replay
   expected_output: 'Node 33 control: a second batch stating nothing durable about anyone; no reading,
     no note.'
-  snapshot:
-    platform: signal
-    conversation_id: MuM4gROdh0/9GIRlOa9ckXgykZMkkNmZquM4gROdh08=
-    before_ms: 1793671855486
+  parked:
+    reason: P-A
+    why: The legacy Cognition session this case ran on was removed; no entry point runs it.
+    returns_when: A graph wake entry replays the recorded wake.
   metadata:
     wake: 839
     held_out: false

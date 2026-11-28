@@ -370,11 +370,7 @@ CORPUS_ENTRY: dict[str, str] = {
     "proactive_act": "proactive_act",
     "tool_selection": "tag",
     "reply_delivery": "tag",
-    # S2 over the Cognition catalogue. `entry: dreamer` with
-    # `category: cognition` is driven by `evals.rebuilt.entry._cognition_probe`
-    # through `CognitionSessionRunner.probe`, on the runner the subject's
-    # composition builds under `[cognition] enabled = true`; with
-    # sessions off in the eval config the case is an ERROR, never a pass.
+    # S2 over the legacy Cognition catalogue; its cases are parked, the session is removed.
     "tool_selection_cognition": "dreamer",
     "cognition_session": "dreamer",
     # What she says about WHERE she is. A tag, and judged — "did she reply"
@@ -475,16 +471,6 @@ JUDGE_REQUIRED = frozenset({"standing", "standing_unit", "conversational_recall"
 #: Memory-reading cases declare the graph surface. Production composition is
 #: unconditional; the eval-only control arm may deliberately withhold it.
 MEMORY_SURFACES = frozenset({"graph"})
-
-#: The subject overrides every `cognition_session` draw composes with: the
-#: session and its graph surface forced on, whatever the deployment's flags —
-#: the corpus measures the session, and a subject without one is an ERROR.
-#: The anchor confirmer composes the SAME subject (`scripts.confirm_cognition_
-#: anchors`), so it reads this constant rather than carrying a second copy.
-COGNITION_SESSION_OVERRIDES: dict[str, object] = {
-    "cognition.enabled": True,
-}
-
 
 def selected_cases(
     name: str, *, only: frozenset[str] | None = None, cohort: Any = None,

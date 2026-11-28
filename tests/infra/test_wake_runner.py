@@ -10,11 +10,11 @@ from typing import Any
 import pytest
 
 from nora.access import IdentityAccess
+from nora.agent.dreamer import AdaptorBudget
 from nora.agent.factory import RetryPolicy
 from nora.agent.lineage import LineagePolicy
 from nora.agent.room import Room
 from nora.app.cognition_agent_runner import DreamerAgentRunner
-from nora.app.cognition_session import AdaptorBudget
 from nora.app.wake_debrief import WakeDebriefRetry
 from nora.app.wake_floor import WakeRoomFloor
 from nora.app.wake_pass import WakePassRunner

@@ -52,7 +52,6 @@ from nora.memory.adapters.subject_claims import SqlSubjectClaims
 from nora.memory.adapters.tools import build as _build
 from nora.memory.adapters.tools.notes import _make__resolve
 from nora.memory.adapters.tools.search import GraphReadTools
-from nora.memory.adapters.tools.session import session_verbs as _session_verbs
 from nora.memory.adapters.tools.wake import WAKE_HISTORY_TOOLS as WAKE_HISTORY_TOOLS
 from nora.memory.adapters.tools.wake import WAKE_TOOLS as WAKE_TOOLS
 from nora.memory.adapters.tools.wake import WakeToolSurface as WakeToolSurface
@@ -84,10 +83,6 @@ def subject_claims(engine: AsyncEngine) -> SqlSubjectClaims:
 
 def tool_specs(deps):
     return _build(deps)
-
-
-def session_verbs(deps):
-    return _session_verbs(deps)
 
 
 def delivery_arbitration(engine: AsyncEngine, policy: Policy) -> DeliveryArbitration:
@@ -147,9 +142,8 @@ def notes(cfg, engine) -> NotesWiring:
     # flag. Off, `TranscriptInjection` gets `notes=None` and `_notes` answers `()` without a
     # query. No `metrics=`: `SqlNoteStore.__init__` takes an engine and nothing else on…
     note_store: SqlNoteStore | None = SqlNoteStore(engine) if cfg.notes.enabled else None
-    # The memo tier (DEC-306): what a unit settled and keeps. No flag: only a Cognition
-    # session writes a memo (`[cognition] enabled`), and with none kept every read renders
-    # nothing. ONE instance for the tag and fire `<memos>`, `memo_read` and the session's…
+    # The memo tier (DEC-306): what a unit settled and keeps. No flag: with none kept every
+    # read renders nothing. ONE instance for the tag and fire `<memos>` and `memo_read`…
     memo_store = SqlMemoStore(engine)
     # The shared Notebook entry store — the topic account is its only kind so far.
     # No flag, same reason as the memo store: only a session writes an entry.

@@ -33,12 +33,5 @@
     "old": "        evidence(\"event\", name=name, attributes=attributes)",
     "new": "        evidence(\"event\", name=name, attributes=attributes)\n        trace.get_current_span().add_event(name, attributes)",
     "target": "tests/integration/test_eval_observability.py::test_private_eval_events_never_attach_bodies_to_spans"
-  },
-  {
-    "name": "FIX 12 terminal wall clock bound",
-    "file": "nora/app/cognition_session.py",
-    "old": "\"bound\": (\"timeout_seconds\" if isinstance(sys.exception(), SessionTimeoutError)\n                              else result.stop_reason if result is not None",
-    "new": "\"bound\": (result.stop_reason if result is not None",
-    "target": "tests/unit/test_cognition_session_runner.py::test_wall_clock_timeout_names_the_terminal_bound"
   }
 ]

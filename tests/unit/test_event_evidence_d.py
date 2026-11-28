@@ -17,7 +17,6 @@ from typing import Any
 
 import pytest
 
-from nora.app.cognition_wiring import open_events_reader
 from nora.domain.gatherings import (
     EventCitation,
     EventEvidence,
@@ -33,8 +32,7 @@ from nora.domain.gatherings import (
     render_field,
 )
 from nora.domain.lineage import Lineage, LineageEntry, message, unresolved
-from nora.domain.note_body import NoteBodyError, Shown, ShownMessage, check_citations
-from nora.testing.gatherings import FakeGatheringStore
+from nora.domain.note_body import Shown, ShownMessage
 
 T0 = dt.datetime(2026, 10, 2, 11, 0, tzinfo=dt.UTC)
 
@@ -167,20 +165,8 @@ SHOWN = Shown(
 )
 
 
-def test_a_shown_message_a_carried_one_and_a_read_rollup_row_pass():
-    assert check_citations(["1", " 7 ", "rollup(stay|p|a/b)", "1"], SHOWN, what="w") == (
-        (1, 7), ("stay|p|a/b",),
-    )
 
 
-@pytest.mark.parametrize(("cited", "rule"), [
-    ([], "uncited"), (["x"], "uncited"), (["rollup()"], "uncited"),
-    (["99"], "unknown_id"), (["2"], "cites_nora"), (["rollup(stay|q|a/b)"], "unknown_rollup_key"),
-])
-def test_anything_else_is_refused_with_the_rule_a_note_would_name(cited, rule):
-    with pytest.raises(NoteBodyError) as caught:
-        check_citations(cited, SHOWN, what="event evidence")
-    assert caught.value.rule == rule
 
 
 # -- per-field reasoning -----------------------------------------------------
@@ -215,49 +201,12 @@ def test_the_column_round_trips_and_a_bad_entry_reads_as_not_stated():
 
 # -- the events a session may still move ------------------------------------
 
-async def test_a_session_is_shown_and_may_move_every_event_before_happened():
-    store = FakeGatheringStore()
-    for s in GatheringStatus:
-        await store.create(_event(status=s, title=s.value))
-    read = open_events_reader(store)
-    assert {e.title for e in await read("u", "signal", "ga")} == {
-        "staged", "proposed", "confirmed",
-    }
 
 
-async def test_a_session_cannot_read_another_units_event_with_the_same_room_id():
-    """Conversation ids are an id space per platform. Filtering only by the id
-    let a second unit's event with the same id into this unit's agenda."""
-    store = FakeGatheringStore()
-    await store.create(_event(title="ours", unit_id="unit-a"))
-    await store.create(_event(title="theirs", unit_id="unit-b"))
-
-    read = open_events_reader(store)
-    assert {e.title for e in await read("unit-a", "signal", "ga")} == {"ours"}
 
 
-async def test_a_session_cannot_read_the_other_platforms_event_with_the_same_room_id():
-    """The same conversation string on two platforms is two rooms. The stored
-    platform, not the id, decides which one a signal read sees."""
-    store = FakeGatheringStore()
-    await store.create(_event(title="signal", unit_id="unit-a", platform="signal"))
-    await store.create(_event(title="whatsapp", unit_id="unit-a", platform="whatsapp"))
-
-    read = open_events_reader(store)
-    assert {e.title for e in await read("unit-a", "signal", "ga")} == {"signal"}
-    assert {e.title for e in await read("unit-a", "whatsapp", "ga")} == {"whatsapp"}
 
 
-async def test_a_legacy_event_with_no_stored_platform_is_quarantined():
-    """A pre-`0128` row has no durable platform owner. It is invisible even to
-    the unit and room it was written in, because current policy cannot say what
-    the policy was then. Nothing infers one."""
-    store = FakeGatheringStore()
-    await store.create(_event(title="legacy", unit_id="", platform=""))
-
-    read = open_events_reader(store)
-    assert not await read("unit-a", "signal", "ga")
-    assert not await read("", "signal", "ga")
 
 
 # -- how an abduced field is voiced -------------------------------

@@ -15,7 +15,6 @@ from nora.policy import Conversation, Policy
 from nora.testing import FakeAdapter, FakeAgentRunner, ScriptedTurn
 from tests.infra.test_tag_trace_store import _tag_trace_db as _tag_trace_db
 from tests.infra.test_tag_trace_store import tag_trace_engine as tag_trace_engine
-from tests.unit.cognition_rig import session as run_cognition
 from tests.unit.test_engagement_pipeline import _build_pipeline, _drain, _request
 
 
@@ -70,31 +69,3 @@ async def test_tag_and_fire_write_the_trace_and_link_their_sent_rows(
     assert own[-1].id in rows[0].sent_message_ids
 
 
-async def test_cognition_session_persists_its_exchange(tag_trace_engine):
-    from nora.app.cognition_session import CognitionRunResult
-
-    traces = SqlTagTraceStore(tag_trace_engine)
-    exchange = ({"role": "assistant", "content": [{"toolUse": {
-        "toolUseId": "call-1", "name": "note_create", "input": {"item": 0},
-    }}]},)
-
-    async def behave(by, tools):
-        # The turn ends the session now; there is no close verb to call.
-        pass
-
-    # The session seam returns the exchange a production runner captured.
-    from unittest.mock import patch
-
-    from tests.unit.cognition_rig import Script
-    original = Script.run
-
-    async def captured(self, **kwargs):
-        result = await original(self, **kwargs)
-        return CognitionRunResult(stop_reason=result.stop_reason, messages=exchange)
-
-    with patch.object(Script, "run", captured):
-        await run_cognition(behave, runner_kwargs={"tag_trace_store": traces})
-    rows = await traces.recent(conversation_id="", limit=2)
-    assert rows[0].occasion == "cognition" and rows[0].unit == "u"
-    assert rows[0].messages == exchange
-    assert rows[0].bound_rooms == ("signal:room-a",)

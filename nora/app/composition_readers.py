@@ -222,23 +222,6 @@ def social_person_units(allowlist: Any)-> dict[str, tuple[str, ...]]:
     return {person: tuple(units) for person, units in out.items()}
 
 
-def social_person_rooms(allowlist: Any)-> dict[tuple[str, str], tuple[str, str]]:
-
-    """`(person, unit) -> (platform, conversation_id)`: the room a social
-    stimulus of theirs binds in that unit, the unit's home room when it lists
-    them and otherwise the first room of the unit that does, in policy order.
-    A social item is shown only in a room that lists its author (the `social`
-    lineage predicate), so the session reads it through a room that may be
-    shown it."""
-    homes = allowlist.home_rooms()
-    out: dict[tuple[str, str], tuple[str, str]] = {}
-    listing = [c for c in allowlist.rooms() if c.persons is not None and c.unit and c.absorbed]
-    for conv in sorted(listing, key=lambda c: homes.get(c.unit) is not c):
-        for person in conv.persons:
-            out.setdefault((person, conv.unit), (conv.platform, conv.primary_id))
-    return out
-
-
 def social_unit_rooms(allowlist: Any)-> dict[str, tuple[tuple[str, str], ...]]:
 
     """`unit -> every (platform, conversation_id)` of its rooms, sorted: the

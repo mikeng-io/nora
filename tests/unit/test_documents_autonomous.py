@@ -211,7 +211,7 @@ async def test_autonomous_documents_deny_unknown_wildcard_foreign_and_nonagenda(
 async def test_deferred_document_tools_read_then_revise_and_refuse_stale_read():
     from nora.agent.ports import adapt
     from nora.agent.surface import deferred_surface
-    from nora.documents.wire import session_tool_specs
+    from nora.documents.adapters.tools import session_tool_specs
 
     svc, store = _service(shared_room=lambda u, p, c: u == "u" and (p, c) == ROOM)
     made = await _publish(

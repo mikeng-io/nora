@@ -57,7 +57,6 @@ from .stages import identity as identity_stage
 from .stages import media as media_stage
 from .stages import quote_target as quote_target_stage
 from .stages import scope as scope_stage
-from .stages import stimulus as stimulus_stage
 from .stages import touch as touch_stage
 
 log = logging.getLogger("nora.ingest.pipeline")
@@ -197,7 +196,6 @@ class IngestPipeline:
         transcriber: Transcriber | None = None,
         comprehension: MediaComprehension | None = None,
         language: str = "",
-        stimulus_wiring: stimulus_stage.Wiring | None = None,
     ) -> None:
         """`media_sources`/`blobs` default to None — media custody OFF — and
         that default is a wiring state, not a design position (DEC-43).
@@ -233,12 +231,6 @@ class IngestPipeline:
         notes are transcribed inline during custody and their transcript rides
         the body beside the handle. `language` is the BCP-47 hint forwarded to
         the transcriber.
-
-        `stimulus_wiring` is the stimulus stage:
-        `None` — the default, `[cognition] enabled = false`, and every offline/
-        eval composition — writes no stimulus. Present, every recorded
-        person-authored item (a message, a changed edit, a reaction, a delete)
-        appends one stimulus row with its cues.
         """
         self._audit = audit
         self._access = access
@@ -253,7 +245,6 @@ class IngestPipeline:
         self._transcriber = transcriber
         self._comprehension = comprehension
         self._language = language
-        self._stimulus_wiring = stimulus_wiring
 
     async def run(self, *, message: NormalizedMessage,
                   tx_hook: Any = None, durable: bool = False) -> IngestResult:
@@ -419,21 +410,7 @@ class IngestPipeline:
             _outcome(m, message, "audit_refused")
             return IngestResult(message=None, decision=None,
                                 outcome="audit_refused")
-        # The STIMULUS, right behind the Record row it names. Inside the
-        # guard: a span for a stage that cannot run would claim work that never
-        # happened.
-        # Under `durable` the stimulus is NOT run inline: the caller
-        # (bridge WorkRunner) persists it as an obligation in the same commit
-        # that retires the ingest work, so the post-audit crash window cannot
-        # silently lose it. Inline stays the non-bridge behaviour.
         if not durable:
-            if self._stimulus_wiring is not None and absorbed:
-                with span("ingest.stimulus"):
-                    await stimulus_stage.run(
-                        message=message, item="message", row_id=row_id,
-                        person_id=person.person_id if person else None,
-                        wiring=self._stimulus_wiring, metrics=m,
-                    )
             decision = await self._decide(message=message, person=person, m=m)
         if decision is None:
             raise AssertionError("gate did not run before the outcome")
@@ -510,8 +487,6 @@ class IngestPipeline:
         the 👀 reaction and a threaded reply have to point at. A WhatsApp edit's
         own stanza id is not a message anyone can react to."""
         m = self._metrics
-        room = self._allowlist.conversation(message.platform, message.conversation_id)
-        absorbed = room is not None and room.absorbed
         with span("ingest.identity"):
             person = await identity_stage.run(
                 message=message, access=self._access, metrics=m
@@ -537,15 +512,6 @@ class IngestPipeline:
         if recorded != "recorded":
             _outcome(m, message, "edit_unchanged" if recorded == "recorded_unchanged" else recorded)
             return IngestResult(message=None, decision=None)
-        # Only an edit that CHANGED what a reader sees is a stimulus: an
-        # unchanged one stopped above, and would wake nothing new.
-        if self._stimulus_wiring is not None and absorbed:
-            with span("ingest.stimulus"):
-                await stimulus_stage.run(
-                    message=message, item="edit", row_id=original.id,
-                    person_id=person.person_id if person else original.person_id,
-                    wiring=self._stimulus_wiring, metrics=m, target=original,
-                )
         with span("ingest.gate"):
             decision = await edit_gate_stage.run(
                 message=message, previous=original, policy=self._policy, metrics=m,
@@ -576,7 +542,7 @@ class IngestPipeline:
 
     async def _run_touch(self, *, message: NormalizedMessage, touch: Touch) -> IngestResult:
         """A reaction or a delete/unsend:
-        found, recorded beside its target, raising a stimulus — never a turn,
+        found, recorded beside its target — never a turn,
         never a transcript line. `touch` decides and
         records; this only sequences."""
         m = self._metrics
@@ -585,12 +551,5 @@ class IngestPipeline:
                 message=message, touch=touch, audit=self._audit,
                 access=self._access, metrics=m,
             )
-        if done.row_id is not None and self._stimulus_wiring is not None:
-            with span("ingest.stimulus"):
-                await stimulus_stage.run(
-                    message=done.message, item=touch.kind, row_id=done.row_id,
-                    person_id=done.person_id, wiring=self._stimulus_wiring,
-                    metrics=m, target=done.target,
-                )
         _outcome(m, message, done.ending)
         return IngestResult(message=None, decision=None, outcome=done.ending)

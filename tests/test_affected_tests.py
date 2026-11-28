@@ -802,9 +802,9 @@ def test_an_edit_to_an_existing_test_also_selects_the_meta_tests(tmp_path):
 
 
 def test_a_test_that_imports_another_test_module_is_selected_with_it(tmp_path):
-    """tests/unit/test_cognition_failure_backoff.py imports
-    test_cognition_session_lifecycle, so it opens that file even though no
-    literal in it names the path."""
+    """tests/contract/test_authority_backend_contract.py imports
+    test_managed_admission, so it opens that file even though no literal in it
+    names the path."""
     repo = _tree(tmp_path, {
         "tests/unit/test_base.py": _TRIVIAL,
         "tests/unit/test_absolute.py": "from tests.unit.test_base import test_x\n",
@@ -822,8 +822,8 @@ def test_a_test_that_imports_another_test_module_is_selected_with_it(tmp_path):
 
 
 def test_the_real_importer_of_a_test_module_is_selected():
-    selected = select(["tests/unit/test_cognition_session_lifecycle.py"])
-    assert "tests/unit/test_cognition_failure_backoff.py" in selected
+    selected = select(["tests/unit/test_managed_admission.py"])
+    assert "tests/contract/test_authority_backend_contract.py" in selected
 
 
 def test_a_helper_that_imports_a_test_module_selects_all(tmp_path):

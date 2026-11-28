@@ -1,6 +1,5 @@
 """Synthetic enabled/disabled controls for the operator's content-filter switch."""
 
-from dataclasses import replace
 from datetime import UTC, datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -11,20 +10,16 @@ import pytest
 from nora.agent.dream_screen import offence
 from nora.agent.egress import LeakGuard, scan_identifiers, scan_reply
 from nora.agent.guards import Deliverer
-from nora.agent.lineage import LineagePolicy, entry_permits
-from nora.agent.memory_search import Hit, Step, render_packet, scope_for
+from nora.agent.memory_search import Hit, Step, render_packet
 from nora.agent.registry import ToolRegistry
-from nora.agent.room import Room, RoomView
+from nora.agent.room import Room
 from nora.agent.security import screen_and_locate_place, screen_and_resolve_place
-from nora.agent.whereis import Circle, Whereis, presence_audience, resolvable_places
+from nora.agent.whereis import Circle
 from nora.app.assembler import lineage_policy
-from nora.app.cognition_grounding import place_release
 from nora.config import ContentChecksConfig
 from nora.doctrine.loader import Doctrine
-from nora.domain.lineage import PRESENCE, LineageEntry, LiveRoom, RenderRoom, RoomFacts
 from nora.domain.memory_index import IndexedNode
 from nora.domain.models import ConversationTarget, PersonRef
-from nora.domain.presence import PresenceFix, SavedPlace, WireState
 from nora.obs.metrics import Metrics
 from nora.persons import Persons
 from nora.testing import FakeRecordStore
@@ -165,49 +160,6 @@ async def test_delivery_keeps_credential_and_all_doctrine_guards_independent(
         assert LeakGuard(doctrine, "CANARY-SYNTHETIC").check(text) is not None
 
 
-@pytest.mark.parametrize("enabled", [False, True])
-async def test_location_audience_switch_preserves_unavailability_opt_in_and_unit_scope(enabled):
-    view = RoomView(True, (MEMBER, OUTSIDER), unnamed=1)
-    assert presence_audience(view, CIRCLE, location_trusted=False,
-                             content_checks=enabled) == ("unnamed" if enabled else "ok")
-    point = tuple(n + 1 / 8 for n in range(1, 3))
-    fix = PresenceFix("circle", "member", NOW - 60_000, *point,
-                      WireState.LIVE, NOW)
-    saved = SavedPlace("circle", "place", "Library", *point, NOW)
-    presence = SimpleNamespace(
-        latest_fix=AsyncMock(return_value=fix), places_for=AsyncMock(return_value=[saved]),
-        window=AsyncMock(return_value=[]))
-    room = SimpleNamespace(scope=AsyncMock(return_value=view))
-    location = Whereis(room=room, circle=CIRCLE, presence=presence, content_checks=enabled)
-    answer = await location.locate("Juniper", now_ms=NOW)
-    assert answer["status"] == ("refused" if enabled else "ok")
-    if not enabled:
-        assert answer["age_seconds"] == 60
-        presence.latest_fix.assert_awaited_once_with(circle_id="circle", person_id="member")
-    assert await resolvable_places(room=room, circles=(CIRCLE,), presence=presence,
-        content_checks=enabled) == (() if enabled else (saved,))
-    release = place_release(rooms_of=lambda unit: [("signal", "room", False)],
-        room_view=AsyncMock(return_value=view), circles=(CIRCLE,), content_checks=enabled)
-    assert await release("unit", "member") is not enabled
-    facts = RoomFacts("signal", frozenset({"room"}), "unit", frozenset({"member"}),
-                      location=True)
-    target = RenderRoom(facts, circles=(CIRCLE.person_ids,),
-        live=LiveRoom(frozenset({"member", "outsider"}), unnamed=1), content_checks=enabled)
-    entry = LineageEntry(PRESENCE, subject="member")
-    assert entry_permits(entry, target, origin=None) is not enabled
-    assert not entry_permits(
-        entry, replace(target, room=replace(facts, location=False)), origin=None
-    )
-    assert scope_for(replace(target, room=None), social_off=()) is None
-    other = RoomFacts("discord", frozenset({"elsewhere"}), "other-unit", frozenset({"member"}))
-    boundary = LineagePolicy(rooms=(facts, other), content_checks=enabled,
-        _by_id={("signal", "room"): facts})
-    assert boundary.render_room(platform="signal", conversation_id="room").resolve(
-        "discord:elsewhere") == ()
-    room.scope.return_value = replace(view, degraded=True)
-    assert (await location.locate("Juniper", now_ms=NOW))["status"] == "unavailable"
-    assert presence_audience(room.scope.return_value, CIRCLE, location_trusted=True,
-                             content_checks=enabled) == "unavailable"
 
 
 @pytest.mark.parametrize("enabled", [False, True])

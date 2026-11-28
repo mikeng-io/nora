@@ -128,12 +128,12 @@ def test_turn_citation_requires_a_handle_this_writer_saw_or_ran(line):
 
 @pytest.mark.parametrize("occasion", ["tag", "cognition"])
 async def test_the_real_sdk_retains_the_exchange_and_requirements(occasion):
+    from nora.agent.dreamer import AdaptorBudget
     from nora.agent.guards import ReplyGuard
     from nora.agent.ports import ToolSpec, adapt
     from nora.agent.turn_recording import in_room
     from nora.app.agent_runner import LiveAgentRunner
     from nora.app.cognition_agent_runner import DreamerAgentRunner
-    from nora.app.cognition_session import AdaptorBudget
     from nora.domain.models import NormalizedMessage, TagContext
     from nora.obs.metrics import Metrics
     from tests.fakes import FixedModelSource, dreamer_runtime_for
@@ -287,39 +287,6 @@ async def test_turn_citations_derive_note_and_memo_disclosure_and_refuse_unknown
         await _revision_lineage(conn, body=body, origin="room-a", first=True, unit="u1")
 
 
-async def test_saved_turn_citations_survive_note_and_memo_revision_and_are_rechecked():
-    from nora.agent.fetch_watch import RoomFetched
-    from nora.domain.memo import parse_memo_body
-    from nora.infra.sql.tag_traces import SqlTagTraceStore
-    from tests.unit.cognition_rig import NOW, Stores, session
-
-    body = "## Kept\n- checked turn(t7)"
-    fetched = RoomFetched()
-    fetched.take("note_read", {"status": "ok", "body": "## Open\n- checked turn(t7)"})
-    assert parse_memo_body(body, shown=Shown(turn_handles=frozenset(fetched.turn_handles)))
-    stores = Stores()
-    memo = await stores.memos.create(
-        unit="u", platform="signal", conversation_id="room-a", title="checked fact",
-        body=body, citations=("turn(t7)",), mode="told", established_by="cognition:u",
-        model=None, now_ms=NOW,
-    )
-    conn = _RecordConnection(replace(_trace([[REQ.to_json()]]), unit="u"))
-    answers = []
-
-    async def revise(by, tools):
-        head = await stores.memos.get(unit="u", memo_id=memo.id)
-        answers.append(await by["memo_revise"](
-            memo_id=memo.id, base_revision_id=head.head.id, body=body,
-        ))
-
-    kwargs = {"tag_trace_store": SqlTagTraceStore(_record_engine(conn))}
-    await session(revise, stores=stores, runner_kwargs=kwargs)
-    assert answers[-1]["status"] == "ok"
-    assert (await stores.memos.get(unit="u", memo_id=memo.id)).head.seq == 2
-    conn.trace = replace(conn.trace, requirements={})
-    await session(revise, stores=stores, runner_kwargs=kwargs)
-    assert answers[-1]["status"] == "refused" and answers[-1]["reason"] == "unknown_turn"
-    assert (await stores.memos.get(unit="u", memo_id=memo.id)).head.seq == 2
 
 
 async def test_unresolved_record_items_are_unavailable_and_denied_items_stay_resolved():

@@ -525,23 +525,6 @@ def read_item(items: Sequence[tuple[str, bool]]) -> str:
     return ",".join(f"collab:{kind}" if collab else kind for kind, collab in items)
 
 
-def describe_read(item: str) -> str:
-    """`read_item`'s words for a model: «2 story frames», «a collab post and a
-    reel». Counted per kind, in the order the kinds first appear."""
-    counts: dict[str, int] = {}
-    for part in filter(None, item.split(",")):
-        counts[part] = counts.get(part, 0) + 1
-    words = []
-    for part, n in counts.items():
-        collab, _, kind = part.rpartition(":")
-        one, many = _KIND_WORDS.get(kind, (kind.replace("_", " "),) * 2)
-        noun = f"collab {one if n == 1 else many}" if collab else (one if n == 1 else many)
-        words.append(f"a {noun}" if n == 1 else f"{n} {noun}")
-    if len(words) <= 1:
-        return "".join(words) or "an item"
-    return ", ".join(words[:-1]) + " and " + words[-1]
-
-
 def perception_context(
     *, network: str, kind: str, collab: bool, taken_at: datetime, tz: tzinfo,
 ) -> str:

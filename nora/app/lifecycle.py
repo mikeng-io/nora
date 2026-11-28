@@ -29,7 +29,6 @@ def _push_close_order(
     health_runner: Any = None,
     background: Any = None,
     subagent_backend: Any = None,
-    cognition_shutdown: CloseFn | None = None,
 ) -> None:
     """Push every closable onto `stack` in the one close order (see `StartupOwner`)."""
     if audit is not None:
@@ -59,8 +58,6 @@ def _push_close_order(
         stack.push_async_callback(background.cancel_all)
     if subagent_backend is not None:
         stack.push_async_callback(subagent_backend.shutdown)
-    if cognition_shutdown is not None:
-        stack.push_async_callback(cognition_shutdown)
 
 
 async def close_dependencies(deps: Any, *, health_runner: Any = None) -> None:
@@ -93,7 +90,6 @@ async def close_dependencies(deps: Any, *, health_runner: Any = None) -> None:
             health_runner=health_runner,
             background=deps.background,
             subagent_backend=deps.subagent_backend,
-            cognition_shutdown=deps.cognition_shutdown,
         )
 
 
@@ -151,7 +147,6 @@ class StartupOwner:
         self._bridge_stop: Callable[[], None] | None = None
         self._background: Any = None
         self._subagent_backend: Any = None
-        self._cognition_shutdown: CloseFn | None = None
 
     def own_audit(self, audit: Any) -> None:
         self._audit = audit
@@ -189,9 +184,6 @@ class StartupOwner:
     def own_subagent(self, subagent_backend: Any) -> None:
         self._subagent_backend = subagent_backend
 
-    def own_cognition(self, shutdown: CloseFn) -> None:
-        self._cognition_shutdown = shutdown
-
     async def aclose(self) -> None:
         """Unwind every registered resource in normal shutdown order."""
         async with AsyncExitStack() as closing:
@@ -209,5 +201,4 @@ class StartupOwner:
                 bridge_stop=self._bridge_stop,
                 background=self._background,
                 subagent_backend=self._subagent_backend,
-                cognition_shutdown=self._cognition_shutdown,
             )

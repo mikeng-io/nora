@@ -206,15 +206,6 @@ console exporters) are refused before model execution. No ambient exporter is
 re-enabled. Credentials use the existing resolver and never become trace content.
 No configuration switch, host installation or historical import is implied.
 
-The Cognition-loop evaluator (`python -m scripts.cognition_loop`)
-uses the same configured export.
-It resolves the sink before opening private evidence or executing its body,
-and prints the trace reference on stderr while retaining the JSON report on
-stdout. There is no private-only project/inspection exemption. Each run has a
-unique identity; each case runs its recorded wakes in order as one unit's
-session, with metadata binding wake time and the snapshot locator fingerprint.
-The completed writer records its session identity.
-
 `RunEvidence.capture` retains the SDK's in-memory evaluation processors and
 private durable recorder, adds trace identity plus this single checked OTLP
 processor, and restores the original processors afterwards. Content logs remain

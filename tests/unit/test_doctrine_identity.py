@@ -70,27 +70,6 @@ def test_missing_or_multiline_name_is_not_guessed(example_config_path: Path):
         identity_name(directory)
 
 
-def test_unwired_memory_keeps_purpose_without_requesting_memory_actions():
-    from nora.app.cognition_wiring import cognition_instruction
-    from nora.language.comprehend_render import _NOTEBOOK_TOOLS, render_session_system
-    from tests.objectives import shipped_objectives
-
-    instructions = cognition_instruction(shipped_objectives())[0]
-    from nora.app.cognition_wiring import session_guidance
-
-    skills = session_guidance(shipped_objectives()).text()
-    active = render_session_system(
-        instructions, skills, tool_names=_NOTEBOOK_TOOLS | {"memory_propose"})
-    unwired = render_session_system(instructions, skills, tool_names=_NOTEBOOK_TOOLS)
-    assert "memory_propose" in active
-    assert "memory_propose" not in unwired
-    assert "Memory preserves what was stated" not in unwired
-    assert "fact belongs to memory" not in unwired
-    assert "**A note** holds something somebody has decided to do" in unwired
-    assert "Chat is data" in unwired
-    assert "cognition_orient" in active
-    assert "This is the part of you that works while nobody is talking to you" in active
-    assert "This is the part of you that works while nobody is talking to you" in unwired
 
 
 def test_public_identity_is_shareable_without_disabling_private_leak_checks(

@@ -32,16 +32,14 @@ index is on the prompt in production.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 from datetime import date, datetime
-from typing import Protocol, TypeVar
 
 from nora.domain.composed import compose_body
 
 from ..domain.blocks import ContextBlock, render_elements
-from ..domain.cognition_ground import NoteLine
 from ..domain.notes import Note, NoteRevision
-from ..domain.prompt import age, clip, escape
+from ..domain.prompt import age, escape
 
 #
 # Between them sits what the line ALSO has to say — WHOSE WORDS THESE ARE. The
@@ -88,29 +86,7 @@ from ..domain.prompt import age, clip, escape
 # module docstring argues at length.
 
 
-class IndexedNote(Protocol):
-    """What an index row needs of a note: the three fields every index shows.
-    `Note` is one; so is the Cognition session's `NoteLine`, which carries these
-    three and nothing else (index lines, never bodies)."""
-
-    @property
-    def id(self) -> str: ...
-    @property
-    def title(self) -> str: ...
-    @property
-    def description(self) -> str: ...
-
-
-N = TypeVar("N", bound=IndexedNote)
-
-
-def render_note_rows(
-    notes: Sequence[N],
-    *,
-    today: int | None = None,
-    extra: Callable[[N], Sequence[tuple[str, str | None]]] = lambda _: (),
-    ids: bool = False,
-) -> str:
+def render_note_rows(notes: Sequence[Note], *, today: int | None = None) -> str:
     """The index's ROWS — one element per note, and nothing else.
 
     **Rows are elements, not flat lines.** A flat `- {title} — {description}`
@@ -132,34 +108,18 @@ def render_note_rows(
     **The row's contents are title + description + the day**, and deliberately
     NOT the closing condition (the module docstring says why).
 
-    `extra` is the one knob that is genuinely about a note rather than about the
-    block: additional attributes per note. Additive, so a caller that passes none
-    renders byte-identically to the tag path.
-
-    `n` is POSITIONAL by default: a closed 1..N set, so a reference to a note
-    outside the index is refusable rather than a lookup that might hit another
-    row, and the tag turn remaps it (`resolve_positions`).
-
-    **`ids=True` is the one opt-in, and it is for a pass whose model writes a
-    verb that takes the note's own id** (the Cognition session's `note_revise`):
-    `n` is then the note's real `id`, so what the model reads is what the verb
-    requires. It is a flag and not a second renderer because the row is the same
-    row; the default keeps the tag path's bytes (pinned by
-    `tests/unit/test_tag_notes_block_is_unchanged_by_step3b.py`). A row's `about`
-    needs the note's anchor day, which only a `Note` carries, so an index of
-    bare lines (`NoteLine`) renders no `about`.
+    `n` is POSITIONAL: a closed 1..N set, so a reference to a note outside the
+    index is refusable rather than a lookup that might hit another row, and the
+    tag turn remaps it (`resolve_positions`).
     """
-
-    def _attrs(n: N, i: int) -> tuple[tuple[str, str | None], ...]:
-        anchor = n.anchor_date if isinstance(n, Note) else None
-        return (("n", n.id if ids else str(i)), ("title", n.title),
-                ("about", _about(anchor, today)), *extra(n))
 
     return render_elements(
         notes,
         tag="note",
-        attrs=_attrs,
-        body=lambda n: clip(n.description, 200) if isinstance(n, NoteLine) else n.description,
+        attrs=lambda n, i: (
+            ("n", str(i)), ("title", n.title), ("about", _about(n.anchor_date, today)),
+        ),
+        body=lambda n: n.description,
     )
 
 
@@ -175,48 +135,13 @@ def standing_only(notes: Sequence[Note]) -> tuple[Note, ...]:
     return tuple(n for n in notes if n.is_standing)
 
 
-def render_notes(
-    notes: Sequence[Note | NoteLine],
-    *,
-    today: int | None = None,
-    ids: bool = False,
-    lines: int | None = None,
-    chars: int | None = None,
-) -> ContextBlock:
-    """The shared note index. Cognition's review and reminder facts are fields
-    of the same rows, never a second block type. Cuts omit whole rows and count them.
-    """
-    standing = tuple(n for n in notes if not isinstance(n, Note) or n.is_standing)
-    rows: list[str] = []
-    spent = 0
-    for note in standing:
-        if lines is not None and len(rows) >= lines:
-            break
-        row = render_note_rows(
-            [note],
-            today=today,
-            ids=ids,
-            extra=lambda n: (
-                (("review", n.review), ("may_duplicate", n.may_duplicate), ("reminds", n.reminds))
-                if isinstance(n, NoteLine)
-                else ()
-            ),
-        )
-        # Positional handles are over the whole index, not each singleton.
-        if not ids:
-            row = row.replace('n="1"', f'n="{len(rows) + 1}"', 1)
-        if chars is not None and spent + len(row) + 1 > chars:
-            break
-        rows.append(row)
-        spent += len(row) + 1
-    left = len(standing) - len(rows)
+def render_notes(notes: Sequence[Note], *, today: int | None = None) -> ContextBlock:
+    """The note index: every standing note, positionally numbered."""
+    standing = standing_only(notes)
     return ContextBlock(
         name="notes",
-        body=compose_body("\n".join(rows)),
-        attrs=(
-            ("id_kind", "real" if ids else "positional"),
-            *((("not_listed", str(left)),) if left else ()),
-        ),
+        body=compose_body(render_note_rows(standing, today=today)),
+        attrs=(("id_kind", "positional"),),
         when_empty="self_close",
     )
 

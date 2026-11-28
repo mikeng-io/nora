@@ -158,20 +158,6 @@ def test_a_lesson_at_the_per_lesson_cap_is_accepted(n):
     assert _check(body=("one " * 200)[:n]) is None
 
 
-def test_only_the_lessons_session_builds_a_book():
-    """The lesson verbs sit on ONE model surface, the Lessons session, which the
-    composition root builds only under `[lessons] enabled`. A second importer would be
-    a second model surface for the verbs (a turn, Cognition): a turn reads lessons, it
-    never writes one."""
-    root = Path(__file__).resolve().parents[2] / "nora"
-    users = {
-        str(p.relative_to(root.parent)) for p in root.rglob("*.py")
-        if "from nora.language.lesson_book import" in p.read_text(encoding="utf-8")
-    }
-    assert users == {"nora/app/composition_dream.py"}
-    composition = (root / "app" / "composition_dream.py").read_text(encoding="utf-8")
-    assert composition.count("LessonBook(") == 1
-    assert composition.index("if not cfg.lessons.enabled:") < composition.index("LessonBook(")
 
 
 def test_a_lesson_too_short_to_say_anything_is_refused_before_it_can_pass_echo():

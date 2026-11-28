@@ -248,8 +248,7 @@ def _fire_occasion_args(cfg: Any, participation_runner: Any, proactive_runner: A
         # Event can reach `speak` (no policy marks one, no trigger exists).
         "participation_runner": participation_runner,
         # The proactive act turn's runner: the same auto-runner, under its own name. Gated on a
-        # HOME ROOM existing, not on the adaptor being wired: a proactive row written yesterday
-        # still comes due after `[dreamer] enabled` is flipped off, the screen below admits it,…
+        # HOME ROOM existing: a row written yesterday still comes due; the screen below admits it,…
         "proactive_runner": proactive_runner,
         # The shadow mirror: wired only when the operator turned BOTH the occasion AND the
         # review surface on — a mirrored determination always cleared the room opt-in and the

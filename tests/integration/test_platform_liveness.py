@@ -13,7 +13,6 @@ import asyncio
 import contextlib
 import functools
 
-import pytest
 import sqlalchemy as sa
 from aiohttp import web
 from sqlalchemy.ext.asyncio import create_async_engine
@@ -31,12 +30,11 @@ from nora.platform.discord.adapter import DiscordAdapter
 from nora.platform.discord.bridge_control import BridgeDiscordAdapter
 from nora.platform.instagram.adapter import InstagramAdapter
 from nora.platform.registry import (
-    RECOVERY_ATTEMPT_TIMEOUT_SECONDS,
     AdapterRegistry,
 )
 from nora.platform.signal.adapter import SignalAdapter
 from nora.platform.whatsapp.adapter import WhatsAppAdapter
-from nora.testing import HANG, FakePlatformAdapter
+from nora.testing import FakePlatformAdapter
 
 IDENTITY = PlatformIdentity(platform="telegram", primary="tg-nora")
 
@@ -253,56 +251,8 @@ class _Addressed:
         return []
 
 
-class _AliasConsumers:
-    """The long-lived holders of `self_aliases()`, wired the way composition
-    wires them (`composition_platforms.policies`, `composition_dream`), and
-    each exercised on Nora's promoted Telegram id."""
-
-    def __init__(self, registry) -> None:
-        from types import SimpleNamespace
-
-        from nora.engagement.mentions import MentionRenderer
-        from nora.ingest.policy import MentionPolicy, ReplyToNoraPolicy
-        from nora.language.lessons import LessonEvidence, LessonsKey
-
-        view = registry.self_aliases()
-        self.mention = MentionPolicy(view)
-        self.reply = ReplyToNoraPolicy(view)
-        nobody = SimpleNamespace(resolve=lambda platform, value: None)
-        self.renderer = MentionRenderer(persons=nobody, display_name="Nora",
-                                        self_ids=view, metrics=Metrics())
-        self.addressed = _Addressed()
-        self.lessons = LessonEvidence(
-            store=self.addressed, book=None,
-            keys={"u": LessonsKey(unit="u", rooms=())}, clock_ms=lambda: 10**12,
-            correction_quiet_seconds=60, self_ids=view)
-
-    async def see_her(self):
-        from types import SimpleNamespace
-
-        from nora.domain.models import NormalizedMessage, Quote
-
-        def message(**kw):
-            return NormalizedMessage(
-                platform="telegram", conversation_id="g", conversation_type="group",
-                sender_id="someone", sender_name=None, timestamp=1, body="hi", raw={},
-                **kw)
-
-        mention = await self.mention.should_engage(
-            message=message(mentions=frozenset({"tg-nora"})))
-        reply = await self.reply.should_engage(message=message(
-            quote=Quote(author_id="tg-nora", text="", quoted_ts=1)))
-        rendered = await self.renderer._handle(
-            SimpleNamespace(ids=("tg-nora",)), "telegram")
-        await self.lessons.corrections("u")
-        seen = {"mention_policy": mention.engage, "reply_policy": reply.engage,
-                "renderer": rendered == "@Nora",
-                "lessons": "tg-nora" in self.addressed.self_ids}
-        return seen
 
 
-def _alias_consumers(registry) -> _AliasConsumers:
-    return _AliasConsumers(registry)
 
 
 class _FakeTime:
@@ -331,67 +281,6 @@ class _FakeTime:
         return task.result()
 
 
-@pytest.mark.parametrize(("answers", "sleeps", "hung"), [
-    ([RuntimeError("down"), RuntimeError("down"), IDENTITY], [5.0, 10.0], False),
-    ([HANG, IDENTITY], [5.0], True),
-    ([RuntimeError("down")] * 10 + [IDENTITY],
-     [5.0, 10.0, 20.0, 40.0, 80.0, 160.0, 300.0, 300.0, 300.0, 300.0], False),
-], ids=["third-attempt", "hung-attempt", "past-the-cap"])
-async def test_promotion_registers_identity_before_the_first_event(
-        clean_pg_url, answers, sleeps, hung):
-    fake = FakePlatformAdapter(identities=answers)
-    registry = AdapterRegistry(adapters={"telegram": fake})
-    fake.degrade("down")
-    probes: dict[str, bool] = {}
-
-    def registered() -> bool:
-        return (registry.identities.get("telegram") == IDENTITY
-                and "tg-nora" in registry.self_aliases())
-
-    fake.on_first_listen = lambda: probes.setdefault("listen", registered())
-    listen = asyncio.ensure_future(runtime.supervise_adapter(runtime.SupervisedAdapter(
-        platform="telegram", listen=functools.partial(
-            _listen_when_live, registry, fake, {"on_message": _ignore})), Metrics()))
-    redis = _CountingRedis(on_first=lambda: probes.setdefault("stream", registered()))
-    reader = asyncio.ensure_future(StreamReader(
-        platform="telegram", account_key="a", redis=redis, store=_ElectedStore(),
-        wait_live=functools.partial(registry.wait_live, "telegram")).run())
-
-    class _ClaimProbe:
-        async def claim_next(self, *, platforms=None, **kwargs):
-            if platforms and "telegram" in platforms:
-                probes.setdefault("claim", registered())
-            return None
-
-    runner = WorkRunner(store=_ClaimProbe(), redis=None, ingest=None,
-                        engagement=None, slots=None, db_locks=None, adapters={},
-                        live_platforms=registry.live_platforms)
-    consumers = _alias_consumers(registry)  # built BEFORE promotion, as at startup
-    assert not any((await consumers.see_her()).values())
-    time = _FakeTime()
-    try:
-        await _settle()
-        assert probes == {} and "tg-nora" not in registry.self_aliases()
-        assert await runner._claim_next(frozenset({"participation"})) is None
-        assert probes == {}
-
-        await registry.recover("telegram", sleep=time.sleep, wait_for=time.wait_for)
-        await _settle()
-        await runner._claim_next(frozenset({"participation"}))
-    finally:
-        listen.cancel()
-        reader.cancel()
-        await asyncio.gather(listen, reader, return_exceptions=True)
-
-    assert time.sleeps == sleeps
-    assert set(time.timeouts) == {RECOVERY_ATTEMPT_TIMEOUT_SECONDS} == {10.0}
-    assert len(time.timeouts) == len(answers)  # every attempt ran, none skipped
-    if hung:
-        assert time.now == 10.0 + 5.0  # abandoned at 10 s, then the 5 s backoff
-    assert probes == {"listen": True, "stream": True, "claim": True}
-    assert await consumers.see_her() == {
-        "mention_policy": True, "reply_policy": True, "renderer": True,
-        "lessons": True}
 
 
 async def test_platform_state_gauge_is_one_hot_and_follows_promotion():

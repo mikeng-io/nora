@@ -8,11 +8,8 @@ language: only the headings and the fixed tokens (`->`, `:`, `(as of …)`,
 `(folded …)`, `no reason given`, `no date given`, `when`, the weekday
 abbreviation) are keys, and code parses keys.
 
-**Writers that call `parse_note_body`**: the Cognition session's
-`note_create`/`note_revise`/`note_merge`
-(`nora.app.cognition_session`). It is called by each WRITER and never by
-`NoteRevision.__post_init__`: a stored body that predates the schema must still
-read back.
+**Each writer calls `parse_note_body`**; `NoteRevision.__post_init__` never does,
+because a stored body that predates the schema must still read back.
 
 **Refused, never repaired**, beyond whitespace: a
 repair that changes more than whitespace is code writing content the model
@@ -500,46 +497,6 @@ def _check_ids(
 
 
 _ROLLUP_CITATION = re.compile(r"^rollup\(([^()\[\]]+)\)$")
-
-
-def check_citations(
-    cited: Sequence[str], shown: Shown, *, what: str,
-) -> tuple[tuple[int, ...], tuple[str, ...]]:
-    """The citations of a write that has no body to carry them (an event verb):
-    `cited` are message ids as digits and Rollup rows as
-    `rollup(kind|subject|from/to)`, exactly the two forms a note's brackets
-    take, held to the same `Shown` the same way: an id the write was shown or
-    fetched (or already carried), not one of Nora's own, a Rollup row it read.
-    Returns `(message ids, rollup keys)` in the order given, each once.
-    Raises `NoteBodyError` (`uncited` for none or a token that is neither
-    form, else `_check_ids`'s own) with `what` naming the write in the message."""
-    ids: list[int] = []
-    keys: list[str] = []
-    for raw in cited:
-        token = raw.strip()
-        if token.isdigit():
-            if int(token) not in ids:
-                ids.append(int(token))
-            continue
-        m = _ROLLUP_CITATION.match(token)
-        if m is None:
-            raise NoteBodyError(
-                "uncited",
-                f"{what} cites {token!r}, which is neither a message id (digits) nor "
-                f"rollup(kind|subject|from/to)",
-            )
-        if m.group(1).strip() not in keys:
-            keys.append(m.group(1).strip())
-    if not ids and not keys:
-        raise NoteBodyError(
-            "uncited", f"{what} cites nothing; give the ids of the messages it rests on, "
-            f"or the Rollup rows you read",
-        )
-    _check_ids(
-        tuple(ids), what, {m.id: m for m in shown.rendered}, shown.carried,
-        tuple(keys), shown.rollup_keys,
-    )
-    return tuple(ids), tuple(keys)
 
 
 def _check_date(date: str, weekday: str | None, item: str) -> None:

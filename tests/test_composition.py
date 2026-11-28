@@ -13,7 +13,6 @@ import pytest
 
 import nora.documents
 from nora.agent import tool_choice
-from nora.agent.catalog.groups import GRAPH_MEMORY_TOOLS
 from nora.app.composition import (
     Dependencies,
     build_dependencies,
@@ -22,7 +21,7 @@ from nora.app.fire import FirePath
 from nora.app.heartbeat import HEARTBEAT_NOT_RUNNING
 from nora.app.startup import StartupError
 from nora.config import load
-from nora.domain.models import DeliveryStatus, NormalizedMessage, TranscriptRow
+from nora.domain.models import NormalizedMessage
 from nora.infra.blobs import FilesystemBlobStore, RustfsBlobStore
 from nora.memory import DeliveryArbitration
 from nora.platform.discord.media import DiscordMediaSource
@@ -787,7 +786,7 @@ async def test_subagent_on_registers_its_backend_under_its_kind_and_the_poller_r
     from nora.app.subagent_backend import SubagentBackend
 
     on = override_config(cfg, {
-        "dreamer.enabled": True, "compute.enabled": True, "subagent.enabled": True,
+        "compute.enabled": True, "subagent.enabled": True,
         "heartbeat.enabled": False,
     })
     deps = await build_dependencies(on)
@@ -918,15 +917,6 @@ def test_only_app_and_main_import_config():
 # ---- the Dreamer runtime (substrate plan Phase 2) -------------------------
 
 
-async def test_the_dreamer_runtime_is_not_built_when_it_is_off(cfg):
-    """The shipped default. A subsystem that is off builds NOTHING, so a wiring
-    mistake in it cannot cost a deployment that never turned it on — the shape
-    `language_store` and `portrait_synthesizer` already use."""
-    deps = await build_dependencies(cfg)
-
-    assert deps.dreamer_runtime is None
-
-
 async def test_the_dreamer_runtime_is_built_when_it_is_on(cfg):
     deps = await build_dependencies(
         override_config(cfg, {"dreamer.enabled": True})
@@ -957,24 +947,6 @@ async def test_the_dreamer_runs_on_a_model_that_can_stop(cfg):
 
 
 
-
-
-def test_unit_scopes_are_the_allowlists_units_deduplicated(tmp_path):
-    from nora.people.wire import unit_scopes
-    from nora.policy import load_policy
-
-    policy_file = tmp_path / "policy.toml"
-    policy_file.write_text(
-        'default = "deny"\n'
-        '[[conversations]]\nplatform = "signal"\nid = "room-1"\nlabel = "One"\n'
-        'persons = "*"\nunit = "beta"\n'
-        '[[conversations]]\nplatform = "signal"\nid = "room-2"\nlabel = "Two"\n'
-        'persons = "*"\nunit = "alpha"\n'
-        '[[conversations]]\nplatform = "signal"\nid = "room-3"\nlabel = "Three"\n'
-        'persons = "*"\nunit = "beta"\n'
-    )
-    units = unit_scopes(load_policy(policy_file)).unit_scopes()
-    assert units == ("alpha", "beta")
 
 
 async def test_standing_disabled_still_wires_graph_debrief_without_legacy_fold(cfg):
@@ -1122,7 +1094,6 @@ async def test_the_dreamer_model_is_built_with_the_dreamers_own_effort(cfg):
     reading `[llm]` fails rather than coincidentally agreeing.
     """
     deps = await build_dependencies(override_config(cfg, {
-        "dreamer.enabled": True,
         "dreamer.reasoning_effort": "xhigh",
     }))
 
@@ -1136,7 +1107,6 @@ async def test_an_unset_dreamer_effort_leaves_the_model_on_the_tiers(cfg):
     composition that hard-coded the Dreamer's key would pass the first
     assertion and break every deployment that never set it."""
     deps = await build_dependencies(override_config(cfg, {
-        "dreamer.enabled": True,
         "dreamer.reasoning_effort": "",
     }))
 
@@ -1159,7 +1129,6 @@ async def test_the_dreamer_is_built_with_its_own_per_call_max_tokens(cfg):
     watermark.
     """
     deps = await build_dependencies(override_config(cfg, {
-        "dreamer.enabled": True,
         "dreamer.max_tokens": 16000,
     }))
 
@@ -1180,7 +1149,6 @@ async def test_an_unset_dreamer_max_tokens_leaves_it_on_the_tiers(cfg):
     that never set the key would break. That is the failure this pins.
     """
     deps = await build_dependencies(override_config(cfg, {
-        "dreamer.enabled": True,
         "dreamer.max_tokens": 0,
     }))
 
@@ -1204,7 +1172,6 @@ async def test_a_misspelt_inherited_effort_refuses_to_start(cfg):
     """
     with pytest.raises(StartupError, match="reasoning effort"):
         await build_dependencies(override_config(cfg, {
-            "dreamer.enabled": True,
             "dreamer.reasoning_effort": "",
             "llm.reasoning_effort": "hgh",
         }))
@@ -1214,7 +1181,6 @@ async def test_a_valid_inherited_effort_still_starts(cfg):
     """The positive control: a refusal that fired on every inherited value
     would satisfy the test above while making `""` — the default — unusable."""
     deps = await build_dependencies(override_config(cfg, {
-        "dreamer.enabled": True,
         "dreamer.reasoning_effort": "",
         "llm.reasoning_effort": "medium",
     }))
@@ -1250,7 +1216,7 @@ async def test_the_heartbeat_screens_proactive_rows_and_the_fire_path_can_stay_s
 
     (tmp_path / "policy.toml").write_text(_HOME_POLICY)
     deps = await build_dependencies(override_config(cfg, {
-        "dreamer.enabled": True, "notes.enabled": True, "heartbeat.enabled": True,
+        "notes.enabled": True, "heartbeat.enabled": True,
         "participation.enabled": False,
     }))
     try:
@@ -1274,7 +1240,7 @@ async def test_the_proactive_runner_thinks_at_its_own_effort(cfg, tmp_path):
     right at effort `none`."""
     (tmp_path / "policy.toml").write_text(_HOME_POLICY)
     deps = await build_dependencies(override_config(cfg, {
-        "dreamer.enabled": True, "notes.enabled": True, "heartbeat.enabled": True,
+        "notes.enabled": True, "heartbeat.enabled": True,
         "participation.enabled": True, "participation.reasoning_effort": "none",
         "proactive.reasoning_effort": "low",
     }))
@@ -1288,24 +1254,6 @@ async def test_the_proactive_runner_thinks_at_its_own_effort(cfg, tmp_path):
     finally:
         await deps.background.cancel_all()
 
-async def test_a_home_room_keeps_the_proactive_runner_even_with_the_dreamer_off(
-    cfg, tmp_path,
-):
-    """A proactive row written yesterday still comes due after `[dreamer] enabled` is flipped
-    off, so the act turn's runner is gated on the home room (the row's existence
-    condition), not on the adaptor being wired. Without it every such row would die
-    `failed_error`."""
-    (tmp_path / "policy.toml").write_text(_HOME_POLICY)
-    deps = await build_dependencies(override_config(cfg, {
-        "dreamer.enabled": False, "notes.enabled": True, "heartbeat.enabled": True,
-        "participation.enabled": False,
-    }))
-    try:
-        (loop,) = _spawned(deps, "HeartbeatLoop.run")
-        path = loop._fire.__self__
-        assert path._proactive_runner is not None
-    finally:
-        await deps.background.cancel_all()
 
 
 async def test_the_instagram_backend_is_composed_with_the_person_index(cfg):
@@ -1438,243 +1386,18 @@ async def test_the_social_poller_is_built_only_when_enabled(cfg, monkeypatch):
         await deps.background.cancel_all()
 
 
-async def test_cognition_off_builds_no_stimulus_stage_and_no_wake_poller(cfg):
-    """`[cognition] enabled = false` is the shipped default: nothing is written
-    to `stimulus`, no poller is built. Adapter health is recorded anyway —
-    it is Record, not a subsystem that acts."""
+# --- the graph wake -------------------------------------------------------------
+
+async def test_the_graph_wake_builds_from_the_example_config_with_no_switch(
+    cfg, tmp_path,
+):
+    (tmp_path / "policy.toml").write_text(_HOME_POLICY)
+    assert "enabled" not in type(cfg.cognition).model_fields
+    assert "enabled" not in type(cfg.dreamer).model_fields
     deps = await build_dependencies(cfg)
-    assert deps.wake_poller is None
-    assert deps.ingest._stimulus_wiring is None
-    assert deps.health_recorder is not None
-
-
-
-
-# --- the Cognition session (DEC-244) ------------------------------------------
-
-_SESSION_ON = {
-    "dreamer.enabled": True, "notes.enabled": True, "cognition.enabled": True,
-    "lessons.check_model": "fixture-lesson-check",
-}
-
-
-async def test_cognition_off_imports_no_model_machinery(cfg, tmp_path, monkeypatch):
-    """The shipped default: no runner, no evaluator, no shutdown to register, and
-    `nora.app.cognition_agent_runner` (Strands and the model machinery) is not even
-    imported."""
-    import sys
-
-    monkeypatch.delitem(sys.modules, "nora.app.cognition_agent_runner", raising=False)
-    (tmp_path / "policy.toml").write_text(_HOME_POLICY)
-    deps = await build_dependencies(override_config(cfg, {
-        "dreamer.enabled": True, "notes.enabled": True,
-    }))
-    assert deps.wake_poller is None
-    assert deps.cognition_runner is None and deps.cognition_shutdown is None
-    assert "nora.app.cognition_agent_runner" not in sys.modules
-
-
-
-
-async def test_cognition_on_builds_one_runner_for_backfill_alongside_graph_wake(
-    cfg, tmp_path,
-):
-    (tmp_path / "policy.toml").write_text(_HOME_POLICY)
-    deps = await build_dependencies(override_config(cfg, _SESSION_ON), legacy_replay=True)
-    runner = deps.cognition_runner
-    assert runner is not None and deps.wake_poller is not None
-    assert deps.cognition_shutdown is not None and not deps.cognition_shutdown.done
-    # The Dreamer's own budget entry, converted: rounds, tokens and the clock,
-    # and no call ceiling (DEC-247); the clock ends before the wake's.
-    assert (runner._budget.turns, runner._budget.timeout_seconds) == (200, 3600.0)
-    assert (runner._budget.max_memory_calls, runner._budget.max_tool_calls) == (None, None)
-    assert runner._budget.timeout_seconds <= cfg.cognition.session_timeout_seconds - 60.0
-    # Its guard holds the result caps and the R-99 argument table, and no call ceiling.
-    from nora.agent.dreamer import TOOL_RESULT_CAPS
-
-    agent = runner._agent_runner
-    assert agent._result_caps == dict(TOOL_RESULT_CAPS)
-    assert not hasattr(agent, "_read_tool_budgets")
-    # DEC-246: the two reads are wired and BUILT through the real
-    # registry (a tool whose read the composition root did not hand the registry
-    # is withheld from every surface and would be «wired» in name only).
-    unit, home = next(iter(runner._home_rooms.items()))
-    built = {t.tool_name for t in runner._read_tools_for(unit, [home])}
-    assert {"rollup_read", "standing_read"} <= built
-    # Read tools only: the registry's table also names the tag path's
-    # `remind`/`note_create`, whose arguments differ from the session's own
-    # verbs of those names, and R-99 would veto every call to them.
-    assert agent._param_names is not None and "note_read" in agent._param_names
-    # R-99 admits the agenda binding independently of a read's own room destination.
-    assert all({"agenda_room", "room"} <= names for names in agent._param_names.values())
-    assert set(agent._param_names) <= runner._read_only_tools
-    # The session's instruction is its own objective alone, read from the
-    # bind-mounted corpus (never the shared Dreamer doctrine), and the composed
-    # runner injects the Register skill for a `message` agenda and records it;
-    # `time` is mapped, so the floors wake.
-    text, sha = runner._doctrine()
-    assert text.startswith("You are Nora. This is the part of you")
-    assert "<dreamer_" not in text and sha
-    assert runner._skill_text_for()
-    assert set(runner._skill_versions_for()) == {"cognition-register"}
-    assert set(runner._home_rooms) == {"friends"}
-
-
-def _dreamer_tree(tmp_path: Path) -> Path:
-    """A copy of the shipped `nora/dreamer`, so a test can take a file out of it."""
-    import shutil
-
-    root = tmp_path / "dreamer-copy"
-    shutil.copytree(ROOT / "nora" / "dreamer", root)
-    return root
-
-
-@pytest.mark.parametrize("how", ["objective deleted", "skill deleted"])
-async def test_a_session_whose_objective_or_skill_is_missing_is_a_startup_error(
-    cfg, tmp_path, how,
-):
-    """A missing `cognition` objective, or a mapped skill that is not installed, would
-    raise a raw `LookupError` out of the composition. Both must be a named
-    `StartupError`."""
-    (tmp_path / "policy.toml").write_text(_HOME_POLICY)
-    root = _dreamer_tree(tmp_path)
-    if how == "objective deleted":
-        (root / "objectives" / "cognition.md").unlink()
-    else:
-        (root / "skills" / "cognition-register.md").unlink()
-    expect = "cognition-register" if how == "skill deleted" else "cognition"
-    with pytest.raises(StartupError, match=expect):
-        await build_dependencies(
-            override_config(cfg, {**_SESSION_ON, "dreamer.dir": root}), legacy_replay=True,
-        )
-
-
-async def test_the_same_tree_builds_when_nothing_is_taken_out_of_it(cfg, tmp_path):
-    """The positive control of the refusals above: an untouched copy is accepted."""
-    (tmp_path / "policy.toml").write_text(_HOME_POLICY)
-    deps = await build_dependencies(override_config(
-        cfg, {**_SESSION_ON, "dreamer.dir": _dreamer_tree(tmp_path)},
-    ), legacy_replay=True)
-    assert deps.cognition_runner is not None
-
-
-async def test_the_sessions_read_tools_are_the_catalogue_less_what_a_flag_withholds(
-    cfg, tmp_path,
-):
-    from nora.domain.cognition_session import Room
-
-    (tmp_path / "policy.toml").write_text(_HOME_POLICY)
-    off = await build_dependencies(override_config(cfg, _SESSION_ON), legacy_replay=True)
-    on = await build_dependencies(override_config(
-        cfg, {**_SESSION_ON, "record_query.enabled": True},
-    ), legacy_replay=True)
-    assert "record_query" not in off.cognition_runner._read_only_tools
-    assert "record_query" in on.cognition_runner._read_only_tools
-    wired = off.cognition_runner._read_only_tools
-    assert {"note_read", "where_been"} <= wired
-    assert {"rollup_read", "standing_read"} <= wired                    # DEC-246
-    assert "memo_read" in wired                                         # DEC-306
-    assert "social_read" in wired       # a SELECT, so no flag
-    # Built for a real room they are real, read-only tools, and only wired ones.
-    built = on.cognition_runner._read_tools_for("friends", [Room("signal", "g1")])
-    names = {t.tool_name for t in built}
-    assert names and names <= on.cognition_runner._read_only_tools
-    assert {"note_read", "record_query"} <= names
-
-
-async def test_the_configured_model_window_reaches_the_runner_the_overflow_proof_reads(
-    cfg, tmp_path,
-):
-    """Unset (the default) is «window unknown», so no overflow is the agenda's;
-    a configured window and fraction are what the runner proves one against."""
-    (tmp_path / "policy.toml").write_text(_HOME_POLICY)
-    baseline = await build_dependencies(override_config(cfg, _SESSION_ON), legacy_replay=True)
-    default = baseline.cognition_runner
-    assert default is not None and default._window_tokens is None
-    deps = await build_dependencies(override_config(cfg, {
-        **_SESSION_ON, "cognition.model_window_tokens": 123_456,
-        "cognition.overflow_window_fraction": 0.5,
-    }), legacy_replay=True)
-    assert deps.cognition_runner is not None
-    assert (deps.cognition_runner._window_tokens,
-            deps.cognition_runner._window_fraction) == (123_456, 0.5)
-
-
-
-
-async def test_the_session_is_grounded_from_the_record_with_record_query_off(
-    cfg, tmp_path, clean_pg_url,
-):
-    """The rows that raised a stimulus are read by code for the agenda whether or not
-    `[record_query] enabled` offers a MODEL the tool. Real Postgres, the composition's own
-    grounder: who said what, with the id."""
-    import sqlalchemy as sa
-
-    from nora.domain.cognition_session import Room, build_situation
-    from nora.domain.stimuli import Stimulus
-    from nora.infra.sql.engine import create_sql_engine
-
-    (tmp_path / "policy.toml").write_text(_HOME_POLICY)
-    deps = await build_dependencies(override_config(cfg, _SESSION_ON), legacy_replay=True)
-    assert "record_query" not in deps.cognition_runner._read_only_tools  # the tool is OFF
-    engine = create_sql_engine(clean_pg_url)
-    now = 1_790_000_000_000
-    try:
-        async with engine.begin() as conn:
-            ids = []
-            for room, sender, name, body, hidden in (
-                ("g1", "+85211110001", "Ada Self-Set", "dinner friday?", None),
-                ("g1", "+85211110002", "Ben Self-Set", "a hidden one", now),
-                ("g2", "+85211110003", "Cy Self-Set", "other unit words", None),
-            ):
-                ids.append((await conn.execute(sa.text(
-                    "INSERT INTO messages (platform, conversation_id, conversation_type, "
-                    "sender_id, sender_name, ts, body, is_nora, hidden_at) VALUES "
-                    "('signal', :room, 'group', :s, :n, :ts, :b, 0, :h) RETURNING id"
-                ), {"room": room, "s": sender, "n": name, "ts": now - 600_000, "b": body,
-                    "h": hidden})).scalar_one())
-    finally:
-        await engine.dispose()
-    pending = tuple(
-        Stimulus(id=i + 1, unit="friends", kind="message", item="message", ref=f"messages:{mid}",
-                 at_ms=now - 600_000, recorded_at_ms=now - 600_000, platform="signal",
-                 conversation_id=room)
-        for i, (mid, room) in enumerate(zip(ids, ("g1", "g1", "g2"), strict=True))
-    )
-    situation = build_situation(
-        unit="friends", pending=pending, home_room=Room("signal", "g1"), now_ms=now,
-        last_session_ms=None,
-    )
-    with pytest.raises(ValueError, match="outside the unit"):
-        await deps.cognition_runner._grounder(
-            "friends", situation.agenda.items, pending)
-    valid = build_situation(unit="friends", pending=pending[:2], home_room=Room("signal", "g1"),
-                            now_ms=now, last_session_ms=None)
-    grounding = await deps.cognition_runner._grounder(
-        "friends", valid.agenda.items, pending[:2])
-    said = {r.message_id: r for r in grounding.records.values()}
-    assert set(said) == {ids[0]}                    # the hidden one and the OTHER UNIT's are absent
-    assert said[ids[0]].text == "dinner friday?" and said[ids[0]].room == Room("signal", "g1")
-    assert "+852" not in repr(grounding)            # R-18: no platform id reaches the prompt
-    from datetime import UTC
-
-    from nora.language.cognition_render import render_agenda
-    prompt = render_agenda(valid.agenda.items, stimuli={s.id: s for s in pending[:2]},
-                           grounding=grounding,
-                           now_ms=now, tz=UTC)
-    assert "dinner friday?" in prompt
-    assert "+852" not in prompt
-    assert "other unit words" not in prompt and "a hidden one" not in prompt
-
-
-async def test_graph_wake_can_compose_with_no_home_room_for_legacy_sessions(cfg, tmp_path):
-    (tmp_path / "policy.toml").write_text(
-        'default = "deny"\n[[conversations]]\nplatform = "signal"\nid = "g1"\npersons = "*"\n'
-        'unit = "friends"\nlabel = "Friends"\n',
-    )
-    deps = await build_dependencies(override_config(cfg, _SESSION_ON), legacy_replay=True)
     assert deps.wake_poller is not None
-    assert deps.metrics.get("nora_cognition_session_units", state="no_home_room") == 1
+    assert deps.dreamer_runtime is not None
+
 
 
 async def test_the_document_tools_reach_the_registry_only_while_documents_are_on(cfg):
@@ -1771,7 +1494,7 @@ async def test_an_eval_subject_with_the_subagent_on_builds_the_tools_and_a_recor
 
     real = composition_agent.build_subagent_backend
     on = override_config(cfg, {
-        "dreamer.enabled": True, "compute.enabled": True, "subagent.enabled": True,
+        "compute.enabled": True, "subagent.enabled": True,
         "heartbeat.enabled": False,
     })
     with recording_subagent_worker():
@@ -1833,61 +1556,12 @@ async def test_the_senders_hold_identity_toml_as_their_direct_message_allowlist(
 
 
 
-async def test_cognition_builds_graph_memory_tools_with_the_host_shape(
-    cfg, tmp_path, example_config_path,
-):
-    """The host-shaped file, `[memory.index] embed=true`, loads through the
-    real loader and the graph read tools still build."""
-    import tomllib
 
-    import tomli_w
-
-    data = tomllib.loads(example_config_path.read_text())
-    data["cognition"]["enabled"] = True
-    data["dreamer"]["enabled"] = True
-    data["memory"]["index"].update(embed=True, embed_batch=256)
-    example_config_path.write_text(tomli_w.dumps(data))
-    host_cfg = load(example_config_path)
-    (tmp_path / "policy.toml").write_text(_HOME_POLICY)
-    deps = await build_dependencies(override_config(host_cfg, {
-        **_SESSION_ON,
-        "store.data_dir": tmp_path,
-        "platforms.signal.mode": "direct",
-        "platforms.signal.base_url": "http://127.0.0.1:18080",
-        "platforms.signal.account": "+85290000100",
-        "doctrine.dir": ROOT / "nora" / "doctrine",
-        "dreamer.dir": ROOT / "nora" / "dreamer",
-    }), legacy_replay=True)
-    runner = deps.cognition_runner
-    assert runner is not None
-    unit, home = next(iter(runner._home_rooms.items()))
-    built = {t.tool_name for t in runner._read_tools_for(unit, [home])}
-    assert {"memory_search", "memory_read"} <= built
-    assert "who_said" in built
-    assert "who_said" in runner._read_only_tools
-    assert built & GRAPH_MEMORY_TOOLS and runner._read_only_tools & GRAPH_MEMORY_TOOLS
-
-    off_deps = await build_dependencies(override_config(host_cfg, {
-        **_SESSION_ON,
-        "store.data_dir": tmp_path / "off",
-        "platforms.signal.mode": "direct",
-        "platforms.signal.base_url": "http://127.0.0.1:18080",
-        "platforms.signal.account": "+85290000100",
-        "doctrine.dir": ROOT / "nora" / "doctrine",
-        "dreamer.dir": ROOT / "nora" / "dreamer",
-    }), legacy_replay=True, include_graph_reads=False)
-    off_runner = off_deps.cognition_runner
-    assert off_runner is not None
-    off_unit, off_home = next(iter(off_runner._home_rooms.items()))
-    off_built = {t.tool_name for t in off_runner._read_tools_for(off_unit, [off_home])}
-    assert {"memory_search", "memory_read"}.isdisjoint(off_built)
-    assert "who_said" in off_built, "positive control: the window-attribution read is offered"
-
-
-async def test_markdown_identity_reaches_live_tools_and_cognition_writers(cfg, tmp_path):
+async def test_markdown_identity_reaches_the_live_tools(cfg, tmp_path):
     import shutil
 
     from nora.agent.room import Room
+    from nora.domain.models import DeliveryStatus, TranscriptRow
 
     directory = tmp_path / "renamed-doctrine"
     shutil.copytree(cfg.doctrine.dir, directory)
@@ -1896,10 +1570,7 @@ async def test_markdown_identity_reaches_live_tools_and_cognition_writers(cfg, t
         identity.read_text().replace("display_name: Nora", "display_name: AgentAlpha")
     )
     (tmp_path / "policy.toml").write_text(_HOME_POLICY)
-    renamed = override_config(cfg, {**_SESSION_ON, "doctrine.dir": directory})
-    deps = await build_dependencies(renamed, legacy_replay=True)
-    assert deps.cognition_runner is not None
-    assert deps.cognition_runner._nora_names == frozenset({"AgentAlpha"})
+    deps = await build_dependencies(override_config(cfg, {"doctrine.dir": directory}))
     registry = deps.engagement._tool_registry
     own = TranscriptRow(id=1, sender_id="self", sender_name="PreviousLabel", ts=1,
                         body="I checked the venue", is_nora=True,

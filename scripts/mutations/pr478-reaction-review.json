@@ -21,27 +21,6 @@
     "target": "tests/unit/test_reaction_annotations.py::test_a_custom_emoji_projects_to_its_scoped_name_never_its_id"
   },
   {
-    "name": "the label never marks omitted detail",
-    "file": "nora/domain/models.py",
-    "old": "                dropped += n",
-    "new": "                dropped += 0",
-    "target": "tests/unit/test_reaction_annotations.py::test_the_annotation_is_budgeted_beside_the_words_and_marks_omission"
-  },
-  {
-    "name": "the stimulus removal bit is dropped",
-    "file": "nora/app/cognition_grounding.py",
-    "old": "        removed=found.removed,",
-    "new": "        removed=False,",
-    "target": "tests/unit/test_reaction_annotations.py::test_a_reaction_removal_is_marked_distinct_from_an_add"
-  },
-  {
-    "name": "the removal never reaches the rendered row",
-    "file": "nora/language/cognition_render.py",
-    "old": "                (\"reaction_removed\", \"yes\" if reacted and r.removed else None),",
-    "new": "                (\"reaction_removed\", \"yes\" if reacted and False else None),",
-    "target": "tests/unit/test_reaction_annotations.py::test_a_reaction_removal_is_marked_distinct_from_an_add"
-  },
-  {
     "name": "partial coverage renders as a complete state",
     "file": "nora/agent/toolkit/transcript.py",
     "old": "            if r.reactions.coverage == \"partial\":",
@@ -61,5 +40,12 @@
     "old": "if any(\"reactions_source\" in m for m in c.out):\n        c.notes.append(_REACTIONS_NOTE)\n    if c.older:\n        c.notes.append(_older_note(c.rows))\n    if not c.out and c.before_ts is not None:",
     "new": "        if c.older:\n            c.notes.append(_older_note(c.rows))\n        if not c.out and c.before_ts is not None:",
     "target": "tests/unit/test_reaction_annotations.py::test_the_tool_result_note_explains_the_counts_are_recorded_only"
+  },
+  {
+    "name": "the label never marks omitted detail",
+    "file": "nora/domain/models.py",
+    "old": "                dropped += n",
+    "new": "                dropped += 0",
+    "target": "tests/unit/test_admission_and_handoff_pins.py::test_a_reaction_label_marks_what_it_leaves_out_with_a_count"
   }
 ]

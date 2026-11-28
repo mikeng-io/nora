@@ -28,20 +28,6 @@
     "target": "tests/contract/test_tag_trace_store_contract.py::test_turn_facts_same_trace_later_result_wins"
   },
   {
-    "name": "r2-3-canonical-unit-arbitration",
-    "file": "nora/agenda/adapters/tools/session_remind.py",
-    "old": "            arbitration_rooms=[tuple(r) for r in unit_rooms],",
-    "new": "arbitration_rooms=list(destinations),",
-    "target": "tests/unit/test_cognition_live_writes.py::test_remind_refuses_when_a_same_act_is_firing_in_a_unit_room_off_agenda"
-  },
-  {
-    "name": "r2-4-delivered-fact-dedupe",
-    "file": "nora/agenda/adapters/tools/session_remind.py",
-    "old": "        subject_kind=subject_kind, subject_id=subject_id,",
-    "new": "                    subject_kind=subject_kind + '-x', subject_id=subject_id,",
-    "target": "tests/unit/test_cognition_live_writes.py::test_remind_refuses_a_same_act_already_delivered"
-  },
-  {
     "name": "r2-1-working-set-ttl",
     "file": "nora/agent/shared_state.py",
     "old": "if now_ms - item.found_at > ttl_ms:",
@@ -70,13 +56,6 @@
     "target": "tests/contract/test_tag_trace_store_contract.py::test_turn_facts_bounds_database_transfer_after_reduction"
   },
   {
-    "name": "cognition-write-scope-is-unit-not-agenda",
-    "file": "nora/app/cognition_session.py",
-    "old": "return self.rooms if self.unit_rooms is None else self.unit_rooms",
-    "new": "return self.rooms",
-    "target": "tests/unit/test_cognition_live_writes.py::test_one_room_agenda_can_schedule_an_explicit_two_room_unit_plan"
-  },
-  {
     "name": "sql-matching-result-uses-last-recorded-result",
     "file": "nora/infra/sql/tag_traces.py",
     "old": "block->'toolResult'->>'toolUseId', block->'toolResult'\n                   ORDER BY m_idx, b_idx",
@@ -86,7 +65,7 @@
   {
     "name": "delivered-act-retains-canonical-identity",
     "file": "nora/language/shared_render.py",
-    "old": "identity = f\"{e.subject_ref or 'subject unresolved'} \u00b7 {e.action or 'remind'}\"",
+    "old": "identity = f\"{e.subject_ref or 'subject unresolved'} · {e.action or 'remind'}\"",
     "new": "identity = \"identity omitted\"",
     "target": "tests/unit/test_shared_state.py::test_delivery_facts_expose_action_identity_and_legacy_uncertainty"
   },
@@ -110,13 +89,6 @@
     "old": "evidence = f\"source={record_ref}; recorded={recorded_at}\"",
     "new": "evidence = \"provenance omitted\"",
     "target": "tests/unit/test_shared_state.py::test_an_unresolved_only_view_is_rendered"
-  },
-  {
-    "name": "review3-notebook-index-survives-standing",
-    "file": "nora/language/cognition_render.py",
-    "old": "    blocks += item_blocks",
-    "new": "    blocks += [b for b in item_blocks if shared is None or b.name != \"note_index\"]",
-    "target": "tests/unit/test_cognition_live_writes.py::test_the_daily_floor_is_a_notebook_review_and_the_index_marks_what_code_noticed"
   },
   {
     "name": "review3-sql-old-act-lifecycle",

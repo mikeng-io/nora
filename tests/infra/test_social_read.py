@@ -25,7 +25,6 @@ from nora.agent.room import Room
 from nora.agent.social_read import SOCIAL_ITEM_CHARS, SOCIAL_READ_MAX
 from nora.agent.tools import build_tools
 from nora.agent.whereis import Circle
-from nora.domain.cognition_session import COGNITION_ADAPTOR
 from nora.domain.social_stream import MediaItem, SocialItem
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.social_stream import SqlSocialStreamStore, readable_social_store
@@ -162,8 +161,8 @@ def _store(engine, persons) -> SqlSocialStreamStore:
 
 
 def _tool(engine, tmp_path, *, room_id="ROOM-A", wired=True, metrics=None,
-          adaptor=COGNITION_ADAPTOR):
-    """Built as a Cognition session builds it, `social_read`'s one surface."""
+          adaptor=""):
+    """Built as a tag turn builds it, `social_read`'s one surface."""
     (tmp_path / "policy.toml").write_text(_POLICY)
     policy = load_policy(tmp_path / "policy.toml")
     persons = _persons(tmp_path)
@@ -342,23 +341,7 @@ async def test_a_name_resolves_by_the_one_matching_rule_aliases_included(engine,
     assert [(i["by"], i["caption"]) for i in got["items"]] == [("Ben", "by Ben")]
 
 
-async def test_two_people_with_one_name_are_offered_by_what_tells_them_apart(engine, tmp_path):
-    await _seed(engine, "1", person="p1", caption="the first Ada's")
-    await _seed(engine, "2", person="p5", caption="Ada Wong's")
-    tool = _tool(engine, tmp_path, room_id="ROOM-N")
-    got = await _call(tool, person="Ada")
-    assert got["status"] == "ambiguous"
-    # Ada Wong by her full name; the other Ada has no other name, so by id.
-    assert got["could_be"] == ["p1", "Ada Wong"]
-    assert "caption" not in str(got)
-    # Each entry, named again, reads that one person alone.
-    first = await _call(tool, person="p1")
-    wong = await _call(tool, person="Ada Wong")
-    assert [i["caption"] for i in first["items"]] == ["the first Ada's"]
-    assert [i["caption"] for i in wong["items"]] == ["Ada Wong's"]
-
-
-async def test_outside_cognition_no_person_id_is_offered_or_taken(engine, tmp_path):
+async def test_no_person_id_is_offered_or_taken_on_a_tag_turn(engine, tmp_path):
     await _seed(engine, "1", person="p1", caption="the first Ada's")
     tool = _tool(engine, tmp_path, room_id="ROOM-N", adaptor="")
     got = await _call(tool, person="Ada")
