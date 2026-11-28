@@ -428,12 +428,7 @@ def _mirror_window(d: Determination) -> str:
 
 
 class FirePath:
-    """One fire turn, end to end. Every collaborator arrives through `__init__`.
-
-    `clock` is here for the same reason it is on `HeartbeatLoop`: the header
-    states when the reminder was set and when it came due, and a module that
-    read the wall clock itself could not be tested at a fixed instant.
-    """
+    """Assemble and deliver one fire turn with an injected clock."""
 
     def __init__(
         self,
@@ -783,30 +778,7 @@ class FirePath:
         return convo.unit
 
     async def run(self, rows: Sequence[Reminder]) -> str:
-        """The heartbeat's `fire` collaborator: due rows in, outcome out.
-
-        Dispatch by KIND, through the reminder-derived registry
-        (DEC-139): `rows[0].kind` selects the
-        factory that renders the batch's Event (`"proactive"` →
-        `proactive_occasion`); an
-        UNREGISTERED kind raises inside this call,
-        before `speak`, and `HeartbeatLoop._run_turn`'s `_fire` guard
-        resolves the claimed rows to FAILED (`failed_error`) immediately —
-        never rendered as a malformed sentence, never left FIRING for boot
-        `recover()`.
-
-        The registry defaults to `{"proactive": proactive_occasion}`; the
-        composition root wires the real registry.
-
-        It is a separate method rather than a lambda in the composition root
-        for two reasons. It keeps `HeartbeatLoop._fire` a
-        BOUND METHOD of the real fire path — which is what
-        `tests/test_composition.py::test_the_heartbeat_is_wired_to_the_real_fire_path`
-        asserts, and a lambda would satisfy that test while wrapping anything
-        at all. And it keeps the event factories assembled HERE, beside the
-        header prose they need, rather than in a module that has no business
-        knowing what a fire turn is (`nora.app.heartbeat`'s own docstring).
-        """
+        """Render a legacy reminder batch with its registered event factory."""
         factory = self._event_registry.get(rows[0].kind)
         if factory is None:
             raise KeyError(
@@ -954,32 +926,7 @@ class FirePath:
         self, occasion: Event, ctx: TagContext, *, send_permitted: bool = True,
         adapter: PlatformAdapter | None = None,
     ) -> str:
-        """One turn's stages, its last-resort guard, and DEC-42's observable.
-
-        The `except` is the fire path's counterpart to
-        `EngagementPipeline._run_admitted`'s outer guard, and it carries
-        `audience` for the same reason. Without it every stage between `resolve_identity` and
-        `build_tag_message` could fault straight past `nora_silent_failures_total`
-        into the heartbeat's `failed_error` — the same string an ordinary model
-        error writes, so a total wiring fault and a bad model call were one
-        reading. `handler_error` is R-5's last-resort signal and this is where
-        the fire path raises it.
-
-        `Exception`, not the tag path's `BaseException`, and that is the one
-        deliberate divergence. The tag path is a spawned turn nobody awaits, so
-        swallowing everything is what makes its silence guarantee unconditional.
-        This one is awaited by `HeartbeatLoop`, whose `run()` loop is cancelled
-        at shutdown — absorbing a `CancelledError` here would answer
-        `failed_error`, write a terminal row, and swallow the cancellation of
-        the loop itself.
-
-        The `finally` is DEC-42/R-25 on this path: a turn that sent SOME of its
-        messages and then stopped is NOT silent — `delivered` is True, the
-        outcome is `sent`, the row is DONE — so nothing R-23 built can see it.
-        It runs in a `finally` for the tag path's reason: that is the one point
-        every exit path converges on, the cap-cut loop, the timeout, the
-        `llm_error` and the guard above alike.
-        """
+        """Run the fire turn and let shutdown cancellation reach its caller."""
         # The three the `finally` reads. LOCALS, never attributes: `FirePath` is
         # built once per process and outlives every turn, so state parked on
         # `self` would let one turn's stop reason describe the next one's

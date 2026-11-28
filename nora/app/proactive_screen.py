@@ -1,19 +1,10 @@
-"""The fire-time screen for a `kind="proactive"` reminder row
-(DEC-162).
-
-WHAT IT ANSWERS
----------------
-Whether a due proactive row may reach a fire turn at all, and — when it may
-not — what the row should say about why. Two questions, both asked at FIRE
-time and neither at create time, for `nora.app.heartbeat`'s own reason: the
-row was written hours earlier (by the Cognition session's `remind`) reading
-the world as it was then.
+"""Screen legacy proactive reminder rows against current policy and notes.
 
 1. **The room's grant.** `is_allowed` is (room, person), and a proactive
    row's owner is Nora's reserved `ai_peer` id — nobody in `identity.toml`,
    by construction (`composition.py` reserves the id at startup). So the
    grant is the room's `proactive = true` flag (`policy.toml`), read through
-   the same `Policy` the heartbeat re-checks ordinary rows against. Refused:
+   current `Policy`. Refused:
    `FAILED` / `failed_policy`, the ordinary revoked-trust outcome.
 
 2. **The note the row is about.** `remind` under Dreamer provenance stamps

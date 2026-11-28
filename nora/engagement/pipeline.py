@@ -20,10 +20,9 @@ in-flight case specifically, that key belongs to a DIFFERENT, still-running
 tag, and releasing it would take that other tag's lock out from under it.
 
 The lock and the queue themselves are NOT owned here: they are
-`nora.engagement.slots.ConversationSlots`, injected, because the heartbeat
-fire path (`nora.app.heartbeat`) has to contend for the same per-conversation
-slot. `release_and_dispatch` is deliberately ONE call rather than the two
-statements it replaced — a release that forgot to dispatch would strand
+`nora.engagement.slots.ConversationSlots`, shared with the graph proactive
+poller so both paths contend for the same per-conversation slot.
+`release_and_dispatch` is one call because a release without dispatch strands
 whatever queued behind this turn until the next tag arrived, and that tag
 would then jump the queue.
 

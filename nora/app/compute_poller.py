@@ -1,8 +1,4 @@
-"""`ComputeJobPoller` — delivers a finished compute job through `FirePath.speak`
-(DEC-97), rather than `HeartbeatLoop`'s path: there is no `due_at` to compare
-against, every `PENDING` row is a candidate every tick, and "is it done" is
-answered by `ComputeBackend.poll`, not a clock.
-"""
+"""Deliver finished compute jobs through `FirePath.speak` after the backend reports completion."""
 
 from __future__ import annotations
 
@@ -419,10 +415,9 @@ async def recover(
     *, store: ComputeJobStore, metrics: Metrics, now: datetime,
     durable_kinds: frozenset[str] = frozenset(),
 ) -> list[ComputeJob]:
-    """Boot recovery. BOTH non-terminal states resolve to `FAILED`; the
-    `PENDING` half has no counterpart in `nora.app.heartbeat.recover`.
+    """Recover interrupted compute deliveries at boot.
 
-    `FIRING` is the crash-mid-delivery case the heartbeat has too.
+    `FIRING` means the process stopped during delivery.
 
     `PENDING`: a pending compute job is a HANDLE (`backend_job_id`) into
     `ComputeBackend`'s registry, and an in-process backend keeps that registry

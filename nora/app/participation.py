@@ -120,11 +120,7 @@ class ParticipationStateStore(Protocol):
 class ParticipationTrigger:
     """One participation evaluation per quiescence-closed window, per room.
 
-    `speak` is `FirePath.speak` itself (a bound method, like
-    `HeartbeatLoop._fire` — the composition test asserts it), called as
-    `speak(occasion, send_permitted=...)`; it is typed as the narrow callable
-    this class uses, not the whole `FirePath`, for the same reason
-    `nora.app.runtime`'s Protocols are narrow.
+    The trigger calls `FirePath.speak(occasion, send_permitted=...)`.
 
     `clock` is injected for the reason `Debounce`'s is: the settle window and
     the cooldown are durations, and a module that read the clock itself could

@@ -75,6 +75,7 @@ _PRE_MOVE = (
 
 ROOT = Path(__file__).resolve().parents[2]
 
+
 # Only these anchor a backticked token as a repo-root-relative path CLAIM.
 # `doctrine/` is deliberately absent — see the module docstring.
 _CHECKED_PREFIXES = (
@@ -486,3 +487,15 @@ def test_a_literal_gitignore_entry_is_not_a_dangling_reference() -> None:
     ignored = gitignore_literals(ROOT / ".gitignore")
     assert "nora/version.json" in ignored
     assert not any(entry.endswith("*") or "*" in entry for entry in ignored)
+
+def test_agenda_docs_refer_to_the_graph_delivery_path() -> None:
+    runbook = (ROOT / "docs/operations/runbook.md").read_text()
+    assert "graph_stimulus_claim" in runbook
+    assert "nora_proactive_stimulus_parked_total" in runbook
+    assert "nora reminders list" not in runbook
+    assert "nora_heartbeat_deferrals_total" not in runbook
+    references = subprocess.run(
+        ["git", "grep", "-nE", r"HeartbeatLoop|nora\.app\.heartbeat", "--", "nora"],
+        cwd=ROOT, check=False, capture_output=True, text=True,
+    )
+    assert references.returncode == 1, references.stdout or references.stderr
