@@ -11,6 +11,7 @@ from aiohttp.test_utils import TestServer
 
 from nora.domain.actions import ActionOwner
 from nora.domain.models import ConversationTarget, NormalizedMessage
+from nora.domain.ports import OutboundAttachment
 from nora.ingest.policy import MentionPolicy
 from nora.platform.bridge.client import BridgeAdapter, BridgeEndpoint, BridgeUnavailableError
 from nora.platform.discord.bridge_app import DiscordBridge
@@ -221,3 +222,33 @@ async def test_bound_facades_borrow_root_sessions_and_isolate_actions(discord, w
                 await facade.close()
             await root.close()
             await control.close()
+
+
+async def test_attachment_custody_413_is_a_failed_send_not_transport_failure():
+    puts: list[str] = []
+    actions: list[dict] = []
+
+    async def put(request: web.Request) -> web.Response:
+        puts.append(request.match_info["key"])
+        return web.json_response({"error": "too large"}, status=413)
+
+    async def post(request: web.Request) -> web.Response:
+        actions.append(await request.json())
+        return web.json_response({"state": "confirmed"})
+
+    app = web.Application()
+    app.router.add_put("/v1/attachments/{key}", put)
+    app.router.add_post("/v1/actions", post)
+    async with TestServer(app) as server:
+        adapter = BridgeAdapter("discord", BridgeEndpoint(
+            str(server.make_url("")).rstrip("/"), "synthetic"))
+        try:
+            result = await adapter.send(
+                target=ConversationTarget("discord", "synthetic-room", "group"),
+                text="reply",
+                attachments=(OutboundAttachment(
+                    content=b"x", media_type="image/png", filename="a.png"),))
+            assert not result.ok and not result.uncertain
+            assert len(puts) == 1 and not actions
+        finally:
+            await adapter.close()
