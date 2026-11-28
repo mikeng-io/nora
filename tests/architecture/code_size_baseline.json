@@ -2894,7 +2894,7 @@
   },
   "tests/unit/test_platform_observation_wired.py": {
     "comment_blocks": 2,
-    "file_lines": 1145
+    "file_lines": 1117
   },
   "tests/unit/test_pr584_astra_readiness.py": {
     "internal_docstrings": 1

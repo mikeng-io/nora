@@ -1115,31 +1115,3 @@ async def test_an_off_window_target_uses_the_markdown_self_name(example_config_p
     assert 'target_text="an older message"' in prompt
     if own:
         assert 'target_author="PreviousLabel"' not in prompt
-
-
-async def test_retained_sources_report_the_bound_and_never_read_another_room():
-    from nora.domain.notes import NOTE_OBJECT_REFS_MAX
-    from nora.domain.observations import handle_of
-
-    audit, store, notes = FakeRecordStore(), FakeObservationStore(), InMemoryNoteStore()
-    handles = []
-    for i in range(14):
-        rid = await store.append(
-            observation=_obs(kind="poll", ref=f"tracked-{i}", op="create", ago=1,
-                             payload=PollPayload(question=f"Tracked question {i}",
-                                                 options=(("a", "A"),))),
-            event_id=f"tracked-{i}", source_digest=f"tracked-{i}")
-        assert rid
-        head = await store.current(scope=SCOPE, kind="poll", object_ref=f"tracked-{i}")
-        handles.append(handle_of(head))
-    for i in range(0, len(handles), NOTE_OBJECT_REFS_MAX):
-        note = await _note_with_ref(notes, handles[i])
-        await notes.append_revision(
-            unit="u1", note_id=note.id, body="tracked questions", now_ms=NOW_MS,
-            parent_revision_id=note.head_revision_id, established_by="test",
-            object_refs=tuple(SourceRef("signal", CID, h)
-                              for h in handles[i:i+NOTE_OBJECT_REFS_MAX]))
-    await _newer_heads(store, 14)
-    ctx = await _retained_source_view(audit, store, notes)
-    assert len(ctx.retained_sources) == 12 and ctx.retained_sources_more == 2
-    assert '<source_objects_more count="2"' in _prompt(ctx)

@@ -1219,7 +1219,7 @@ def test_an_unknown_standing_key_is_a_startup_failure(toml_path):
     load(toml_path)
     text = toml_path.read_text()
     toml_path.write_text(text.replace("[standing]\n", "[standing]\ntimeout_second = 2\n"))
-    with pytest.raises(ConfigError, match="standing.timeout_second"):
+    with pytest.raises(ConfigError, match=r"standing\.timeout_second"):
         load(toml_path)
 
 

@@ -175,15 +175,17 @@
     "target": "tests/unit/test_tool_surface.py::test_rollup_read_is_a_tag_turns_tool_and_no_other_occasions"
   },
   {
-    "name": "A divergent legacy Standing head is given the latest revision id",
-    "file": "nora/infra/sql/standing.py",
-    "old": "            standing=head, revision_id=str(newest.id) if matches and newest else None,\n",
-    "new": "            standing=head, revision_id=str(newest.id) if newest else None,\n",
-    "target": "tests/infra/test_standing_revision.py::test_a_legacy_head_with_a_divergent_chain_has_no_revision_id"
-  },
-  {
     "name": "rollup_read: a name resolves among everyone, not this room's people (R-21)",
     "file": "nora/memory/adapters/tools/standing.py",
     "old": "        c.matches = c.view.find(c.name)\n",
     "new": "        c.matches = tuple(p for p in c.persons.by_person.values() if p.name == c.name)\n",
     "target": "tests/integration/test_rollup_read.py::test_a_name_resolves_only_among_this_rooms_people"
+  },
+  {
+    "name": "A divergent legacy Standing head is given the latest revision id",
+    "file": "nora/infra/sql/standing.py",
+    "old": "            standing=head, revision_id=str(newest.id) if matches and newest else None,\n",
+    "new": "            standing=head, revision_id=str(newest.id) if newest else None,\n",
+    "target": "tests/infra/test_standing_revision.py::test_a_legacy_head_with_a_divergent_chain_has_no_revision_id"
+  }
+]
