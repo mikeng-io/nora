@@ -12,6 +12,7 @@ from nora.domain.composed import Composed, compose_body, legacy_composed
 from ..domain.blocks import (
     BlockKey,
     ContextBlock,
+    assemble,
     render_elements,
     restamp,
     speaker_name,
@@ -75,6 +76,7 @@ def _now_line(now: datetime | None) -> str:
 
 # Order and scope for blocks stamped by this module.
 _BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
+    ("context_header", 0, "turn"),
     ("members", 4, "room"),
     ("transcript", 70, "room"),
     ("spoken_turn", 75, "turn"),
@@ -111,8 +113,8 @@ def _block(
 
 def _context_header(header: str = TAG_HEADER) -> str:
     """Keep the occasion's framing in a stable prefix."""
-    return ContextBlock(name="context_header",
-        body=legacy_composed(ContextHeader(header).render())).render()
+    block = _block("context_header", body=legacy_composed(ContextHeader(header).render()))
+    return assemble((block,), sep="")
 
 
 def _label(row: TranscriptRow, display_name: str) -> str:

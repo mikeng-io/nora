@@ -1,5 +1,12 @@
 [
   {
+    "name": "The live engagement prefix uses the shared block assembler",
+    "file": "nora/agent/prefill.py",
+    "old": "    return assemble((block,), sep=\"\")",
+    "new": "    return block.render()",
+    "target": "tests/architecture/test_every_model_call_is_a_declared_occasion.py::test_nothing_builds_a_prompt_outside_context_assembly"
+  },
+  {
     "name": "6: the rule stops asking for a `_BLOCKS` table",
     "file": "tests/architecture/test_every_model_call_is_a_declared_occasion.py",
     "old": "        if not declares_blocks(tree):",

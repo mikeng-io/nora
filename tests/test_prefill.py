@@ -814,23 +814,12 @@ def test_the_room_floor_renders_blocks_in_conversational_order():
 
 
 def test_every_declared_block_actually_renders_in_the_full_fixture():
-    """Every declared block renders in the full fixture.
+    from nora.agent.prefill import _BLOCKS
 
-    A block `_full_prefill_body` does not populate never renders, so nothing
-    compares it to anything and a derived catalogue test cannot see it.
-
-    A derived catalogue is only as complete as the fixture it derives from.
-    This closes that: every name in `_BLOCKS` must actually render here, so a
-    new block forces its own fixture wiring in the same commit that declares it.
-    """
-
-    served = set(_served_blocks(_full_prefill_body()))
+    served = {name for _, text in _whole_turn() for name in _served_blocks(text)}
     missing = {name for name, *_ in _BLOCKS} - served
-    assert not missing, (
-        f"declared but not rendered by the fixture: {sorted(missing)}. Wire "
-        "them into `_ctx`/`_full_prefill_body`, or the catalogue tests are "
-        "silently skipping them."
-    )
+    assert not missing, f"declared but not rendered by the fixture: {sorted(missing)}"
+
 
 
 def test_the_newest_message_is_last_and_carries_the_smallest_age():
