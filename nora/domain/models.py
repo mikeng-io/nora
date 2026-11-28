@@ -723,6 +723,8 @@ class TagContext:
     # than claims about her. So the asymmetry is deliberate — for her, no card;
     # for them, both.
     tagger_card: tuple[str, ...] = ()
+    # The trace schema still records the size of the retired note index.
+    notes: tuple[()] = field(default=(), init=False, repr=False)
     # The typed SOURCE events of the transcript window (docs/design/platform/
     # observations.md): poll/room/membership/pin/artifact
     # transitions the bridge recorded, interleaved into the transcript by their own clock

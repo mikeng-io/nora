@@ -641,6 +641,7 @@ def trace_attributes(ctx, doctrine) -> dict:
         "tag_id": ctx.tag_id,
         "conversation_id": ctx.message.conversation_id,
         "doctrine_sha256": doctrine.sha256,
+        "note_index_entries": len(ctx.notes),
     }
 
 
