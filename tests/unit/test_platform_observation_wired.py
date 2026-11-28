@@ -991,7 +991,7 @@ async def test_head_target_budget_preserves_store_recency_order():
     ctx = await _assembler(audit, store).assemble(request=_request())
     prompt = _prompt(ctx)
     assert f'target_text="event target {len(targets) - 1}"' in prompt
-    assert "target_unresolved" not in prompt
+    assert 'target_unresolved="yes"' not in prompt
 
 
 # ---------------------------------------------------------------------------

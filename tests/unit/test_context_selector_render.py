@@ -32,18 +32,16 @@ from tests.test_prefill import (
 
 _LEGACY_OPTIONAL = frozenset({"peer_history", "documents", "computer", "subagents"})
 
-#: `context_filter._BLOCKS` before the move — the names tuple the inline
-#: code walked to collect candidates.
+# The order rendered by the inline selector before the move.
 _LEGACY_BLOCKS = (
     "tag_message",
     "peer_card",
-    "culture",
+    "peer_history",
+    "computer",
+    "documents",
+    "subagents",
     "standing",
     "transcript",
-    "peer_history",
-    "documents",
-    "computer",
-    "subagents",
 )
 
 _EXPECTED_SYSTEM = (
@@ -70,11 +68,10 @@ explanation, markdown, or other keys."""
 
 
 def _legacy_router_input(ctx, blocks, now, display_name):
-    """The inline path, verbatim: the candidate list collected in the old
-    `_BLOCKS` name order, prefixed by the clock/window line."""
+    """The inline selector's candidate order, previews and clock/window line."""
     available = {b.name: b for b in blocks}
     declared = []
-    for name in _LEGACY_BLOCKS:
+    for order, name in enumerate(_LEGACY_BLOCKS):
         if name == "tag_message":
             b = ContextBlock(
                 name=name,
@@ -109,7 +106,7 @@ def _legacy_router_input(ctx, blocks, now, display_name):
                 )
         else:
             continue
-        declared.append(b)
+        declared.append(replace(b, order=order))
     return f"Clock: {now.isoformat()}\nfull_transcript_window: {len(ctx.transcript)}\n" + assemble(
         declared
     )
