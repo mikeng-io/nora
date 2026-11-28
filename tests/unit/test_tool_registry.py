@@ -74,7 +74,7 @@ def _room() -> Room:
 #: is wired (`[record_query] enabled`), and the declared-surface tests below
 #: ask about every tool.
 _RECORD = object()
-#: The same for the two Dreamer-only reads (`rollup_read`, `standing_read`).
+#: The same for the Dreamer-only `rollup_read`.
 _ROLLUP = object()
 #: `room_list`'s profile reader, never called.
 _GRAPH_PROFILES = object()
@@ -243,10 +243,6 @@ def test_the_registry_exposes_every_declared_tool():
         # and tests/unit/test_subagent_tools.py pins where they ARE built.)
         # DEC-97: what she is running, and what was in an earlier version.
         "version_list", "version_read",
-        # The Notebook readers.
-
-        # DEC-306: one kept memo of the unit.
-
     }
 
 
@@ -319,8 +315,6 @@ def test_budgets_match_todays_table():
         "memory_search": 8,
         "memory_read": 8,
         "intention_commit": 4,
-        # 2: run once, notice a different `limit` is needed, run once more.
-
         # Nora's computer. `computer_run` 12: a
         # write, run, read the error, fix, run again loop, twice in a turn.
         # `computer_read` 8: a few files or one long file read on. `write` 8:
@@ -453,16 +447,11 @@ def test_budgets_match_todays_table():
         "set_music_volume": 2,
         # One metadata list, then notes for up to two selected releases.
         "version_list": 1, "version_read": 2,
-
-        # `memo_read` is 3 like `note_read` (DEC-306): a couple of memos and a re-read.
-
         # 1: one write answers the ask; a second call is the model looping on
         # a tool it should have trusted to have worked (35 §2).
         "profile_dispute": 1,
         # `rollup_read` is 4 like `where_been` (cheap local SELECTs, so the round
-        # trip is the cost); `standing_read` is 1 (the head does not move inside a
-        # session's read of one room). A Cognition session raises both per agenda
-        # item (`nora.app.cognition_wiring`).
+        # trip is the cost).
         "rollup_read": 4,
         # `social_read` is 3: one person, a narrower window, then another
         # person.
@@ -952,10 +941,6 @@ READ_ONLY = frozenset({"document_list",
     # vacancy lookups and nearby discovery, no writes anywhere.
     "parking_status", "find_parking",
 
-    # DEC-306: one kept memo of the unit, a SELECT.
-
-    # Dreamer-only SELECTs of the Rollup's
-    # current build and of a room's Standing head.
     "rollup_read", "social_read",
     "music_status",
     # DEC-151, DEC-201: the X tools are pure reads at all three layers, the

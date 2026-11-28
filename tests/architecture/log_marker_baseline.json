@@ -743,7 +743,7 @@
   "tests/unit/test_summons_occasion.py": 5,
   "tests/unit/test_the_deterministic_evaluators.py": 4,
   "tests/unit/test_tool_catalogue.py": 5,
-  "tests/unit/test_tool_registry.py": 48,
+  "tests/unit/test_tool_registry.py": 45,
   "tests/unit/test_tool_surface.py": 5,
   "tests/unit/test_tool_unknown_arguments.py": 8,
   "tests/unit/test_tool_unknown_arguments_wiring.py": 8,

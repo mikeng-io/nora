@@ -92,7 +92,7 @@ PINNED: dict[str, tuple[int, str]] = {
     # NOT Nora's: the Relevance Gate's instruction, pinned here like any other
     # authored file so a silent edit to what the gate is told is impossible.
     # An edit to it needs the gate's 40-case eval suite.
-    "participation": (10, "65ae1b3c68a95588937bf7d365efaf1e2d04840c02bd99275b2d6d788407630f",
+    "participation": (11, "5cd1424945e0e6b89cecd2a16ec63785698727a1ccb42fe8ec4c18fb8d7d281a",
     ),
     # The reaction picker's instruction (`nora.agent.reaction`).
     "reaction": (7, "34b87ba59346fa4c99b76bf6348647153b9114171476c629474b6c612c34a836",

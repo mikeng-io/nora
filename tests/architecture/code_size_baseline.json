@@ -2993,10 +2993,10 @@
     "internal_docstrings": 1
   },
   "tests/unit/test_tool_registry.py": {
-    "file_lines": 1049,
-    "comment_blocks": 15,
+    "file_lines": 1034,
+    "comment_blocks": 14,
     "functions": {
-      "test_budgets_match_todays_table": 182
+      "test_budgets_match_todays_table": 175
     },
     "internal_docstrings": 1
   },

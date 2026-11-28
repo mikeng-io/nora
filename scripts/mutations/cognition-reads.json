@@ -116,7 +116,7 @@
     "file": "nora/app/composition_agent.py",
     "old": "        \"rollup\": SqlRollupRead(engine),",
     "new": "",
-    "target": "tests/test_composition.py::test_the_composed_registry_holds_the_rollup_read_and_the_standing_head"
+    "target": "tests/test_composition.py::test_the_composed_registry_holds_the_rollup_reader"
   },
   {
     "name": "rollup_read tool: everyone in a room with nobody resolved reads every row (M2, tool layer)",
