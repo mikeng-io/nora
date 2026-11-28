@@ -3,7 +3,7 @@ blocks the turn was handed — memory and the Live blocks excepted, the transcri
 through the media join as of T.
 
 THE RECORDING. No Langfuse trace exists offline, so the turn is recorded the way its trace
-records it: the production assembler and `build_prefill`, composed as the deployed graph
+records it: the production assembler and the room floor, composed as the deployed graph
 (`obtain`), render the blocks for a tagging line at T on a seeded source — that text is
 what the trace's generation carries as its input. `nora.subject.as_of.blocks_of` cuts it
 into blocks, the same function the live procedure runs over a real trace

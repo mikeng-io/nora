@@ -106,7 +106,7 @@ def _ctx() -> TagContext:
         sender_id="", sender_name=None, timestamp=1, body="q", raw={},
     )
     return TagContext(
-        tag_id="s-1", message=msg, tagger=None, transcript=(), peer_card=(), started_at=0.0,
+        tag_id="s-1", message=msg, tagger=None, transcript=(), started_at=0.0,
     )
 
 

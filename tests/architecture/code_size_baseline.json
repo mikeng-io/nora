@@ -199,7 +199,6 @@
     "internal_docstrings": 1
   },
   "nora/agent/prefill.py": {
-    "file_lines": 968,
     "comment_blocks": 30,
     "functions": {
       "_transcript_block": 147
@@ -485,7 +484,6 @@
     "comment_blocks": 2
   },
   "nora/domain/block_types.py": {
-    "file_lines": 820,
     "comment_blocks": 16,
     "internal_docstrings": 1
   },
@@ -718,9 +716,6 @@
   },
   "nora/engagement/context.py": {
     "comment_blocks": 9,
-    "functions": {
-      "TranscriptInjection._observation_reads": 147
-    },
     "internal_docstrings": 9
   },
   "nora/engagement/debrief_render.py": {
@@ -2861,9 +2856,6 @@
   "tests/unit/test_participation_false_speak.py": {
     "comment_blocks": 2,
     "internal_docstrings": 2
-  },
-  "tests/unit/test_people_in_window.py": {
-    "comment_blocks": 2
   },
   "tests/unit/test_persons_former_ids.py": {
     "comment_blocks": 1

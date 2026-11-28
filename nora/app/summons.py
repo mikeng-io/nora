@@ -538,7 +538,7 @@ class SummonsOccasion:
         )
         ctx = TagContext(
             tag_id=str(summons_id), message=message, tagger=None,
-            transcript=(), peer_card=(), started_at=time.perf_counter(),
+            transcript=(), started_at=time.perf_counter(),
         )
         followed_up = False
 

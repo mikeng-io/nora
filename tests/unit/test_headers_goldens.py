@@ -18,9 +18,9 @@ substring of it:
   or an offset changes;
 * the participation score's formatting (`None`, rounding edges, 0 and 1, a
   negative, NaN and infinity);
-* the tag prefill's pieces, through `build_prefill`: the `context_header`
+* the tag prefill's pieces, through `engagement_prefill`: the `context_header`
   message, the clock line over several zones, and the closing assistant line;
-  `_now_line`, `_context_header` and `build_tag_message` directly;
+  `_now_line`, `_context_header` and the tag block from the live floor;
 * the summons' head over every state it formats (summoner, clock, ages on both
   sides of every bucket, zones), alone and as the first line of the whole prompt;
 * the whole turn as the fire path sends it for every kind: `tag_message` and
@@ -510,7 +510,7 @@ def _kitchen_sink() -> Any:
 
 def _ctx(body: str = "nora.000 what time", tagger: PersonRef | None = None) -> TagContext:
     msg = NormalizedMessage("signal", "g1", "group", "+852111", "Miles", 1, body, {})
-    return TagContext("tag-1", msg, tagger, (), (), 0.0)
+    return TagContext("tag-1", msg, tagger, (), 0.0)
 
 
 def _texts(messages: list[dict]) -> list[Any]:
@@ -561,18 +561,16 @@ def _prefill_tag_header() -> Any:
 
 @_case("prefill-the-closing-line")
 def _prefill_closing() -> Any:
-    last = prefill.build_prefill(_ctx(), display_name="Nora", context_window=40)[-1]
+    last = prefill.engagement_prefill(prefill.TAG_HEADER)[-1]
     return last["content"][0]["text"]
 
 
-@_case("prefill-the-three-messages-for-the-default-header")
+@_case("prefill-the-messages-for-the-default-header")
 def _prefill_default() -> Any:
-    return {name: _texts(prefill.build_prefill(
-        _ctx(), display_name="Nora", context_window=40, now=_CLOCKS[name]))
-        for name in ("hkt", "utc", "kathmandu")}
+    return _texts(prefill.engagement_prefill(prefill.TAG_HEADER))
 
 
-@_case("prefill-the-three-messages-for-every-fire-header")
+@_case("prefill-the-messages-for-every-fire-header")
 def _prefill_fire() -> Any:
     who = _person(HOSTILE["nasty"])
     events = {
@@ -582,31 +580,32 @@ def _prefill_fire() -> Any:
             platform="signal", conversation_id="c", relevance_score=0.7),
     }
     return {
-        kind: _texts(prefill.build_prefill(
-            _ctx(), display_name="Nora", context_window=40, now=_CLOCKS["hkt"],
-            header=event.header(who, T0)))
+        kind: _texts(prefill.engagement_prefill(event.header(who, T0)))
         for kind, event in events.items()
     }
 
 
 @_case("prefill-a-hostile-header-is-the-situation-verbatim")
 def _prefill_hostile() -> Any:
-    return {name: _texts(prefill.build_prefill(
-        _ctx(), display_name="Nora", context_window=40, now=_CLOCKS["utc"],
-        header=value))[0] for name, value in HOSTILE.items()}
+    return {name: _texts(prefill.engagement_prefill(value))[0] for name, value in HOSTILE.items()}
 
 
 @_case("prefill-the-tag-message")
 def _prefill_tag_message() -> Any:
+    def render(ctx: TagContext, tagger_name: str) -> str:
+        floor = prefill.engagement_floor(
+            ctx, tagger_name=tagger_name, display_name="Nora", now=_CLOCKS["utc"],
+            context_window=40, catalogue="",
+        )
+        return next(block.render() for block in floor if block.name == "tag_message")
+
     out: dict[str, Any] = {}
     for name, value in HOSTILE.items():
-        out[f"body-{name}"] = prefill.build_tag_message(
-            _ctx(body=value), tagger_name="Miles", display_name="Nora")
-        out[f"name-{name}"] = prefill.build_tag_message(
-            _ctx(), tagger_name=value, display_name="Nora")
-        out[f"alias-{name}"] = prefill.build_tag_message(
-            _ctx(tagger=PersonRef("miles", "Miles", aliases=(value, "b"))),
-            tagger_name="Miles", display_name="Nora")
+        out[f"body-{name}"] = render(_ctx(body=value), "Miles")
+        out[f"name-{name}"] = render(_ctx(), value)
+        out[f"alias-{name}"] = render(
+            _ctx(tagger=PersonRef("miles", "Miles", aliases=(value, "b"))), "Miles",
+        )
     return out
 
 

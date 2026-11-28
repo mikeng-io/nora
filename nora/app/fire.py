@@ -364,9 +364,8 @@ def participation_occasion(
 
     `body` is EMPTY on purpose, and the header says so: nothing was put to
     her. The whole basis for the determination is the injected context — the
-    transcript window, standing, notes and facts that `build_context` and
-    `build_prefill` assemble — the fast-by-construction rule: if
-    the value of speaking is not visible in what is already in front of her,
+    transcript and graph presentations assembled for the engagement prompt.
+    If the value of speaking is not visible in what is already in front of her,
     it is not worth saying.
 
     NOT in the reminder-derived event registry: the registry maps a due ROW's
@@ -664,7 +663,7 @@ class FirePath:
             return await self._ambient.floor(
                 TagContext(
                     tag_id=uuid.uuid4().hex, message=_synthetic_message(occasion, ref), tagger=ref,
-                    transcript=transcript, peer_card=(), started_at=time.perf_counter(),
+                    transcript=transcript, started_at=time.perf_counter(),
                 ),
                 presence=self._read_presence(occasion), computer=self._read_computer(occasion),
                 documents=self._read_documents(occasion), members=self._room_members(occasion),
@@ -677,7 +676,7 @@ class FirePath:
         )
         return TagContext(
             tag_id=uuid.uuid4().hex, message=_synthetic_message(occasion, ref), tagger=ref,
-            transcript=transcript, peer_card=(), started_at=time.perf_counter(),
+            transcript=transcript, started_at=time.perf_counter(),
             presence=presence, room_members=members, shared=shared,
             lineage_room=(
                 await self._lineage.read_room(
@@ -1080,7 +1079,7 @@ class FirePath:
                 question=render_file_links(ctx.message.body),
                 context_window=self._context_window,
                 metrics=self._metrics,
-                # DEC-146: the same window `build_prefill` renders below. A fire
+                # DEC-146: the same window the engagement floor renders. A fire
                 # turn reads a real room's real transcript, so `who_said` works
                 # here exactly as it does on a tag — and an occasion nobody asked
                 # for is precisely where an unchecked attribution would be worst.

@@ -497,7 +497,7 @@ async def test_a_fault_before_the_model_is_counted_as_a_heartbeat_handler_error(
     persons: Persons, doctrine_store, metrics: Metrics,
 ) -> None:
     """The handler-error probe on the fire path. Everything between `resolve_identity`
-    and `build_tag_message` runs before any counter moves, so a wiring fault
+    and the room floor renders before any counter moves, so a wiring fault
     would reach `HeartbeatLoop._run_turn` as a bare `failed_error` — the same string
     an ordinary model error writes — with `nora_silent_failures_total` flat.
     That is R-5's last-resort signal missing exactly where it matters most.

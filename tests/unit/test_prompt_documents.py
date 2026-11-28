@@ -51,8 +51,9 @@ from zoneinfo import ZoneInfo
 import pytest
 import yaml
 
-from nora.agent.prefill import build_prefill, build_tag_message
+from nora.agent.prefill import engagement_floor, engagement_prefill
 from nora.domain.block_types import BLOCK_TYPES
+from nora.domain.framing import TAG_HEADER
 from nora.domain.models import (
     DeliveryStatus,
     NormalizedMessage,
@@ -173,14 +174,7 @@ def tag_context(
     )
     return TagContext(
         "tag-1", message, PersonRef("miles", "Miles", aliases=("阿Miles",)),
-        (row(body, name=name),), ("likes espresso",), 0.0,
-        tagger_card=("asked about dinner",),
-        # TWO people, because `<person>` is a framed block that repeats — a
-        # one-person fixture cannot tell a row that repeats from a block served
-        # twice, which is what `test_a_prompt_never_serves_the_same_block_twice`
-        # has to get right.
-        people_in_window=((name, ("asked about dinner",)),
-                          ("Miles", ("was looking for a table",))),
+        (row(body, name=name),), 0.0,
     )
 
 
@@ -252,30 +246,30 @@ def arrivals(body: str = "Diverted via Castle Peak Road", *, name: str = "KMB") 
 
 
 def prefill_header(body: str = "去邊食", *, name: str = "Grant") -> str:
-    return build_prefill(
-        tag_context(body, name=name), display_name="Nora", context_window=40,
-    )[0]["content"][0]["text"]
+    return engagement_prefill(TAG_HEADER)[0]["content"][0]["text"]
 
 
 def prefill_volatile(body: str = "去邊食", *, name: str = "Grant") -> str:
-    return build_prefill(
-        tag_context(body, name=name), display_name="Nora", context_window=40,
-    )[1]["content"][0]["text"]
+    return "\n".join(
+        block.render() for block in _tag_floor(tag_context(body, name=name))
+        if block.name not in {"tag_message", "replying_to"}
+    )
+
+
+def _tag_floor(ctx: TagContext):
+    return engagement_floor(
+        ctx, display_name="Nora", tagger_name="Miles", context_window=40,
+        now=NOW, catalogue="",
+    )
 
 
 def tag_message(body: str = "去邊食", *, name: str = "Grant") -> str:
-    """The tagging message WITH a resolvable quote, so `<replying_to>` renders.
-
-    That nested block is the one element in the tree a substring test is least
-    able to judge — it lives inside another block's BODY, so «is the marker on
-    the right element» is a question about nesting rather than about which
-    characters are present.
-    """
-    return build_tag_message(
-        tag_context(body, name=name, quote=Quote(
-            author_id="+85291234567", text="not this text", quoted_ts=TS,
-        )),
-        tagger_name="Miles", display_name="Nora",
+    ctx = tag_context(body, name=name, quote=Quote(
+        author_id="+85291234567", text="not this text", quoted_ts=TS,
+    ))
+    return "\n".join(
+        block.render() for block in _tag_floor(ctx)
+        if block.name in {"replying_to", "tag_message"}
     )
 
 
@@ -350,16 +344,12 @@ SHAPES = {
     "prefill.header": """
 <context_header description>""",
     "prefill.tag_message": """
-<tag_message also_known_as description fields from>
-  <replying_to author description fields>""",
+<replying_to author description fields>
+<tag_message also_known_as description fields from>""",
     "prefill.volatile": """
 <members description fields room source>
+<clock as_of description fields>
 <presence description>
-<peer_card description fields person>
-<peer_history description fields person>
-<people_in_window description>
-  <person description fields name>
-  <person description fields name>
 <transcript description fields window>
   <m age at author_id from n>""",
     "relevance_gate": """

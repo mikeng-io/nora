@@ -4,7 +4,7 @@
     "file": "nora/engagement/context.py",
     "old": "            found, gone = await traced_read(\n                \"record\", \"targets\",\n                self._audit.by_ids(\n                    platform=msg.platform, conversation_id=msg.conversation_id,\n                    ids=tuple(sorted(wanted))[:_OBSERVATION_TARGET_MAX]))",
     "new": "            found, gone = {}, frozenset()",
-    "target": "tests/unit/test_platform_observation_wired.py::test_old_target_reaction_union_reaches_standing_and_real_tools[True]"
+    "target": "tests/unit/test_platform_observation_wired.py::test_old_target_reaction_reaches_the_transcript_and_tools[True]"
   },
   {
     "name": "target lookup cannot cross a platform with the same room id",

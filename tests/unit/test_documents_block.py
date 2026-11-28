@@ -7,7 +7,7 @@ store is down (and then it is a counted error, never a wrong id, never a failed 
 this room's documents only, whoever made another room's; at most five, most recently
 revised first; an age, a revision and the id on every line; a title is one line, cut,
 and cannot forge a line or close the tag; the block says what it is and what to do with
-the id; it sits after `<computer>` and before `<source_objects>`; its token cost.
+the id, the live room floor, and the token cost.
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ from uuid import UUID, uuid4
 
 import tiktoken
 
-from nora.agent.prefill import build_prefill
+from nora.agent.prefill import engagement_floor
 from nora.domain.documents import RevisionIn
 from nora.domain.documents_context import (
     DOCUMENTS_SHOWN,
@@ -84,13 +84,15 @@ def _line(title="Saturday dinner", hours=2, revision=1, document_id=None) -> Doc
 def _ctx(documents, *, computer=None):
     msg = NormalizedMessage(platform="signal", conversation_id=ROOM[1], conversation_type="group",
                             sender_id="+1", sender_name="M", timestamp=1, body="hi", raw={})
-    return TagContext(tag_id="t", message=msg, tagger=None, transcript=(), peer_card=(),
+    return TagContext(tag_id="t", message=msg, tagger=None, transcript=(),
                       started_at=0.0, documents=documents)
 
 
 def _prefill_text(ctx) -> str:
-    return "\n".join(str(m["content"]) for m in build_prefill(
-        ctx, display_name="Nora", context_window=40, now=NOW))
+    return "\n".join(block.render() for block in engagement_floor(
+        ctx, display_name="Nora", tagger_name="Member", context_window=40,
+        now=NOW, catalogue="",
+    ))
 
 
 # -- the block --------------------------------------------------------------------------
@@ -148,12 +150,7 @@ def test_an_empty_title_is_said_not_blank():
     assert render_documents(_view(_line(""))).body.text.startswith('"(untitled)" · id ')
 
 
-def test_the_block_sits_after_computer_and_before_source_objects_in_the_prompt():
-    from nora.agent.prefill import _BLOCKS
-
-    order = {name: n for name, n, _ in _BLOCKS}
-    assert order["computer"] < order["documents"] < order["source_objects"]
-    assert {name: key for name, _, key in _BLOCKS}["documents"] == "turn"
+def test_the_room_floor_carries_the_document():
     text = _prefill_text(_ctx(_view(_line("Trip"))))
     assert "<documents " in text and '"Trip"' in text
 

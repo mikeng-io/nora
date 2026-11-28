@@ -92,8 +92,7 @@ _NOT_A_LINE = {
         'escape(render_file_links(ctx.message.body))',
     ): (
         "`<tag_message>`: the message she is answering, whole, between its own "
-        "tags. Same shape and same reason as `<replying_to>` above, which it "
-        "encloses."
+        "tags. The engagement floor renders the quoted parent separately."
     ),
     (
         "nora/domain/blocks.py", "render", "self.body",
@@ -104,11 +103,8 @@ _NOT_A_LINE = {
         "in `tests/unit/test_blocks.py`. `ContextBlock.body` is the JOINED "
         "result, so collapsing it here would destroy the line structure the "
         "collapse exists to protect — an N-row transcript would render as one "
-        "line. What makes the exemption safe is not that this is the only "
-        "place a block becomes text — it is not: `prefill.build_tag_message` "
-        "and `_replying_to_block` still build their tags by hand, which is "
-        "issue #239 — it is that every body reaching HERE was joined by a row "
-        "renderer in this same module."
+        "line. The row renderer owns each row's boundaries before the block "
+        "serializer receives the assembled body."
     ),
     (
         "nora/language/note_render.py", "open_note_parts", "escape(text)",

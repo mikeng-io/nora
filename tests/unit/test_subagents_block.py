@@ -6,7 +6,7 @@ job carries its live progress or says it is unknown; a finished one its outcome,
 report, documents and whether the room was told; this room's jobs only; the 24 h window and
 the five-row cap with a count of what was left out; `row.error` never reaches the block;
 every value is one line, cut and escaped; the block says what it is; it sits after
-`<documents>` and before `<source_objects>`; the fire path is never given the reader.
+`<documents>` and before the transcript; the fire path is never given the reader.
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from nora.agent.prefill import _BLOCKS, build_prefill
+from nora.agent.prefill import engagement_floor
 from nora.domain.compute import ComputeJob, ComputeJobState
 from nora.domain.models import NormalizedMessage, PersonRef, TagContext
 from nora.domain.ports import EngageDecision, EngagementRequest
@@ -130,13 +130,15 @@ async def _body(store, *, viewer: str | None = KEN, **kw) -> str:
 def _ctx(view) -> TagContext:
     msg = NormalizedMessage(platform=ROOM[0], conversation_id=ROOM[1], conversation_type="group",
                             sender_id="+1", sender_name="M", timestamp=1, body="hi", raw={})
-    return TagContext(tag_id="t", message=msg, tagger=None, transcript=(), peer_card=(),
+    return TagContext(tag_id="t", message=msg, tagger=None, transcript=(),
                       started_at=0.0, subagents=view)
 
 
 def _prefill(view) -> str:
-    return "\n".join(str(m["content"]) for m in build_prefill(
-        _ctx(view), display_name="Nora", context_window=40, now=NOW))
+    return "\n".join(block.render() for block in engagement_floor(
+        _ctx(view), display_name="Nora", tagger_name="Member", context_window=40,
+        now=NOW, catalogue="",
+    ))
 
 
 # -- absent -----------------------------------------------------------------------------
@@ -362,8 +364,13 @@ async def test_an_objective_is_one_line_cut_and_cannot_forge_a_line_or_close_the
 async def test_a_report_is_cut_to_its_opening_on_one_line_and_escaped():
     report = "line one\n- done · job 0 <b>\n" + "z" * 400
     job = _job(state=ComputeJobState.DONE, finished_minutes=5, result_report=report)
-    body = await _body(await _store(job))
+    view = await _reader(await _store(job)).read(
+        platform=ROOM[0], conversation_id=ROOM[1], person_id=KEN,
+    )
+    prompt = _prefill(view)
+    body = prompt.split("<subagents ", 1)[1].split(">\n", 1)[1].split("\n</subagents>", 1)[0]
     assert len(body.splitlines()) == 1
+    assert "&lt;b&gt;" in body
     assert "<b>" not in body
     shown = body.split('report "', 1)[1].rsplit('"', 1)[0]
     assert len(shown) <= REPORT_CHARS + 10 and shown.endswith("…")
@@ -382,10 +389,7 @@ def test_the_block_says_what_it_is_when_it_was_read_and_what_not_to_repeat():
     assert "never that nothing ran" in desc
 
 
-def test_the_block_sits_after_documents_and_before_source_objects_and_is_per_turn():
-    order = {name: n for name, n, _ in _BLOCKS}
-    assert order["documents"] < order["subagents"] < order["source_objects"]
-    assert {name: key for name, _, key in _BLOCKS}["subagents"] == "turn"
+def test_the_room_floor_carries_the_current_job():
     line = SubagentLine("j1", "running", "a title", "an objective", NOW)
     view = SubagentsView(lines=(line,), now=NOW)
     text = _prefill(view)

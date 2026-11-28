@@ -44,15 +44,13 @@ def test_tag_context_holds_immutable_collections():
         message=_msg(),
         tagger=PersonRef("miles", "Miles"),
         transcript=({"sender_name": "Miles", "body": "hi", "is_nora": 0},),
-        peer_card=("likes espresso",),
         started_at=1.0,
     )
     assert isinstance(ctx.transcript, tuple)
-    assert isinstance(ctx.peer_card, tuple)
     with pytest.raises(dataclasses.FrozenInstanceError):
         ctx.tag_id = "other"  # type: ignore[misc]
 
 
 def test_tag_context_tagger_may_be_none_for_an_unmapped_sender():
-    ctx = TagContext("t", _msg(), None, (), (), 0.0)
+    ctx = TagContext("t", _msg(), None, (), 0.0)
     assert ctx.tagger is None

@@ -127,7 +127,7 @@ def _ctx() -> TagContext:
         sender_id="+852111", sender_name="Miles", timestamp=1, body="nora.000 hi", raw={},
     )
     return TagContext(tag_id="tag-1", message=msg, tagger=None, transcript=(),
-                      peer_card=(), started_at=0.0)
+                      started_at=0.0)
 
 
 async def test_the_real_sdk_fires_after_tool_for_a_call_the_guard_cancelled():

@@ -314,7 +314,7 @@ _WINDOW = (
 def _render_her_turn(
     blocks: str = _NOTE_BLOCK, rendered: str = "notes,transcript",
 ) -> None:
-    """What `build_prefill` leaves on the spans: its `agent.prefill` span
+    """What graph context leaves on the spans: its `agent.prefill` span
     naming the blocks it served, and the turn's first `chat` call carrying the
     volatile message (clock line, the blocks, the window). A second message on
     the same call carries a block-shaped string with NO window, the way the
@@ -742,13 +742,6 @@ async def test_circle_memory_uses_admitted_correction_and_scoped_read(unavailabl
     if not unavailable:
         assert 'no longer eat' in result['preview'], result
         assert 'Generated speaker' in result['preview']
-        from nora.agent.prefill import _recalled_block
-        from nora.domain.blocks import assemble
-        block = _recalled_block(SimpleNamespace(recalled=(result,), recalled_partial=True))
-        rendered = assemble([block])
-        assert '<recalled' in rendered and 'no longer eat' in rendered
-        assert 'partial' in rendered
-
         refused = await memory.graph.walk((('person', 'generated-unit:person:generated-person'),),
             Walk('another-unit', frozenset({'generated-person'})))
         assert not refused.nodes

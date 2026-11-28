@@ -707,41 +707,20 @@ class TagContext:
     message: NormalizedMessage
     tagger: PersonRef | None       # None = unmapped sender
     transcript: tuple[TranscriptRow, ...]   # oldest-first rows from db.recent
-    peer_card: tuple[str, ...]
     started_at: float              # perf_counter, for the latency histogram
-    # What her memory has concluded about THE TAGGER. Defaulted empty; no
-    # assembler fills it.
-    #
-    # `peer_card` above and this are NOT redundant: the card renders IDENTITY
-    # claims («Name: Miles Novak», «Aliases: …»); this states dated
-    # episodes («asked what to eat for dinner»). Who they are, and what happened
-    # with them.
-    #
-    # Her own card is excluded because a learned self-description outranks an
-    # authored one. That argument does NOT reach here: the objection was about
-    # doctrine's lane, and other people's cards are facts about them rather
-    # than claims about her. So the asymmetry is deliberate — for her, no card;
-    # for them, both.
-    tagger_card: tuple[str, ...] = ()
     # The trace schema still records the size of the retired note index.
     notes: tuple[()] = field(default=(), init=False, repr=False)
     # The typed SOURCE events of the transcript window (docs/design/platform/
     # observations.md): poll/room/membership/pin/artifact
     # transitions the bridge recorded, interleaved into the transcript by their own clock
     # — typed rows, never a speaker's line and never a fabricated message.
-    # `source_objects` is the room's folded object heads (the open poll,
-    # the pin set), the Standing block's typed input; both empty while no
-    # ObservationStore is wired.
     source_events: tuple[Any, ...] = ()
-    source_objects: tuple[Any, ...] = ()
     # `source_reads_failed` marks a FAILED observation read so the prompt
     # can say «could not read» rather than presenting an empty list as
-    # «nothing recorded» (R-27); the `*_more` counts are a LOWER BOUND on
-    # what the bounds left out — each read takes a sentinel row past what
-    # it shows, so a slice is never read as the whole.
+    # «nothing recorded» (R-27); the event count includes the sentinel
+    # past the window as a lower bound on omitted events.
     source_reads_failed: bool = False
     source_events_more: int = 0
-    source_objects_more: int = 0
     # `retained_sources` is the retained lane (docs/design/platform/
     # observations.md): `RetainedSource`s — the room's open notes'
     # curated `object_refs` resolved NOW, each with its CURRENT folded head or
@@ -774,31 +753,11 @@ class TagContext:
     # Defaulted empty; `render_decisions` is not called at all for an empty
     # tuple.
     decisions: tuple[tuple[str, tuple[DecisionRow, ...]], ...] = ()
-    # `<people_in_window>` — what her memory has concluded about EACH PERSON WHO
-    # SPOKE in the transcript window, as `(display name, conclusions)` pairs, most
-    # recent speaker first. Defaulted empty; no assembler fills it.
-    #
-    # It exists because `tagger_card` is keyed on ONE person — whoever tagged
-    # her — and the participation occasion has no tagger at all
-    # (`participation_occasion` builds `person_id=None`, so `ref is None`, so
-    # `peer_card` and `tagger_card` are both empty on every ambient turn). The
-    # ambient decider's question is about the people in this window, and «Aaron
-    # asks this every week and never means it» is exactly the input that
-    # separates a turn worth taking from one that is not.
-    #
-    # NOT a superset of `tagger_card` and not a replacement for it: that block
-    # names the person who is ASKING, this one names the people who are
-    # TALKING, and on the tag path those are different facts with different
-    # weight.
-    #
-    # Defaulted empty; `_people_in_window_block` renders nothing for an empty
-    # tuple.
-    people_in_window: tuple[tuple[str, tuple[str, ...]], ...] = ()
     # `<room_members>`: who is who in THIS room, each listed person with the
     # other names the group calls them (`PersonRef.aliases`). Only the room's
     # own listed persons (`policy.toml` `persons`) that identity maps, never
     # the whole identity file: a roster fed the address book would list people
-    # who are not members (see `build_prefill`'s docstring). Empty for a
+    # who are not members. Empty for a
     # `persons = "*"` room, which would need a live roster read on every turn.
     room_members: tuple[PersonRef, ...] = ()
     # `<presence>` — where she is on this turn: the room, the group's other
@@ -841,15 +800,6 @@ class TagContext:
     # while `[subagent]` is off, in a room with no job in the window, and in every harness
     # that wires no reader: the block then renders nothing.
     subagents: SubagentsView | None = None
-    # `<recalled>`, the pre-fetch (docs/design/cognition/graph.md):
-    # the memory index searched from this message's own seeds before the
-    # turn, as `nora.agent.memory_search.render_packet`'s items (the same
-    # shape `memory_search` answers with), cut at `PREFETCH_TOKENS`. `()` on a
-    # failed or empty search, and in every harness that
-    # wires no search: the block then renders nothing. `recalled_partial` is
-    # the search's `partial`: the index was still being built.
-    recalled: tuple[dict[str, Any], ...] = ()
-    recalled_partial: bool = False
     # The rows READ, when the prompt shows fewer of them (`[store] prompt_window`).
     # `transcript` is what `<group_transcript>` renders and what `#n` / `reply_to`
     # index; this is the deeper read a LOOKUP (`who_said`) searches. Empty means

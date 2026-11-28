@@ -15,7 +15,7 @@ source, then classify, so a new hand-written tag has to be argued for rather
 than merely not noticed.
 
 The static half cannot see whether a block that DOES go through `ContextBlock`
-carries anything, because `_declared` will happily emit one with `note=""` and
+carries anything, because a block can still render one with `note=""` and
 `body=""` purely so the catalogue names it. That is a declaration standing in
 for the thing declared, and the runtime half of this gate lives in
 `tests/test_prefill.py::test_the_whole_turn_renders_no_unframed_block`, which

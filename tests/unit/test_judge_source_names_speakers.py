@@ -29,7 +29,7 @@ from datetime import UTC, datetime
 
 import pytest
 
-from nora.agent.prefill import build_prefill
+from nora.agent.prefill import engagement_floor
 from nora.domain.models import (
     DeliveryStatus,
     NormalizedMessage,
@@ -154,12 +154,13 @@ def test_the_source_is_the_group_transcript_she_was_shown() -> None:
             sender_id=MILES_PHONE, sender_name="miles", timestamp=NOW_MS, body="我係咪問過？",
             raw={},
         ),
-        tagger=None, transcript=named, peer_card=(), started_at=0.0,
+        tagger=None, transcript=named, started_at=0.0,
     )
-    prefill = build_prefill(ctx, display_name="Nora", context_window=40, now=NOW)
-    shown = "\n".join(
-        part["text"] for m in prefill for part in m["content"] if "text" in part
+    blocks = engagement_floor(
+        ctx, display_name="Nora", tagger_name="Member", context_window=40,
+        now=NOW, catalogue="",
     )
+    shown = next(block.render() for block in blocks if block.name == "transcript")
     assert "\n".join(_source(ROOM)) in shown
 
 
