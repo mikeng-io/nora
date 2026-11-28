@@ -29,8 +29,6 @@ class LessonReview:
             verdict, checked_law = await self._checker.judge(body)
         except Exception:  # noqa: BLE001 - checker errors fail closed
             return Refusal("check_unavailable", "content")
-        if checked_law != law:
-            return Refusal("check_unavailable", "content")
         if verdict.outcome == "consistent":
             return checked_law
         if verdict.outcome != "conflict" or verdict.rule is None:

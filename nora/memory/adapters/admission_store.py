@@ -101,6 +101,7 @@ class SqlAdmissionStore:
             current = self._lesson_checker.rules()
         except Exception as exc:
             raise AdmissionWriteRefusedError(refusal) from exc
+        # ponytail: the unit lock covers the compare but permits doctrine reloads before commit.
         if current != checked_law:
             raise AdmissionWriteRefusedError(refusal)
         return checked_law
