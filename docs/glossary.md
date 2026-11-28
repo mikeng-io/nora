@@ -90,6 +90,7 @@
 | file adapter | the one component per provider that recognises its links and reads its files |  | [design/computer/external-files.md](design/computer/external-files.md) |
 | fire turn | an engagement pass nobody addressed to Nora, ambient or proactive, run by the fire path with the same stages and guards as a called pass |  | [design/cognition/execution.md](design/cognition/execution.md) |
 | floor | the context an occasion always carries, never a candidate for removal |  | [design/agent/assembly.md](design/agent/assembly.md) |
+| grading contract | the frozen binding of cases, criteria, instructions and judges a run measures against |  | [engineering/evaluation-measurement.md](engineering/evaluation-measurement.md) |
 | heartbeat | the driver that takes each due delivery on a tick and hands it to the fire path; it knows time passed and nothing about why it matters |  | [design/agenda/README.md](design/agenda/README.md) |
 | home room | a unit's one designated room, through whose roster a unit-wide room-scoped read resolves |  | [design/people/rooms.md](design/people/rooms.md) |
 | identifier kind |  |  | [design/people/identity.md](design/people/identity.md) |
@@ -168,11 +169,12 @@
 | recorded social stream | the background observation of listed, opted-in members' own posts and stories |  | [design/social/instagram.md](design/social/instagram.md) |
 | RecordStore | the store port over the message record; SqlRecordStore is its Postgres implementation and FakeRecordStore its shared test fake |  | [engineering/code-standards.md](engineering/code-standards.md) |
 | reflection loop | Nora between conversations, in the background: it forms and revises understanding, learns and keeps concerns, and never delivers |  | [design/cognition/loop.md](design/cognition/loop.md) |
-| relevance gate | an optional bounded, tools-less admission occasion in front of the ambient offer that reads a closed transcript window and the room's Standing and writes nothing |  | [design/cognition/loop.md](design/cognition/loop.md) |
+| relevance gate | an optional bounded, tools-less admission occasion in front of the ambient offer that reads only a closed transcript window and writes nothing |  | [design/cognition/loop.md](design/cognition/loop.md) |
 | reminder | the scheduled delivery of an intention to its person or room, put to Nora as a request when it comes due and never a stored message replayed |  | [design/agenda/README.md](design/agenda/README.md) |
 | resolve within scope | a lookup resolves only among what its scope may see, so a row outside it reads exactly as one that does not exist, and is never resolved then filtered |  | [design/cognition/boundaries.md](design/cognition/boundaries.md) |
 | resolved quote | quoted text shown to the model is the stored parent's text, or nothing |  | [design/conversation/README.md](design/conversation/README.md) |
 | review tier |  |  | [engineering/orchestration.md](engineering/orchestration.md) |
+| reviewed contrast | a calibration example used to decide whether a judge can distinguish accepted from rejected behaviour for a criterion |  | [engineering/evaluation-measurement.md](engineering/evaluation-measurement.md) |
 | revision | an append-only snapshot of a document that names the base it read |  | [design/documents/lifecycle.md](design/documents/lifecycle.md) |
 | room | one conversation on one platform within a unit, with its own transcript and culture, keyed on platform and primary conversation id |  | [design/people/rooms.md](design/people/rooms.md) |
 | room addressing verification |  |  | [engineering/room-addressing-verification.md](engineering/room-addressing-verification.md) |
@@ -182,6 +184,7 @@
 | roster synchronisation |  |  | [design/people/authority.md](design/people/authority.md) |
 | row renderer | the one renderer per row kind that turns a record into the same line in every block and occasion, with escaping always on |  | [design/agent/assembly.md](design/agent/assembly.md) |
 | row style | how a row renderer writes one row: its fields in a fixed order, escaped, with no prose of its own |  | [engineering/code-standards.md](engineering/code-standards.md) |
+| run budget | the declared per-run ceiling on model-gateway spend |  | [engineering/evaluation-measurement.md](engineering/evaluation-measurement.md) |
 | running version | the build stamp baked into the image, the only statement of what this process is |  | [design/agent/version.md](design/agent/version.md) |
 | runtime port | the one interface Nora uses to run commands, read and write files and move bytes in a computer |  | [design/computer/sandbox.md](design/computer/sandbox.md) |
 | scope | the second axis of every row and edge, who it concerns and where it may be read or go: unit, origin room, persons, excluded persons, lineage and exposure |  | [design/cognition/graph.md](design/cognition/graph.md) |
@@ -191,6 +194,7 @@
 | sessionless | Nora's continuity lives in persisted records and the graph, not in a retained agent or SDK session; each pass assembles context for a fresh agent, while bounded computer and browser sessions still exist |  | [design/agent/README.md](design/agent/README.md) |
 | signal bridge | the wrapper that supervises the unmodified signal-cli and owns capture, queueing and the platform contract for Signal |  | [design/platform/signal.md](design/platform/signal.md) |
 | silent failure | Nora is silent when a turn fails, so broken looks like quiet; failures are made legible by counters and traces, never by error text to the room |  | [design/obs/README.md](design/obs/README.md) |
+| single-arm acceptance run | an acceptance measurement of one arm against fixed criteria and a reviewed grading contract |  | [engineering/evaluation-measurement.md](engineering/evaluation-measurement.md) |
 | skill | a bundle of instructions for one domain, loaded on need and never from a message |  | [design/agent/doctrine.md](design/agent/doctrine.md) |
 | social agent | Nora as a participant in ongoing relationships and shared situations, with messaging, voice, cognition and her computer as connected parts whose availability is configuration |  | [design/cognition/README.md](design/cognition/README.md) |
 | social router | the single choke point that resolves a named person, handle or link to one network subject before any read |  | [design/social/README.md](design/social/README.md) |
@@ -239,4 +243,5 @@
 | workspace | a group of units under one operator, an authority scope only and never a read boundary |  | [design/people/rooms.md](design/people/rooms.md) |
 | world | a shared 3D place visited in the portal whose fixed base is built by hand and whose contents are a presentation of the unit's graph |  | [design/web/world.md](design/web/world.md) |
 | world placement | Nora's act of making a claim or intention real as an object in her unit's world, with a short spec of how it looks |  | [design/web/world.md](design/web/world.md) |
+| world response | a non-model external response returned inside a behavioural draw's isolated dependency boundary |  | [engineering/evaluation-subject.md](engineering/evaluation-subject.md) |
 | x reader | the read-only reader that serves X posts, profiles and an account's recent posts |  | [design/social/x.md](design/social/x.md) |
