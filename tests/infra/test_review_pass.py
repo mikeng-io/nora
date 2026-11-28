@@ -344,8 +344,8 @@ def test_review_fails_startup_when_the_resolved_judge_is_the_writer(example_conf
     metrics = Metrics()
     cfg = example_config.model_copy(update={
         "cognition": example_config.cognition.model_copy(update={"enabled": True}),
-        "lessons": example_config.lessons.model_copy(update={
-            "check_model": "generated-configured-judge",
+        "judge": example_config.judge.model_copy(update={
+            "model": "generated-configured-judge",
         }),
         "model_routes": {
             "lesson_check": ModelRoute(model="generated-shared-model"),

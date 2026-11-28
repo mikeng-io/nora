@@ -146,7 +146,7 @@ class CausalProtocol:
         self.first_id = None
         self.background = 0
         self.dream_model = cfg.endpoint("dreamer", cfg.dreamer_model())[2]
-        self.judge_model = cfg.endpoint("lesson_check", cfg.lessons.check_model)[2]
+        self.judge_model = cfg.endpoint("lesson_check", cfg.judge.model)[2]
         self.standing_model = cfg.endpoint("standing", cfg.standing.model)[2]
         self.subagent_model = cfg.endpoint("subagent", cfg.llm.model)[2]
         self.turn_models = {
@@ -353,7 +353,7 @@ class CausalProtocol:
                 ]
         elif not tools and body.get("response_format") == {"type": "json_object"}:
             if (
-                model == endpoint("lesson_check", self.cfg.lessons.check_model)[2]
+                model == endpoint("lesson_check", self.cfg.judge.model)[2]
                 and "<lesson_to_check " in user
                 and "<law_rules " in user
             ):

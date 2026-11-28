@@ -15,7 +15,7 @@ from nora.obs.metrics import Metrics
 
 
 def independent_judge_model(cfg: Config) -> str:
-    model = cfg.endpoint("lesson_check", cfg.lessons.check_model)[2]
+    model = cfg.endpoint("lesson_check", cfg.judge.model)[2]
     if model == cfg.endpoint("dreamer", cfg.dreamer_model())[2]:
         raise StartupError("Graph lesson check requires an independent model from the wake")
     return model

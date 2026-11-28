@@ -219,10 +219,12 @@ stale_seconds = 604800
 horizon_seconds = 5184000
 batch_limit = 100
 correction_quiet_seconds = 600
-check_model = "nora-judge"
 check_reasoning_effort = ""            # "" = low
 check_timeout_seconds = 60
 check_max_tokens = 2048
+
+[judge]
+model = "nora-judge"
 
 [standing]
 timeout_seconds = 20.0
