@@ -24,6 +24,7 @@ from nora.domain.culture import Citable
 from nora.domain.doctrine_check import CheckVerdict, LawRule, Tension, parse_verdict
 from nora.language.doctrine_check import DoctrineCheck, render_check_input
 from nora.obs.metrics import Metrics
+from scripts.doctrine_check_labelled import _run_cases
 
 RULES = (
     LawRule(file="core/constraints.md", line=10, text="Never share where a member is."),
@@ -144,6 +145,20 @@ async def test_a_failed_slow_or_unread_check_is_an_error_and_counted():
     verdict, _ = await empty.judge(LESSON)
     assert verdict.outcome == "error"
     assert m.get("nora_doctrine_check_total", outcome="error") == 4
+
+
+@pytest.mark.parametrize(("answer", "rc", "reported"), [
+    ('{"verdict": "consistent"}', 0, "PASS generated"),
+    ('{"verdict": "conflict", "rule": 1, "why": "shares a place"}', 1, "FAIL generated"),
+])
+async def test_labelled_cases_count_the_checkers_verdict(capsys, answer, rc, reported):
+    check, client = _check(answer)
+    cases = [{"id": "generated", "expect": "consistent", "lesson": LESSON}]
+    assert await _run_cases(check, cases, samples=1) == rc
+    report = capsys.readouterr().out
+    assert reported in report
+    assert f"RESULT cases_failed={rc}/1" in report
+    assert client.prompts == [render_check_input(lesson=LESSON, rules=RULES)]
 
 
 class _FakeCheck:

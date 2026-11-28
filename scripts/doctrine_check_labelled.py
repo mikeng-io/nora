@@ -74,11 +74,18 @@ async def main() -> int:
                                            .strip().splitlines(), 1)]
     print(f"model={args.model} effort={args.effort} samples={args.samples} "
           f"rules={len(check.rules())} cases={len(cases)}")
+    return await _run_cases(check, cases, args.samples)
+
+
+async def _run_cases(check: DoctrineCheck, cases: list[dict[str, str]], samples: int) -> int:
     failed = 0
     table = {(e, g): 0 for e in ("conflict", "consistent")
              for g in ("conflict", "consistent", "error")}
     for case in cases:
-        got = [await check.judge(case["lesson"]) for _ in range(args.samples)]
+        got = []
+        for _ in range(samples):
+            verdict, _rules = await check.judge(case["lesson"])
+            got.append(verdict)
         for v in got:
             table[(case["expect"], v.outcome)] += 1
         ok = all(v.outcome == case["expect"] for v in got)
