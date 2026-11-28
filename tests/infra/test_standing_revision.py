@@ -32,6 +32,7 @@ import sqlalchemy as sa
 from nora.domain.standing import STANDING_BODY_CEILING_CHARS, Standing
 from nora.infra.sql.engine import create_sql_engine
 from nora.infra.sql.migrations_runner import run_migrations
+from nora.infra.sql.schema import STANDING
 from nora.infra.sql.standing import SqlStandingStore
 
 T0 = 1_757_000_000_000
@@ -457,105 +458,14 @@ async def test_a_fold_records_source_fold_by_default(
     assert await _source(engine) == "fold"
 
 
-async def test_an_operator_edit_is_recorded_as_operator(
-    store: SqlStandingStore, engine: Any
-) -> None:
-    """The one other writer of this table. `write_if_unchanged` always
-    stamps its own append `'operator'`, never taking it as an argument —
-    there is no other source an edit through this method could be."""
-    await store.write(standing=_standing("the fold's own position", fold_count=1))
-    before = await store.read(platform=PLATFORM, conversation_id=CONV)
-    assert before is not None
+async def test_a_legacy_head_with_a_divergent_chain_has_no_revision_id(store, engine):
+    await store.write(standing=_standing(body="Recorded position"))
+    head = await store.read_head(platform=PLATFORM, conversation_id=CONV)
+    assert head is not None and head.revision_id is not None
 
-    edited = _standing(
-        "the operator's correction", fold_count=before.fold_count,
-        updated_at=T0 + 1000, last_folded_row_id=before.last_folded_row_id,
-    )
-    applied = await store.write_if_unchanged(expected=before, standing=edited)
-    assert applied is True
-    assert await _source(engine) == "operator"
+    async with engine.begin() as conn:
+        await conn.execute(sa.update(STANDING).values(body="Different position"))
 
-    head = await store.read(platform=PLATFORM, conversation_id=CONV)
-    assert head is not None
-    assert head.body == "the operator's correction"
-    assert head.fold_count == before.fold_count  # unchanged, per the module docstring
-    assert head.last_folded_row_id == before.last_folded_row_id  # unchanged too
-
-
-async def test_write_if_unchanged_refuses_a_standing_that_changes_the_key_or_the_watermark(
-    store: SqlStandingStore, engine: Any
-) -> None:
-    """`write_if_unchanged` is for an operator edit, which changes `body` and
-    `updated_at` only. `standing`'s `platform`, `conversation_id`,
-    `fold_count` and `last_folded_row_id` are not covered by the WHERE at
-    all — they land in `.values()` and in the revision insert, entirely
-    uncontrolled by the compare-and-set. Anything else reaching this method
-    is a caller bug, and it must be refused loudly (`ValueError`) rather than
-    silently accepted."""
-    await store.write(standing=_standing("the fold's own position", fold_count=3,
-                                         last_folded_row_id=10))
-    before = await store.read(platform=PLATFORM, conversation_id=CONV)
-    assert before is not None
-
-    mutations = [
-        {"platform": OTHER_PLATFORM},
-        {"conversation_id": OTHER_CONV},
-        {"fold_count": before.fold_count + 1},
-        {"last_folded_row_id": (before.last_folded_row_id or 0) + 1},
-    ]
-    for mutation in mutations:
-        bad = _standing(
-            "an edit that also tries to move something else",
-            platform=mutation.get("platform", before.platform),
-            conversation_id=mutation.get("conversation_id", before.conversation_id),
-            fold_count=mutation.get("fold_count", before.fold_count),
-            updated_at=T0 + 1000,
-            last_folded_row_id=mutation.get(
-                "last_folded_row_id", before.last_folded_row_id),
-        )
-        with pytest.raises(ValueError, match="platform, conversation_id, "
-                                              "fold_count, last_folded_row_id"):
-            await store.write_if_unchanged(expected=before, standing=bad)
-
-    # Nothing landed for any of the four attempts.
-    head = await store.read(platform=PLATFORM, conversation_id=CONV)
-    assert head is not None
-    assert head.body == "the fold's own position"
-    assert head.fold_count == 3
-    assert head.last_folded_row_id == 10
-    assert await _revision_count(engine) == 1
-
-
-async def test_compare_and_set_refuses_a_stale_row(
-    store: SqlStandingStore, engine: Any
-) -> None:
-    """**The property `write_if_unchanged` exists for.** A fold lands
-    between the operator's read and their write — simulated here by writing
-    again through the ordinary fold path before the operator's write reaches
-    the store. The stale write must be refused, must change neither the head
-    nor the history, and the fold's own position must survive it untouched.
-    """
-    await store.write(standing=_standing("position one", fold_count=1, updated_at=T0))
-    stale_read = await store.read(platform=PLATFORM, conversation_id=CONV)
-    assert stale_read is not None
-
-    # A fold lands in between — the row the operator read no longer exists.
-    await store.write(standing=_standing(
-        "position two, folded after the operator's read",
-        fold_count=2, updated_at=T0 + 1000,
-    ))
-
-    stale_edit = _standing(
-        "the operator's edit, built from the stale read",
-        fold_count=stale_read.fold_count, updated_at=T0 + 2000,
-        last_folded_row_id=stale_read.last_folded_row_id,
-    )
-    applied = await store.write_if_unchanged(expected=stale_read, standing=stale_edit)
-    assert applied is False
-
-    head = await store.read(platform=PLATFORM, conversation_id=CONV)
-    assert head is not None
-    assert head.body == "position two, folded after the operator's read"
-    assert head.fold_count == 2
-    # No third revision was appended for the refused write.
-    assert await _revision_count(engine) == 2
+    head = await store.read_head(platform=PLATFORM, conversation_id=CONV)
+    assert head is not None and head.standing.body == "Different position"
+    assert head.revision_id is None

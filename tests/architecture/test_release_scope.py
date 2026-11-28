@@ -95,7 +95,6 @@ def test_git_generated_revert_of_released_runtime_code_qualifies(repo):
     "path",
     [
         ".dockerignore",
-        "scripts/standing_edit.py",
         "scripts/check_version_stamp.py",
         "scripts/gen_version_manifest.py",
         "scripts/build-image.sh",
