@@ -68,7 +68,6 @@ _NOT_A_TRANSCRIPT = {
     # an element renderer" is the net; it is exempt from the transcript rule because it
     # renders no message. Its unification is gated by `test_one_block_injector`.
     "nora/language/note_render.py": "renders the note index, not a transcript",
-    "nora/language/memo_render.py": "renders the memo index (DEC-306), not a transcript",
     # The `<lessons>` block: one element per active lesson, her own practice.
     # The doctrine check's law list: one element per law rule, doctrine text.
     "nora/language/doctrine_check.py": "renders law rules for the doctrine check, not a transcript",

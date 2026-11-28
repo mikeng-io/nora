@@ -24,8 +24,6 @@ import pytest
 
 from nora.access import IdentityAccess
 from nora.doctrine.loader import DoctrineStore
-from nora.domain.notes import Note, NoteRevision
-from nora.domain.standing import Standing
 from nora.obs.metrics import Metrics
 from nora.persons import load_persons
 from nora.policy import permissive_policy
@@ -33,8 +31,6 @@ from nora.testing import (
     FakeAdapter,
     FakeAgentRunner,
     FakeRecordStore,
-    InMemoryNoteStore,
-    InMemoryStandingStore,
     ScriptedTurn,
     group_event,
 )
@@ -71,7 +67,7 @@ def _omniroute_key(monkeypatch):
     """
     monkeypatch.setenv("OMNIROUTE_API_KEY", "test-key")
 
-async def test_offline_called_pass_uses_the_graph_floor_with_legacy_stores_wired(
+async def test_offline_called_pass_uses_the_graph_floor(
     tmp_path, example_config,
 ):
     cfg = example_config
@@ -86,27 +82,6 @@ async def test_offline_called_pass_uses_the_graph_floor_with_legacy_stores_wired
         tool_names=TOOL_NAMES, metrics=metrics,
     )
 
-    notes_store = InMemoryNoteStore()
-    notes_store.notes["11111111-0000-4000-8000-000000000001"] = Note(
-        id="11111111-0000-4000-8000-000000000001", unit="nora",
-        title="a tracked uncertainty", description="whether the venue is booked",
-        uncertainty="not confirmed", closing_condition="someone confirms the booking",
-        established_in="g1", created_at=1,
-        head_revision_id="22222222-0000-4000-8000-000000000002",
-        anchor_date=20260101,
-    )
-    notes_store.revisions["22222222-0000-4000-8000-000000000002"] = NoteRevision(
-        id="22222222-0000-4000-8000-000000000002",
-        note_id="11111111-0000-4000-8000-000000000001",
-        body="the venue booking is still unconfirmed", parent_revision_id=None,
-        written_at=1, established_by="tag-seed",
-    )
-
-    standing_store = InMemoryStandingStore()
-    await standing_store.write(standing=Standing(
-        platform="signal", conversation_id="g1",
-        body="the group is planning a weekend trip", fold_count=1, updated_at=1,
-    ))
 
     audit = FakeRecordStore()
     adapter = FakeAdapter()
@@ -120,7 +95,6 @@ async def test_offline_called_pass_uses_the_graph_floor_with_legacy_stores_wired
             cfg, adapter=adapter, audit=audit,
             access=IdentityAccess.for_files(persons, permissive_policy()),
             doctrine_store=doctrine_store, runner=runner, metrics=metrics,
-            notes=notes_store, standing=standing_store,
         )
         message = await adapter.parse(group_event(body="nora.000 hi"))
         assert message is not None

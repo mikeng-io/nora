@@ -421,7 +421,7 @@ class GateWiring:
 def build_gate(
     audit: Any, cfg: Any, doctrine_store: Any, engine: Any,
     fire_path: Any, media_join: Any, metrics: Any, model_client_for: Any,
-    persons: Any, route_model: Any, slots: Any, standing_store: Any,
+    persons: Any, route_model: Any, slots: Any,
 ) -> GateWiring:
     # Bound in the branch below, beside the trigger that holds it.
     gate: RelevanceGate | None = None
@@ -455,10 +455,6 @@ def build_gate(
             # `person_name` is None on every row and the gate labels speakers by their self-set
             # platform profile name — the two-name-space bug, on the one call that reads every…
             persons=persons,
-            # The SAME standing store the fire path reads (`None` while
-            # `[standing] enabled = false`), so the gate and the turn behind
-            # it see one room and not two.
-            standing=standing_store if cfg.standing.enabled else None,
             transcript_limit=cfg.relevance_gate.transcript_rows,
             # The SAME number the client above is built with, handed to the gate as well. Not belt-
             # and-braces: the client's `wait_for` is a property of THIS wiring, and the gate's own

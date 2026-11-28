@@ -4,7 +4,7 @@
 import pytest
 from strands import Agent
 
-from nora.agent.catalog.groups import LEGACY_ENGAGEMENT_TOOLS, LOADER_TOOL
+from nora.agent.catalog.groups import LOADER_TOOL
 from nora.agent.dreamer import RegistryToolSource
 from nora.agent.registry import ToolRegistry
 from nora.agent.room import Room
@@ -79,7 +79,6 @@ def test_load_tools_cannot_reach_any_retired_tool(ambient):
         "checkpoint_update", "memo_read", "note_read", "note_search",
         "recall_lookups", "standing_read",
     })
-    assert set(names) == LEGACY_ENGAGEMENT_TOOLS
     for i in range(0, len(names), 4):
         asked = names[i:i + 4]
         result = load_onto(agent, surface.shelf, asked)

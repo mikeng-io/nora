@@ -21,10 +21,10 @@
     "target": "tests/unit/test_engagement_surface.py::test_the_graph_dispute_verb_is_offered_on_the_engagement_surface_with_its_intake"
   },
   {
-    "name": "the engagement turn does not refuse profile_dispute",
-    "file": "nora/agent/catalog/groups.py",
-    "old": "    \"recall_lookups\", \"standing_read\",\n",
-    "new": "    \"profile_dispute\", \"recall_lookups\", \"standing_read\",\n",
+    "name": "Engagement incorrectly withholds a wired profile dispute",
+    "file": "nora/agent/surface.py",
+    "old": "    def admits(self, name: str) -> bool:\n",
+    "new": "    def admits(self, name: str) -> bool:\n        if self.engagement and name == \"profile_dispute\":\n            return False\n",
     "target": "tests/unit/test_engagement_surface.py::test_the_graph_dispute_verb_is_offered_on_the_engagement_surface_with_its_intake"
   }
 ]

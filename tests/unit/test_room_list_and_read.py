@@ -698,3 +698,24 @@ def test_production_hands_the_room_tools_the_presence_reader():
                         ):
                             wired += 1
     assert wired == 1
+
+
+@pytest.mark.parametrize("name, arguments", [
+    ("load_transcript", {}),
+    ("room_read", {"room": "WhatsApp"}),
+])
+async def test_a_retired_thread_handle_never_falls_back_to_room_messages(
+    policy, persons, store, name, arguments,
+):
+    tools = _tools(policy, persons, store)
+    result = await _call(tools[name], thread="th:retired-fixture", **arguments)
+    assert result["status"] == "unavailable"
+    assert result["messages"] == []
+    assert (await _call(tools["load_transcript"]))["messages"]
+
+
+async def test_room_list_omits_retired_thread_previews(policy, persons, store):
+    result = await _call(_tools(policy, persons, store)["room_list"])
+    assert result["status"] == "ok"
+    assert result["rooms"]
+    assert all("threads" not in room for room in result["rooms"])

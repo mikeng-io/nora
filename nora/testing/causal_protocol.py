@@ -262,7 +262,7 @@ class CausalProtocol:
             return "turn", self.tool(request, "send_reply", {"text": QUESTION})
         if self.phase == 5:
             assert "note_revise" in tools and self.note_id in text and CORRECTION in text
-            return "cognition", self.tool(request, "note_read", {"title": TITLE})
+            raise AssertionError("The legacy note reader was retired with the notebook")
         if self.phase == 6:
             head = next(
                 row

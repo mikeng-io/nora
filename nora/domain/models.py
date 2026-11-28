@@ -15,8 +15,6 @@ from .documents_context import DocumentsView
 from .external_files import ExternalFileRef
 from .lineage import RenderRoom
 from .media import MediaBlob, MediaRef
-from .memo import Memo
-from .notes import Note
 from .self_presence import Presence
 from .shared_state import SharedView
 from .subagents_context import SubagentsView
@@ -725,18 +723,6 @@ class TagContext:
     # than claims about her. So the asymmetry is deliberate — for her, no card;
     # for them, both.
     tagger_card: tuple[str, ...] = ()
-    # The note tier — the INDEX of tracked
-    # uncertainties, unit-keyed and unlike every block before it.
-    # Defaulted empty: `nora.language.note_render.render_notes` renders no
-    # block for an empty tuple.
-    # Deliberately the whole standing set and never a top-N: a note absent from
-    # the index is invisible to her, and invisible is indistinguishable from
-    # absent. The prompt budget is paid by the per-entry caps in
-    # `nora.domain.notes` and by `note_set_status`, not here.
-    notes: tuple[Note, ...] = ()
-    # The unit's kept memos (DEC-306), the `<memos>` index: unit-wide like
-    # `notes`, filled by the tag and fire assemblers; `()` renders no block.
-    memos: tuple[Memo, ...] = ()
     # The typed SOURCE events of the transcript window (docs/design/platform/
     # observations.md): poll/room/membership/pin/artifact
     # transitions the bridge recorded, interleaved into the transcript by their own clock

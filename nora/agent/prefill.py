@@ -12,7 +12,7 @@ import json
 import re
 from collections.abc import Mapping, Sequence
 from dataclasses import replace
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import Any
 
 from nora.domain.composed import Composed, compose_body, legacy_composed
@@ -26,9 +26,6 @@ from ..domain.blocks import (
     restamp,
     speaker_name,
 )
-from ..domain.decision_log import (
-    render_decisions,
-)
 from ..domain.external_files import render_file_links
 from ..domain.framing import (
     CLOSING_LINE,
@@ -38,21 +35,16 @@ from ..domain.framing import (
     ContextHeader,
 )
 from ..domain.models import TagContext, TranscriptRow
-from ..domain.observations import SourceEvent, parse_handle
 from ..domain.prompt import age, escape
 from ..domain.quote_window import first_by_ts
 from ..domain.self_presence import Presence
 from ..language.catalogue_render import render_tool_catalogue
 from ..language.computer_render import render_computer
 from ..language.documents_render import render_documents
-from ..language.memo_render import render_memos
-from ..language.note_render import render_notes
 from ..language.presence_render import render_presence
-from ..language.shared_render import render_shared_state
 from ..language.subagents_render import render_subagents
 from ..obs.tracing import annotate, span
 from .clock import local_now, state_time
-from .lineage import DerivedView, derived_view, memo_permits
 
 # `TAG_HEADER`, `CLOSING_LINE` and the text of the clock line and of the
 # `<context_header>` message live in `nora.domain.framing` with every other
@@ -144,12 +136,6 @@ _BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
     # and before the unit's open questions. `turn`: it is searched from one
     # message. Renders only where `TagContext.recalled` is filled.
     ("recalled", 36, "turn"),
-    ("notes", 40, "unit"),
-    # WHAT THE GROUP SETTLED AND KEEPS (DEC-306): unit-wide like `notes`, right
-    # after them, titles and ids only. Renders only where `TagContext.memos` is
-    # filled.
-    ("memos", 42, "unit"),
-    ("loop_decisions", 50, "unit"),
     # What is on her computer for this room, read fresh at turn start. `turn`:
     # its ages move every turn. Before `standing` because it is the state of
     # the machine, and `standing` + the transcript are read as the pair «where
@@ -663,64 +649,6 @@ def _recalled_block(ctx: TagContext) -> ContextBlock | None:
     )
 
 
-def _lineage(ctx: TagContext) -> DerivedView | None:
-    """Which derived rows this room may be shown. `None` when lineage is off
-    for this context (no target, or `[lineage] mode = "off"`): every block
-    renders unfiltered.
-
-    The view gates individual note rows.
-    """
-    target = ctx.lineage_room
-    if target is None or target.mode == "off":
-        return None
-    return derived_view(
-        notes=ctx.notes, standing=None,
-        target=target,
-    )
-
-
-def _notes_block(
-    ctx: TagContext, *, now: datetime, view: DerivedView | None = None,
-) -> ContextBlock | None:
-    """The note tier's index. VOLATILE-TIER ONLY, and that placement is the
-    point: it is rendered in `build_prefill`'s per-turn message rather than in
-    `_context_header`, so the static head (the cache PREFIX) stays
-    byte-identical across every room. Keyed on the UNIT rather than this room;
-    a unit-wide block in the cached head would fragment the prefix across
-    every unit instead of every room. Trailing newline added here, not by
-    `render_notes`, so blocks concatenate onto separate lines.
-
-    **This block is a POINTER, not the content.** Every other injected block
-    is the whole of what she is given on its axis (the transcript is the
-    messages, the standing block is the position). A `<notes>` line is a
-    title and a summary of something whose substance lives behind `note_read`:
-    awareness in the prompt, content on demand, with the read-before-write
-    latch built on exactly that gap. `NOTES_BLOCK_NOTE` says so in the
-    opening tag, because a model shown a summary and nothing else will act on
-    the summary.
-
-    **It has no cap on how many entries it may emit.** Its siblings take
-    `max_entries` or render a fixed single row; this renders every standing
-    note there is, because a note missing from the index is invisible to her
-    and invisible is indistinguishable from absent. The budget is held in
-    `nora.domain.notes`' per-entry caps and by closed notes being retired
-    (the Cognition session's `note_set_status`); see `render_notes`'s own
-    docstring.
-    """
-    # WITH TODAY: the block's own hedge says a listed note «may already have
-    # settled», so the row's anchor date has to be rendered for her to tell
-    # which.
-    today = now.year * 10000 + now.month * 100 + now.day
-    notes = view.notes if view is not None and _enforced(ctx) else ctx.notes
-    return render_notes(notes, today=today)
-
-
-def _enforced(ctx: TagContext) -> bool:
-    """`[lineage] mode = "on"`: a failing section is not rendered. `shadow`
-    computes the same answer and only reports it on the prefill span."""
-    return ctx.lineage_room is not None and ctx.lineage_room.mode == "on"
-
-
 def _presence_block(ctx: TagContext) -> ContextBlock:
     """Where she is on this turn, as `<presence>`.
 
@@ -750,11 +678,10 @@ def _spoken_turn_block(ctx: TagContext) -> ContextBlock | None:
 
 
 def _standing_block(
-    ctx: TagContext, view: DerivedView | None = None,
-    *, now: datetime | None = None,
+    ctx: TagContext, *, now: datetime | None = None,
 ) -> ContextBlock | None:
-    """The shared account and freshly read source objects in ONE Standing block."""
-    block = render_shared_state(ctx.shared, now_ms=int((now or local_now()).timestamp() * 1000))
+    """Folded source objects read for this room."""
+    block = None
     # The room's folded source-object heads (docs/design/platform/
     # observations.md), typed rows under the SAME Standing presentation: the open poll,
     # the pin set, the member count — each with its ordering and coverage
@@ -841,99 +768,7 @@ def _standing_block(
             block = ContextBlock(name="standing", body=legacy_composed(objects))
         else:
             block = replace(block, body=legacy_composed("\n".join((block.body.text, objects))))
-    # The retained lane (docs/design/platform/observations.md): an ongoing
-    # matter's curated `object_refs`, resolved NOW through the store — an
-    # old tracked poll keeps its CURRENT state in view after the recency
-    # page above evicted it. `matter` says which note tracks it, and a ref
-    # the store no longer resolves shows `unresolved`, never a dropped row.
-    if ctx.retained_sources:
-        retained_rows = []
-        for r in ctx.retained_sources:
-            e = r.head
-            if e is None:
-                e = SourceEvent(
-                    ref="", kind=parse_handle(r.ref.handle)[0] or "object",
-                    operation="state", at_ms=0, time_quality="unknown",
-                    actor=None, actor_status="not_applicable",
-                    handle=r.ref.handle, summary="")
-
-            def _retained_attrs(_e: Any, _i: int, _r: Any = r,
-                                ) -> tuple[tuple[str, Any], ...]:
-                return (
-                    ("kind", _e.kind or None), ("object", _e.handle),
-                    ("matter", _r.matter or None),
-                    ("unresolved", "yes" if _r.head is None else None),
-                    ("ordering", _e.ordering or None),
-                    ("coverage", _e.coverage or None),
-                    ("rev", _e.revision or None),
-                    ("time", _e.time_quality if _e.time_quality != "upstream"
-                            else None),
-                    ("observed",
-                     age(_e.at_ms, now) if now is not None and _e.at_ms > 0
-                     and _e.time_quality != "unknown" else None),
-                    ("received",
-                     age(_e.received_ms, now)
-                     if now is not None and _e.received_ms
-                     and _e.time_quality != "upstream" else None),
-                )
-
-            retained_rows.append(render_elements(
-                [e], tag="source_object",
-                attrs=_retained_attrs,
-                body=lambda _e: _e.state or _e.summary))
-        if ctx.retained_sources_more:
-            retained_rows.append(render_elements(
-                [ctx.retained_sources_more], tag="source_objects_more",
-                attrs=lambda count, _: (("count", str(count)),), body=lambda _: ""))
-        retained = "\n".join(retained_rows)
-        if block is None:
-            block = ContextBlock(name="standing", body=legacy_composed(retained))
-        else:
-            block = replace(block, body=legacy_composed("\n".join((block.body.text, retained))))
     return block
-
-
-def _decisions_block(ctx: TagContext, *, now: datetime) -> ContextBlock | None:
-    """What NORA'S OWN LOOP already did across this UNIT, as `<loop_decisions>`.
-    `""` when there is nothing, which is every turn but the two that weigh a
-    floor nobody offered them: the participation occasion and the proactive
-    act turn.
-
-    **This is the only block here that is not about the world.** Its five
-    neighbours distil what people said, what they are like, what the unit has
-    not settled. This one is the record of her own turns: the proactive
-    decide and act turns that raised something in this room unprompted, with
-    how long ago. Without it the participation turn could not tell a room
-    nobody had spoken to from a room she had raised the same question in two
-    hours earlier. UNIT and not room: a proactive row fires into the unit's
-    home room and nowhere else, so a room-scoped block would carry nothing.
-
-    **An empty block is not rendered, a deliberate difference from
-    `render_decisions`' own default.** Its siblings here (`<notes>`,
-    `<standing>`, `<self>`) all emit nothing rather than an "(empty)" line,
-    because a block that appears on every turn whether or not it has content
-    is a block every turn pays for. The renderer's `empty` text is for a
-    caller that has ONE block and needs «nothing here» to be distinguishable
-    from «no log wired»; this caller has five neighbours and follows their
-    convention.
-
-    **Named `loop_decisions`, not `decisions`**, so it cannot collide with a
-    `<decisions>` block for reminder rows. Two blocks under one name in one
-    prompt is an input the model cannot disambiguate, and the fix for that is
-    never the instruction.
-
-    It sits with the volatile tier, after `<notes>`: a note is the open
-    question, and this is what she has already DONE about the open questions;
-    read in order, the pair says *here is what is unsettled, here is what you
-    already tried*. `<standing>` stays last, adjacent to the transcript it is
-    about, for the reason its own docstring argues.
-
-    Trailing newline added here, not by `render_decisions`, so blocks
-    concatenate onto separate lines (`_notes_block`'s convention).
-    """
-    if not ctx.decisions:
-        return None
-    return render_decisions(ctx.decisions, now=now)
 
 
 def build_prefill(
@@ -979,9 +814,6 @@ def build_prefill(
         # from the same read: everything below computes on one fixed model of
         # now.
         clock = now or local_now()
-        # Lineage, decided ONCE for the whole prefill: the four blocks it
-        # The note rows share one lineage view.
-        view = _lineage(ctx)
         # RENDER first, DECLARE second, ASSEMBLE third. The order the blocks
         # reach her comes from `_BLOCKS`, so a block cannot be served without
         # an entry, and an entry cannot survive a block that stopped rendering.
@@ -999,15 +831,10 @@ def build_prefill(
             None if switched else _peer_card_block(ctx),
             None if switched else _peer_history_block(ctx),
             None if switched else _people_in_window_block(ctx),
-            _restamp(_notes_block(ctx, now=clock, view=view)),
-            _restamp(render_memos(tuple(m for m in ctx.memos
-                                       if memo_permits(m.head, ctx.lineage_room)),
-                                  tz=clock.tzinfo or UTC)),
-            _restamp(_decisions_block(ctx, now=clock)),
             _restamp(render_computer(ctx.computer)),
             _restamp(render_documents(ctx.documents)),
             _restamp(render_subagents(ctx.subagents)),
-            _restamp(_standing_block(ctx, view, now=clock)),
+            _restamp(_standing_block(ctx, now=clock)),
             _transcript_block(ctx, display_name, clock, context_window),
             _spoken_turn_block(ctx),
             _recalled_block(ctx),
@@ -1019,16 +846,6 @@ def build_prefill(
         # Report the blocks selected by `assemble`, including empty blocks
         # that opt into self-closing. Size counts body characters only.
         rendered = [b for b in declared if b.body or b.when_empty != "drop"]
-        # LINEAGE, on every mode but `off`: what the four derived blocks
-        # withheld from this room, or would have in `shadow`. The shadow
-        # reading that gates `on` is read from these two attributes.
-        if view is not None and ctx.lineage_room is not None:
-            annotate(**{
-                "nora.prefill.lineage_mode": ctx.lineage_room.mode,
-                "nora.prefill.lineage_withheld": ",".join(
-                    f"{name}:{n}" for name, n in view.withheld
-                ),
-            })
         annotate(**{
             "nora.prefill.blocks_declared": len(declared),
             "nora.prefill.blocks_rendered": ",".join(b.name for b in rendered),

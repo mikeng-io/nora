@@ -24,10 +24,8 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any, Literal
-from zoneinfo import ZoneInfo
 
 from nora.app.fire import SENT, SILENT, participation_occasion
-from nora.domain.standing import WorkingSetItem
 from nora.subject import (
     Subject,
     act,
@@ -40,11 +38,9 @@ from nora.subject import (
     silent_failures,
     watch,
 )
-from nora.subject.standing_fold import fold, read_fold_turn
 
 from .autonomous_journey import autonomous_journey
-from .domain import Case, Outcome, WorkingSetFinding
-from .fold_evidence import render_evidence, render_shown
+from .domain import Case, Outcome
 
 
 async def public_summons(subject: Subject, case: Case, *, now_ms: int) -> Outcome:
@@ -277,7 +273,6 @@ async def proactive_act(subject: Subject, case: Case, *, now_ms: int) -> Outcome
     try:
         intention = await owe(
             subject,
-            note_title=str(row["note"]),
             intent=str(row.get("intent", "")),
             decided_hours_ago=float(row.get("decided_hours_ago", 6)),
         )
@@ -291,153 +286,9 @@ async def proactive_act(subject: Subject, case: Case, *, now_ms: int) -> Outcome
     )
 
 
-def _outcome_working_set(items: tuple[WorkingSetItem, ...]) -> tuple[WorkingSetFinding, ...]:
-    """`Folded.working_set` (`nora.domain.standing.WorkingSetItem`, `nora`-side)
-    into `Outcome.working_set` (`WorkingSetFinding`, domain-side) — the one
-    place this boundary is crossed, so `standing()` itself stays a single
-    `Outcome(...)` call. `found_at` is dropped here: `Outcome`'s
-    own docstring says why.
-    """
-    return tuple(
-        WorkingSetFinding(what=item.what, source=item.source, bears_on=item.bears_on)
-        for item in items
-    )
-
-
 async def standing(subject: Subject, case: Case, *, now_ms: int) -> Outcome:
-    """The standing FOLD on one real tag turn, graded on the position it wrote.
-
-    The case names a turn
-    (`metadata.tag_id`) and the instant it finished (`snapshot.before_ms`, the
-    turn's own `tag_trace.created_at`). The sandbox already holds the room up
-    to that instant; this reads the turn's record and the position as it stood
-    BEFORE the turn out of the source, and runs the deployed pipeline's own
-    fold on them (`nora.subject.standing_fold`).
-
-    Every way this can end without a written position is an ERROR, never a
-    verdict: a fold that timed out, answered prose instead of JSON, or was
-    refused for overflow has said nothing about whether a thread was carried —
-    and "nothing was written, so nothing stale was re-affirmed" would pass every
-    `stale` case on a dead provider.
-
-    **A turn with no prior is refused, not folded against a blank.** The
-    standing chain (migration 0059) does not backfill, so «no revision at or
-    before this instant» reads the same for a room that had never folded and for
-    one whose position simply predates the chain. Folding the second against «no position yet»
-    would grade a fold on an input it never had. Such a moment is parked in the
-    corpus, or declared as the counterfactual above; one reaching here
-    undeclared is a mistake in the corpus, and says so.
-
-    `metadata.print_input` renders the fold's whole input and stops — no model
-    is reached — and returns it as `shown`. Always an ERROR: a run that called
-    no model has measured nothing, whatever it prints.
-    """
-    tag_id = str(case.metadata.get("tag_id") or "")
-    moment = case.moment
-    if not tag_id:
-        return Outcome(
-            admitted=None, source="fail_closed",
-            error="a standing case names the turn it folds (`metadata.tag_id`)",
-        )
-    if moment is None:
-        return Outcome(
-            admitted=None, source="fail_closed",
-            error="the fold reads its turn from the source and the runner handed no moment",
-        )
-    # THE ONE TIER A STANDING CASE MAY VARY: its prior, declared ABSENT, for a
-    # turn older than the standing chain. Named in the case, checked here
-    # against the source — never inferred from a read that came back empty.
-    varies = (case.metadata.get("counterfactual") or {}).get("varies")
-    if varies not in (None, "prior"):
-        return Outcome(
-            admitted=None, source="fail_closed",
-            error=f"a standing case may vary only its prior, not {varies!r}",
-        )
-    prior_absent = varies == "prior"
-    try:
-        turn = await read_fold_turn(
-            subject, source_url=moment.source_url, tag_id=tag_id,
-            prior_absent=prior_absent,
-        )
-    except (LookupError, ValueError) as exc:
-        return Outcome(admitted=None, source="fail_closed", error=str(exc))
-    stated = int((case.snapshot or {}).get("before_ms") or 0)
-    if prior_absent:
-        # No revision exists to date the fold, so the room is cut where her
-        # reply to the turn landed (`nora.subject.standing_fold`).
-        if turn.room_at != stated:
-            return Outcome(
-                admitted=None, source="fail_closed",
-                error=(
-                    f"the case's before_ms ({stated}) is not the instant her reply "
-                    f"to tag {tag_id!r} landed ({turn.room_at}); a counterfactual "
-                    "case is anchored there and nowhere else"
-                ),
-            )
-    # THE FOLD'S INSTANT, not the turn's: production's fold runs after the
-    # turn finishes and reads the room then, and on a `recovered` turn her
-    # reply is written in between. The anchor is the first revision the room
-    # got after the turn; a case anchored anywhere else seeds a different room
-    # than the fold read.
-    elif turn.folded_at is None:
-        return Outcome(
-            admitted=None, source="fail_closed",
-            error=(
-                f"production wrote no standing revision after tag {tag_id!r}, "
-                "so the instant its fold read the room at is unrecorded"
-            ),
-        )
-    elif turn.folded_at != stated:
-        return Outcome(
-            admitted=None, source="fail_closed",
-            error=(
-                f"the case's before_ms ({stated}) is not the instant production "
-                f"folded tag {tag_id!r} at ({turn.folded_at}); the sandbox would "
-                "hold a different room than the fold read"
-            ),
-        )
-    if turn.prior is None and not prior_absent:
-        return Outcome(
-            admitted=None, source="fail_closed",
-            error=(
-                "no standing revision stood before this turn — the chain "
-                "(migration 0059) holds none, so the prior the fold read is "
-                "unknowable here; a moment like this is parked, never folded "
-                "against a blank"
-            ),
-        )
-    dry = bool(case.metadata.get("print_input"))
-    try:
-        folded = await fold(subject, turn, rows=moment.rows, call_model=not dry)
-    except (LookupError, ValueError, RuntimeError) as exc:
-        return Outcome(admitted=None, source="fail_closed", error=str(exc))
-    shown = render_shown(folded.calls)
-    if dry:
-        return Outcome(
-            admitted=None, source="fail_closed", shown=shown,
-            outcome_token=folded.outcome,
-            error="print-input: the fold's input was rendered and no model was called",
-        )
-    if folded.outcome != "written" or folded.position is None:
-        return Outcome(
-            admitted=None, source="fail_closed", shown=shown,
-            outcome_token=folded.outcome,
-            error=f"the fold wrote no position: {folded.outcome}",
-        )
-    return Outcome(
-        admitted=None,
-        position=folded.position,
-        working_set=_outcome_working_set(folded.working_set),
-        evidence=render_evidence(
-            turn, display_name=subject.cfg.doctrine.display_name,
-            # The deployment's own zone (the one its recurrences keep), stated
-            # rather than the machine's: a relative clause is placed on a
-            # calendar by the judge, and the room lives in this zone.
-            tz=ZoneInfo(subject.cfg.cognition.timezone),
-        ),
-        shown=shown,
-        outcome_token=folded.outcome,
-    )
+    return Outcome(admitted=None, source="fail_closed",
+                   error="the legacy room Standing fold was retired; its cases are parked")
 
 
 async def standing_unit(subject: Subject, case: Case, *, now_ms: int) -> Outcome:
@@ -516,24 +367,6 @@ class EntryPoint:
 _PARTICIPATION_SUBSYSTEM = {
     "participation.enabled": True,
     "relevance_gate.enabled": True,
-    # THE TIERS THE TURN READS, and they ship OFF.
-    #
-    # `config.example.toml` has `[standing] enabled = false` and `[notes]
-    # enabled = false`, and composition gates the readers on them: no note
-    # store, no standing reader, on the fire path AND on the gate.
-    #
-    # A participation case needs both on regardless of config. Without it every `-known` case in
-    # `participation.yaml` is byte-identical to its `-unknown` twin: `know()`
-    # writes the note and the standing, and the turn cannot read either. The
-    # pair would report "the knowledge cut works" having cut nothing, which is
-    # the footgun `seed_from_dict`'s own docstring names, arriving through
-    # config instead of through a dropped key.
-    #
-    # It also decides one gate case: `real-commitment-in-standing` is the
-    # positive half of a pair whose negative is a forged commitment claimed in
-    # chat. With no standing reader the `go` case IS the `no_go` shape.
-    "standing.enabled": True,
-    "notes.enabled": True,
 }
 
 #: The port's implementations, by the name a case selects. A new suite over an
@@ -552,18 +385,18 @@ ENTRY_POINTS = {
     # Cognition uses the Dreamer runtime. The corpus sets its session flags.
     "dreamer": EntryPoint(drive=dreamer, config={}),
     "proactive_act": EntryPoint(
-        drive=proactive_act, drives_a_turn=True, config={"notes.enabled": True},
+        drive=proactive_act, drives_a_turn=True,
     ),
     # The fold is the TAG PATH's post-turn stage, and composition builds its
     # wiring only under `[standing] enabled`. No turn is driven — the turn
     # already happened and is read from its record — so it may anchor in any
     # room, Discord's included: nothing is spoken.
     "standing": EntryPoint(
-        drive=standing, config={"standing.enabled": True}, judged_on="position",
+        drive=standing, judged_on="position",
     ),
     "standing_unit": EntryPoint(
         drive=standing_unit,
-        config={**_PARTICIPATION_SUBSYSTEM, "standing.enabled": True},
+        config=_PARTICIPATION_SUBSYSTEM,
         judged_on="position",
     ),
     # The `App` itself runs its own timers; the live subsystem is declared

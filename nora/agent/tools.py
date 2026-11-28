@@ -48,7 +48,8 @@ from collections.abc import Callable, Mapping, Sequence
 from datetime import datetime
 from typing import Any
 
-from nora.agent.catalog.surface import _apply_link_owners, on_memory_surface
+from nora.agent.catalog.groups import GRAPH_MEMORY_TOOLS
+from nora.agent.catalog.surface import _apply_link_owners
 from nora.agent.lineage import LineagePolicy
 from nora.agent.links import LinkCarry
 from nora.agent.ports import ToolSpec, adapt
@@ -62,12 +63,10 @@ from nora.agent.surface import ToolShelf
 from nora.agent.tool_deps import ToolDeps
 from nora.agent.toolkit.ports import (
     DocumentPublisher,
-    NoteCollaborator,
     RecordQuerySource,
     RollupReadSource,
     RoomDirectory,
     SocialItemsSource,
-    StandingHeadSource,
 )
 from nora.agent.turn_recording import in_room
 from nora.agent.video_desk import VideoDesk
@@ -79,7 +78,6 @@ from nora.domain.computer_sessions import (
     ComputerSessionStore,
 )
 from nora.domain.media_join import MediaJoin
-from nora.domain.memo import MemoStore
 from nora.domain.models import (
     TranscriptRow,
 )
@@ -95,8 +93,6 @@ from nora.domain.ports import (
     SteamPresenceProvider,
     VoicePresenceSource,
 )
-from nora.domain.standing_ledger import StandingLedger
-from nora.domain.tool_call_log import ToolCallLogStore
 from nora.infra.vision.preprocess import (
     VIDEO_CHUNK_SECONDS,
     VIDEO_MAX_CHUNKS,
@@ -136,7 +132,6 @@ _ORDER = [
     "poll_read",
     "room_state_read",
     "rollup_read",
-    "standing_read",
     "social_read",
     "group_members",
     "lookup_person",
@@ -144,7 +139,6 @@ _ORDER = [
     "memory_search",
     "memory_read",
     "intention_commit",
-    "recall_lookups",
     "media_fetch",
     "file_fetch",
     "generate_image",
@@ -173,9 +167,6 @@ _ORDER = [
     "stop_music",
     "music_status",
     "set_music_volume",
-    "note_read",
-    "note_search",
-    "memo_read",
     "profile_dispute",
     "computer_run",
     "computer_read",
@@ -284,7 +275,6 @@ def build_tool_specs(
     releases=None,
     giphy_source: GifSource | None = None,
     reaction_picker: ReactionPicker | None = None,
-    tool_call_log_store: ToolCallLogStore | None = None,
     # Nora's computer (DEC-243): the runtime, its
     # audit store and its bounds. `computer=None` is `[computer]` off (and
     # every offline/eval composition): each computer tool answers
@@ -326,9 +316,6 @@ def build_tool_specs(
     # link `unavailable`.
     artifact_link_base: str = "",
     relay: Relay | None = None,
-    notes: NoteCollaborator | None = None,
-    note_unit: Callable[[str, str], str | None] | None = None,
-    memos: MemoStore | None = None,
     unit_for: Callable[[str, str], str | None] | None = None,
     supplied_unit: str | None = None,
     music: MusicToolBridge | None = None,
@@ -370,8 +357,6 @@ def build_tool_specs(
     # `None` (offline, eval, every tag
     # path) answers `unavailable`; both tools are Dreamer-only besides.
     rollup: RollupReadSource | None = None,
-    standing_head: StandingHeadSource | None = None,
-    ledger: StandingLedger | None = None,
     graph_profiles: GraphProfileReader | None = None,
     # `social_read`'s read of the social stream's Record. `None` answers
     # `unavailable`; the registry withholds the tool before that matters.
@@ -479,7 +464,6 @@ def build_tool_specs(
         releases=releases,
         giphy_source=giphy_source,
         reaction_picker=reaction_picker,
-        tool_call_log_store=tool_call_log_store,
         computer=computer,
         computer_events=computer_events,
         computer_settings=computer_settings,
@@ -493,9 +477,6 @@ def build_tool_specs(
         computer_context_invalidate=computer_context_invalidate,
         artifact_link_base=artifact_link_base,
         relay=relay,
-        notes=notes,
-        note_unit=note_unit,
-        memos=memos,
         unit_for=unit_for,
         supplied_unit=supplied_unit,
         music=music,
@@ -513,8 +494,6 @@ def build_tool_specs(
         observations=observations,
         lineage=lineage,
         rollup=rollup,
-        standing_head=standing_head,
-        ledger=ledger,
         graph_profiles=graph_profiles,
         social_items=social_items,
         subagent=subagent,
@@ -563,8 +542,8 @@ def build_tool_specs(
 def _on_surface(name: str, deps: ToolDeps) -> bool:
     if name == "intention_commit":
         return deps.all_memory_surfaces or deps.intention_admission is not None
-    graph = deps.graph_retrieval is not None
-    return on_memory_surface(name, graph=graph, everything=deps.all_memory_surfaces)
+    return (deps.all_memory_surfaces or deps.graph_retrieval is not None
+            or name not in GRAPH_MEMORY_TOOLS)
 
 
 def build_tools(
@@ -620,9 +599,6 @@ def build_tools(
     ai_peer: str = "nora",
     display_name: str = "",
     links: LinkCarry | None = None,
-    notes: NoteCollaborator | None = None,
-    note_unit: Callable[[str, str], str | None] | None = None,
-    memos: MemoStore | None = None,
     unit_for: Callable[[str, str], str | None] | None = None,
     supplied_unit: str | None = None,
     # Forwarded, not defaulted away: a wrapper that dropped it would build
@@ -641,8 +617,6 @@ def build_tools(
     record: RecordQuerySource | None = None,
     lineage: LineagePolicy | None = None,
     rollup: RollupReadSource | None = None,
-    standing_head: StandingHeadSource | None = None,
-    ledger: StandingLedger | None = None,
     graph_profiles: GraphProfileReader | None = None,
     # The typed platform-observation Record: `record_query`'s `kind` branch,
     # `poll_list`/`poll_read`/`room_state_read` and the source events a
@@ -679,14 +653,14 @@ def build_tools(
         refresher=refresher, geocoder=geocoder, question=question, context_window=context_window,
         transcript=transcript, lookup_window=lookup_window, ai_peer=ai_peer,
         display_name=display_name, links=links, giphy_source=giphy_source,
-        reaction_picker=reaction_picker, notes=notes, note_unit=note_unit, memos=memos,
+        reaction_picker=reaction_picker,
         unit_for=unit_for, supplied_unit=supplied_unit, dream_adaptor=dream_adaptor,
         image_generator=image_generator, image_refs_allowed=image_refs_allowed,
         media_store=media_store, documents=documents, online_source=online_source,
         voice_source=voice_source, presence=presence, on_rows=on_rows,
         describe_max_bytes=describe_max_bytes, video_chunk_seconds=video_chunk_seconds,
         video_max_chunks=video_max_chunks, media_join=media_join, rooms=rooms, clock=clock,
-        record=record, lineage=lineage, rollup=rollup, standing_head=standing_head, ledger=ledger,
+        record=record, lineage=lineage, rollup=rollup,
         graph_profiles=graph_profiles, observations=observations, social_items=social_items,
         subagent=subagent, video=video, video_ref_kinds=video_ref_kinds,
         graph_retrieval=graph_retrieval, pass_scope=pass_scope,

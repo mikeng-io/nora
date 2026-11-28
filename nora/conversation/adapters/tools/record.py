@@ -4,7 +4,6 @@ import logging
 from types import SimpleNamespace
 
 from nora.agent.catalog.groups import LOAD_TRANSCRIPT_DEFAULT, LOAD_TRANSCRIPT_MAX
-from nora.agent.standing_ledger import ledger_permits, ledger_target
 from nora.agent.toolkit.clock import _HKT
 from nora.agent.toolkit.results import _memory_result, _record
 from nora.agent.toolkit.rooms import _asked_about, _name_rows, _said, _speaker
@@ -16,15 +15,11 @@ from nora.agent.toolkit.transcript import (
     _older_note,
     _read_window,
     _transcript_messages,
-    _trim_window,
 )
 from nora.agent.turn_recording import record_requirement
 from nora.domain.lineage import message as message_lineage
 from nora.domain.lineage import (
     room_key,
-)
-from nora.domain.models import (
-    TranscriptRow,
 )
 from nora.domain.observations import (
     SourceEvent,
@@ -67,79 +62,20 @@ def _make_who_said(deps):
     return who_said
 
 
-def _make__thread_window(deps):
-    ledger = deps.ledger
-    lineage = deps.lineage
-    room = deps.room
-    bound_conversation_id = deps.bound_conversation_id
-
-    async def _thread_window(
-        handle: str,
-        *,
-        platform: str,
-        conversation_id: str,
-        asked: int,
-        before_ts: int | None,
-        as_of_ms: int | None = None,
-    ) -> tuple[list[TranscriptRow], bool]:
-        if ledger is None or lineage is None:
-            raise RuntimeError("thread reader is unavailable")
-        target = await ledger_target(
-            lineage.render_room(
-                platform=room.platform,
-                conversation_id=bound_conversation_id,
-            ),
-            room,
-        )
-        if target.room is None:
-            raise RuntimeError("thread reader is unavailable")
-        live = target.live
-        if (
-            live is None
-            or not live.available
-            or live.degraded
-            or live.unnamed
-            or not live.person_ids
-        ):
-            raise RuntimeError("thread reader is unavailable")
-        entries = await ledger.read(
-            unit=target.room.unit, platform=room.platform, conversation_id=bound_conversation_id
-        )
-        entry = next((e for e in entries if e.kind == "thread" and e.id == handle), None)
-        if entry is None:
-            return [], False
-        if not ledger_permits(entry, target):
-            raise RuntimeError("thread reader is unavailable")
-        span = next(
-            (
-                s
-                for s in entry.spans
-                if s.platform == platform and s.conversation_id == conversation_id
-            ),
-            None,
-        )
-        if span is None:
-            return [], False
-        rows = await ledger.span_rows(span, limit=asked, before_ts=before_ts, as_of_ms=as_of_ms)
-        return _trim_window(rows, asked=asked)
-
-    return _thread_window
-
-
 def _make_load_transcript(deps):
     async def load_transcript(
         limit: int = LOAD_TRANSCRIPT_DEFAULT,
         before: str | None = None,
         thread: str | None = None,
     ) -> dict:
-        """Read this room's older messages or a Standing thread. Call this when
+        """Read this room's older messages. Call this when
         you need earlier context.
 
         You already have the most recent messages. Returns `messages`, oldest
         first, each with `sender`, `body` and `when` it was sent.
 
         Args:
-            thread: A thread id from Standing; reads its span in this room.
+            thread: Legacy thread handle. Returns unavailable.
             limit: How many messages to fetch (max 60).
             before: Read the messages sent before this Hong Kong time,
                 "YYYY-MM-DD HH:MM", or a date alone for the end of that day.
@@ -147,10 +83,12 @@ def _make_load_transcript(deps):
         """
         from nora.conversation.adapters.tools.query import _make__room_source_events
 
+        if thread is not None:
+            _record(deps.metrics, "load_transcript", "unavailable")
+            return {"status": "unavailable", "messages": [], "note": "Thread history was retired."}
         c = SimpleNamespace(
             limit=limit,
             before=before,
-            thread=thread,
             display_name=deps.display_name,
             media_join=deps.media_join,
             metrics=deps.metrics,
@@ -160,7 +98,6 @@ def _make_load_transcript(deps):
             room=deps.room,
             store=deps.store,
             _room_source_events=_make__room_source_events(deps),
-            _thread_window=_make__thread_window(deps),
             bound_conversation_id=deps.bound_conversation_id,
             now_fn=deps.now_fn,
         )
@@ -246,40 +183,18 @@ async def _load_transcript__window(c):
     c.asked = LOAD_TRANSCRIPT_DEFAULT
     try:
         c.asked = max(1, min(int(c.limit), LOAD_TRANSCRIPT_MAX))
-        if c.thread is not None:
-            c.rows, c.older = await c._thread_window(
-                c.thread,
-                platform=c.room.platform,
-                conversation_id=c.bound_conversation_id,
-                asked=c.asked,
-                before_ts=c.before_ts,
-                as_of_ms=c.as_of_ms,
-            )
-        else:
-            c.rows, c.older = await _read_window(
-                c.store,
-                conversation_id=c.bound_conversation_id,
-                asked=c.asked,
-                before_ts=c.before_ts,
-                as_of_ms=c.as_of_ms,
-            )
+        c.rows, c.older = await _read_window(
+            c.store,
+            conversation_id=c.bound_conversation_id,
+            asked=c.asked,
+            before_ts=c.before_ts,
+            as_of_ms=c.as_of_ms,
+        )
         c.rows = await _name_rows(c.persons, c.room, c.rows, platform=c.room.platform,
                                   conversation_id=c.bound_conversation_id)
     except Exception:
         log.exception("load_transcript failed")
         _record(c.metrics, "load_transcript", "unavailable")
-        if c.thread is not None:
-            return (
-                True,
-                None,
-                _memory_result(
-                    {
-                        "status": "unavailable",
-                        "messages": [],
-                        "note": ("The thread could not be read."),
-                    }
-                ),
-            )
         return (
             True,
             None,

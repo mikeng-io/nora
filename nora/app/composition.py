@@ -59,7 +59,6 @@ from nora.app.composition_pipelines import (
     build_graph_debrief,
     build_ingest,
     build_shared,
-    standing,
 )
 from nora.app.composition_platforms import (
     adapters,
@@ -496,12 +495,8 @@ async def _compose_dependencies(
     _stores_obs_stores = obs_stores(engine=engine)
     reasoning_strip_store = _stores_obs_stores.reasoning_strip_store
     tag_trace_store = _stores_obs_stores.tag_trace_store
-    _memory_stores = _memory_wire.stores(engine=engine)
-    standing_store = _memory_stores.standing_store
     _stores_observation = observation(engine=engine)
     observation_store = _stores_observation.observation_store
-    _memory_ledger = _memory_wire.ledger(engine=engine, metrics=metrics)
-    ledger_store = _memory_ledger.ledger_store
     _media_stores = _media_wire.stores(engine=engine, metrics=metrics)
     media_objects = _media_stores.media_objects
     _documents_stores = _documents_wire.stores(engine=engine)
@@ -545,9 +540,6 @@ async def _compose_dependencies(
         allowlist=allowlist, clock=clock, engine=engine, metrics=metrics
     )
     decision_log = _stores_decision_log.decision_log
-    _memory_notes = _memory_wire.notes(cfg=cfg, engine=engine)
-    memo_store = _memory_notes.memo_store
-    note_store = _memory_notes.note_store
     _voice_speech = _voice_wire.speech(
         _discord_bridge=_discord_bridge, allowlist=allowlist, cfg=cfg,
         engine=engine, metrics=metrics)
@@ -626,18 +618,14 @@ async def _compose_dependencies(
         computer_context=computer_context,
         documents_context=documents_context,
         engine=engine,
-        ledger_store=ledger_store,
         media_join=media_join,
-        memo_store=memo_store,
         metrics=metrics,
-        note_store=note_store,
         observation_store=observation_store,
         persons=persons_view,
         presence_reader=presence_reader,
         quote_window=quote_window,
         registry=registry,
         rosters=rosters,
-        standing_store=standing_store,
         subagents_context=subagents_context,
         tag_trace_store=tag_trace_store,
         unit_rooms=unit_rooms,
@@ -810,18 +798,18 @@ async def _compose_dependencies(
         fetch_client=fetch_client, geocoder=geocoder,
         giphy_client=giphy_client, image_generator=image_generator,
         image_refs_allowed=image_refs_allowed,
-        ledger_store=ledger_store, lineage=lineage, mcp_tool_groups=mcp_tool_groups,
+        lineage=lineage, mcp_tool_groups=mcp_tool_groups,
         media_descriptions=media_descriptions,
         media_join=media_join,
         media_objects=media_objects,
-        memo_store=memo_store,
+
         graph_retrieval=graph_reads,
         engagement_graph_retrieval=graph_reads,
         intention_admission=graph_debrief.admission,
         metrics=metrics,
         mobility=mobility,
         music_bridge=music_bridge,
-        note_store=note_store,
+
         observation_store=observation_store, persons=persons_view,
         presence_circles=presence_circles,
         presence_reader=presence_reader,
@@ -833,10 +821,10 @@ async def _compose_dependencies(
         room_management=room_commands,
         search_client=search_client,
         social_client=social_client,
-        standing_store=standing_store,
+
         steam_client=steam_client,
         subagent_desk=subagent_desk,
-        tool_call_log_store=tool_call_log_store,
+
         version_manifest=version_manifest,
         video_desk=video_desk,
         vision_client=vision_client, voice_presence=voice_presence,
@@ -894,13 +882,6 @@ async def _compose_dependencies(
         rosters=rosters,
         access=access,
     )
-    _pipelines_standing = await standing(
-        audit=audit, cfg=cfg, clock=clock, content_checks=content_checks,
-        dreamer_instructions=dreamer_instructions, ledger_store=ledger_store,
-        lineage=lineage, media_join=media_join, metrics=metrics,
-        standing_store=standing_store, tag_trace_store=tag_trace_store,
-    )
-    standing_replay_wiring = _pipelines_standing.debrief_wiring
     _pipelines_engagement = build_engagement(
         access=access,
         allowlist=allowlist,
@@ -912,7 +893,6 @@ async def _compose_dependencies(
         debounce=debounce,
         debrief_wiring=graph_debrief,
         graph=engagement_graph,
-        standing_replay_wiring=standing_replay_wiring,
         decision_log=decision_log,
         doctrine_store=doctrine_store,
         limits=limits,
@@ -1049,7 +1029,6 @@ async def _compose_dependencies(
         persons=persons_view,
         route_model=route_model,
         slots=slots,
-        standing_store=standing_store,
     )
     gate = _fire_gate.gate
     participation_trigger = _fire_gate.participation_trigger

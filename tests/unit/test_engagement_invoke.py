@@ -38,7 +38,6 @@ def _ctx(
     )
     return TagContext(
         tag_id=tag_id, message=msg, tagger=None, transcript=(), peer_card=(), started_at=0.0,
-        notes=notes,
     )
 
 
@@ -180,22 +179,7 @@ async def test_trace_attributes_are_computed_from_ctx_and_doctrine():
     attrs = runner.calls[0]["trace_attributes"]
     assert attrs == {
         "tag_id": "tag-42", "conversation_id": "g9", "doctrine_sha256": "cafef00d",
-        "note_index_entries": 0,
     }
-
-
-async def test_the_trace_reports_how_many_notes_the_turn_was_shown():
-    """The cold start is invisible in a trace without this. A turn that saw an
-    empty notebook and a turn where the tier was never wired produce the same
-    spans, the same tools and the same prompt shape."""
-    runner = _FakeRunner()
-    notes = tuple(
-        _note(f"n{i}") for i in range(3)
-    )
-
-    await _run(runner, ctx=_ctx(notes=notes))
-
-    assert runner.calls[0]["trace_attributes"]["note_index_entries"] == 3
 
 
 async def test_a_timeout_returns_not_ok_and_counts_invocation_timeout():

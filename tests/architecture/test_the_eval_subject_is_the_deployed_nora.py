@@ -88,14 +88,8 @@ shadow = false
 [participation]
 enabled = true
 [standing]
-enabled = true
-fold_batch = 40
 max_slot_hold_seconds = 150.0
 reasoning_effort = "none"
-[culture]
-enabled = true
-[notes]
-enabled = true
 [search]
 enabled = true
 [online]
@@ -192,7 +186,6 @@ def test_a_deployment_value_overrides_the_examples():
     them on, and the subject took the example's answer."""
     cfg = _eval_config()
     assert cfg["relevance_gate.enabled"] is True
-    assert cfg["standing.enabled"] is True
     assert cfg["llm.reasoning_effort"] == "none"
 
 

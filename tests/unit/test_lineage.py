@@ -294,7 +294,7 @@ def _ctx(room: RoomFacts, *, notes=(), shared=None,
     cid = sorted(room.ids)[0]
     msg = NormalizedMessage(room.platform, cid, "group", "s1", "someone", 1, "hi", {})
     return TagContext(
-        "tag-1", msg, None, (), (), 0.0, notes=tuple(notes), shared=shared,
+        "tag-1", msg, None, (), (), 0.0, shared=shared,
         lineage_room=lineage_room,
     )
 
@@ -404,26 +404,6 @@ def test_a_failing_section_is_dropped_and_the_rest_of_its_row_renders():
                       lineage_room=_in(B)))
     assert "where it had got to" in body
     assert "an option" not in body
-
-
-def test_shadow_computes_the_same_answer_and_renders_everything():
-    shadow = _ctx(A, notes=(NOTE_A, NOTE_B), lineage_room=_in(A, mode="shadow"))
-    off = _ctx(A, notes=(NOTE_A, NOTE_B))
-    assert _body(shadow) == _body(off)
-    assert "raised in the smaller room" in _body(shadow)
-
-
-def test_mode_off_computes_nothing():
-    """`off` is not a shadow that happens to render everything: no view is
-    built, so nothing is computed and nothing lands on the prefill span."""
-    from nora.agent.prefill import _lineage
-
-    off = _ctx(A, notes=(NOTE_B,), lineage_room=_in(A, mode="off"))
-    assert _lineage(off) is None
-    shadow = _ctx(A, notes=(NOTE_B,), lineage_room=_in(A, mode="shadow"))
-    view = _lineage(shadow)
-    assert view is not None and dict(view.withheld) == {"notes": 1}
-
 
 
 def test_a_rows_origin_may_be_a_room_key_or_a_bare_id():

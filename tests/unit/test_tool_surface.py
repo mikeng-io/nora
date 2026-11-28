@@ -377,7 +377,7 @@ async def test_a_name_off_the_shelf_is_left_unknown():
 
 # ---- the two Dreamer-only reads (DEC-246) -----------------------------------------
 
-_LOOP_ONLY = ("rollup_read", "standing_read", "social_read")
+_LOOP_ONLY = ("rollup_read", "social_read")
 
 
 def test_the_dreamer_loop_reads_are_never_a_tag_turns_tools():
@@ -386,7 +386,7 @@ def test_the_dreamer_loop_reads_are_never_a_tag_turns_tools():
     Discord room or a Signal one."""
     from nora.agent.surface import DREAMER_LOOP_TOOLS, TAG_READABLE_LOOP_TOOLS
 
-    assert set(_LOOP_ONLY) - {"standing_read"} == DREAMER_LOOP_TOOLS
+    assert set(_LOOP_ONLY) == DREAMER_LOOP_TOOLS
     loop_only = DREAMER_LOOP_TOOLS - TAG_READABLE_LOOP_TOOLS
     assert loop_only == {"social_read"}
     assert loop_only <= DREAMER_ONLY_TOOLS
@@ -415,12 +415,11 @@ def test_rollup_read_is_a_tag_turns_tool_and_no_other_occasions():
 def test_the_relevance_gates_capability_digest_does_not_offer_what_a_reply_cannot_do():
     from nora.agent.registry import ToolRegistry
 
-    wired = ToolRegistry(rollup=object(), standing_head=object(), graph_profiles=object(),
+    wired = ToolRegistry(rollup=object(), graph_profiles=object(),
                          social_items=object())
     digest = wired.capability_digest()
     assert "social_read" not in digest
     assert "rollup_read" in digest, "a tag turn can call it, so the gate may count on it"
-    assert "standing_read" in digest, "ledger render budgets have a reachable full read"
     assert "where_been" in digest, "positive control: the digest lists the tag path's reads"
 
 
@@ -428,11 +427,10 @@ def test_each_read_is_withheld_from_every_surface_until_its_read_is_wired():
     from nora.agent.registry import ToolRegistry
 
     assert set(_LOOP_ONLY) <= ToolRegistry()._withheld
-    both = {"rollup": object(), "standing_head": object(), "social_items": object()}
+    both = {"rollup": object(), "social_items": object()}
     for name, withheld in (
-        ("rollup", {"standing_read", "social_read"}),
-        ("standing_head", {"rollup_read", "social_read"}),
-        ("social_items", {"rollup_read", "standing_read"}),
+        ("rollup", {"social_read"}),
+        ("social_items", {"rollup_read"}),
     ):
         assert ToolRegistry(**{name: both[name]})._withheld & set(_LOOP_ONLY) == withheld
     assert not ToolRegistry(**both)._withheld & set(_LOOP_ONLY)
@@ -554,8 +552,3 @@ def test_a_relayed_turn_is_offered_no_send_to():
     assert "send_to" in _surface(fire_turn=True).admitted
     assert "send_to" not in _surface(fire_turn=True, relay_turn=True).admitted
     assert not ToolScope(platform="signal", relay=True).admits("send_to")
-
-
-def test_every_room_occasion_can_open_the_full_standing_ledger():
-    for tag_turn in (True, False):
-        assert ToolScope(platform="signal", tag_turn=tag_turn).admits("standing_read")

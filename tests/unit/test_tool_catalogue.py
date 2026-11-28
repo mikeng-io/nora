@@ -12,8 +12,7 @@ from __future__ import annotations
 import tiktoken
 
 from nora.agent.catalog.entries import NATIVE_TOOLS
-from nora.agent.catalog.groups import GRAPH_PASS_TOOLS, HOT_TOOLS, LOADER_TOOL
-from nora.agent.catalog.surface import on_memory_surface
+from nora.agent.catalog.groups import GRAPH_MEMORY_TOOLS, GRAPH_PASS_TOOLS, HOT_TOOLS, LOADER_TOOL
 from nora.agent.registry import ToolRegistry
 from nora.agent.surface import DREAMER_ONLY_TOOLS, ToolScope
 
@@ -76,7 +75,7 @@ def _tag_catalogue(platform: str, *, graph: bool = False) -> list[str]:
         line for line in _lines()
         if scope.admits(name := line.split(" — ")[0][2:])
         and name not in GRAPH_PASS_TOOLS
-        and on_memory_surface(name, graph=graph)
+        and (graph or name not in GRAPH_MEMORY_TOOLS)
     ]
 
 

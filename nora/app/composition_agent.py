@@ -104,16 +104,16 @@ def build_registry(
     computer_settings: Any, content_checks: Any, graph_profiles: Any, discord_presence: Any,
     document_service: Any, engine: Any, fetch_client: Any,
     geocoder: Any, giphy_client: Any, image_generator: Any, image_refs_allowed: Any,
-    ledger_store: Any, lineage: Any, mcp_tool_groups: Any, media_descriptions: Any,
-    media_join: Any, media_objects: Any, memo_store: Any,
-    metrics: Any, mobility: Any, music_bridge: Any, note_store: Any,
+    lineage: Any, mcp_tool_groups: Any, media_descriptions: Any,
+    media_join: Any, media_objects: Any,
+    metrics: Any, mobility: Any, music_bridge: Any,
     observation_store: Any, persons: Any, presence_circles: Any, presence_reader: Any,
     presence_store: Any, reaction_picker: Any,
     refresher: Any, relay: Any,
     route_client: Any, room_management: Any, search_client: Any, social_client: Any,
-    standing_store: Any, graph_retrieval: Any,
+    graph_retrieval: Any,
     engagement_graph_retrieval: Any, intention_admission: Any,
-    steam_client: Any, subagent_desk: Any, tool_call_log_store: Any, version_manifest: Any,
+    steam_client: Any, subagent_desk: Any, version_manifest: Any,
     video_desk: Any, vision_client: Any, voice_presence: Any, weather_client: Any,
 ) -> RegistryWiring:
     return RegistryWiring(
@@ -129,22 +129,22 @@ def build_registry(
         document_service=document_service, engine=engine,
         fetch_client=fetch_client, geocoder=geocoder, giphy_client=giphy_client,
         image_generator=image_generator, image_refs_allowed=image_refs_allowed,
-        ledger_store=ledger_store, lineage=lineage, mcp_tool_groups=mcp_tool_groups,
+        lineage=lineage, mcp_tool_groups=mcp_tool_groups,
         media_descriptions=media_descriptions, media_join=media_join,
-        media_objects=media_objects, memo_store=memo_store,
+        media_objects=media_objects,
         graph_retrieval=graph_retrieval,
         engagement_graph_retrieval=engagement_graph_retrieval,
         intention_admission=intention_admission,
         metrics=metrics, mobility=mobility, music_bridge=music_bridge,
-        note_store=note_store, observation_store=observation_store, persons=persons,
+        observation_store=observation_store, persons=persons,
         presence_circles=presence_circles, presence_reader=presence_reader,
         presence_store=presence_store,
         reaction_picker=reaction_picker,
         refresher=refresher, relay=relay,
         route_client=route_client, search_client=search_client,
-        social_client=social_client, standing_store=standing_store,
+        social_client=social_client,
         steam_client=steam_client, subagent_desk=subagent_desk,
-        tool_call_log_store=tool_call_log_store, version_manifest=version_manifest,
+        version_manifest=version_manifest,
         video_desk=video_desk, vision_client=vision_client, voice_presence=voice_presence,
         weather_client=weather_client
         )
@@ -156,18 +156,18 @@ def _build_tool_registry(
     reaction_picker: Any, steam_client: Any, cfg: Any, route_client: Any,
     computer_admission: Any, computer_sessions: Any, video_desk: Any, fetch_client: Any,
     persons: Any, computer_leases: Any, media_descriptions: Any, media_join: Any,
-    geocoder: Any, metrics: Any, note_store: Any, media_objects: Any,
+    geocoder: Any, metrics: Any, media_objects: Any,
     computer_dm_scope_for: Any, content_checks: Any, graph_profiles: Any,
     subagent_desk: Any, giphy_client: Any, discord_presence: Any, computer: Any,
-    presence_store: Any, mcp_tool_groups: Any, image_generator: Any, ledger_store: Any,
-    memo_store: Any, observation_store: Any,
+    presence_store: Any, mcp_tool_groups: Any, image_generator: Any,
+    observation_store: Any,
     graph_retrieval: Any, engagement_graph_retrieval: Any, intention_admission: Any,
     browser: Any, computer_context: Any, computer_settings: Any, presence_reader: Any,
     search_client: Any, engine: Any, version_manifest: Any,
     allowlist: Any, voice_presence: Any, relay: Any, weather_client: Any,
     vision_client: Any, refresher: Any, image_refs_allowed: Any, clock: Any,
-    document_service: Any, lineage: Any, blobs: Any, standing_store: Any,
-    tool_call_log_store: Any, social_client: Any,
+    document_service: Any, lineage: Any, blobs: Any,
+    social_client: Any,
     computer_exports: Any, mobility: Any, computer_events: Any, room_management: Any = None,
 ) -> Any:
     """The native tool surface's collaborator registry."""
@@ -196,13 +196,13 @@ def _build_tool_registry(
         content_checks=content_checks,
         **_memory_tool_args(
             graph_profiles=graph_profiles,
-            engine=engine, ledger_store=ledger_store, lineage=lineage,
-            memo_store=memo_store, graph_retrieval=graph_retrieval,
-            standing_store=standing_store,
+            engine=engine, lineage=lineage,
+            graph_retrieval=graph_retrieval,
+
         ),
         **_record_tool_args(
             cfg=cfg, engine=engine, observation_store=observation_store,
-            persons=persons, tool_call_log_store=tool_call_log_store,
+            persons=persons,
         ),
         **_media_tool_args(
             blobs=blobs, cfg=cfg, engine=engine, image_generator=image_generator,
@@ -226,9 +226,7 @@ def _build_tool_registry(
             steam_client=steam_client, voice_presence=voice_presence,
             weather_client=weather_client,
         ),
-        **_note_tool_args(
-            allowlist=allowlist, clock=clock, note_store=note_store,
-        ),
+        clock=clock, unit_for=_note_unit_of(allowlist),
         **_lookup_tool_args(
             cfg=cfg, fetch_client=fetch_client, giphy_client=giphy_client,
             music_bridge=music_bridge, reaction_picker=reaction_picker,
@@ -241,8 +239,8 @@ def _build_tool_registry(
 
 def _memory_tool_args(
     graph_profiles: Any, engine: Any,
-    ledger_store: Any, lineage: Any, memo_store: Any,
-    standing_store: Any, graph_retrieval: Any,
+    lineage: Any,
+    graph_retrieval: Any,
 ) -> Any:
     """The memory tier's tools: index search, graph verbs, standing, ledger."""
     import nora.memory as memory_area
@@ -257,18 +255,15 @@ def _memory_tool_args(
         # Standing head is Dreamer-only (`DREAMER_ONLY_TOOLS`); the Rollup read is also a tag
         # turn's (`TAG_READABLE_LOOP_TOOLS`), under the same lineage as the session's.
         "rollup": SqlRollupRead(engine),
-        "standing_head": standing_store,
-        "ledger": ledger_store,
         # Room profiles are read through the turn's graph scope.
         "graph_profiles": graph_profiles,
         # `memo_read` (DEC-306): the memo store, unit-resolved like the note reads.
-        "memos": memo_store,
     }
 
 
 def _record_tool_args(
     cfg: Any, engine: Any, observation_store: Any, persons: Any,
-    tool_call_log_store: Any,
+
 ) -> Any:
 
     """The Record surface's tools: queries, observations, social items, call log."""
@@ -292,7 +287,6 @@ def _record_tool_args(
         # The third consumer of `tool_call_log_store` (the first two are
         # EngagementPipeline/FirePath, via `deliver.build`) —
         # `recall_lookups`'s own collaborator.
-        "tool_call_log_store": tool_call_log_store,
     }
 
 
@@ -390,21 +384,6 @@ def _room_tool_args(
         "online": steam_client,
         "voice": voice_presence,
         "discord_presence": discord_presence,
-    }
-
-
-def _note_tool_args(allowlist: Any, clock: Any, note_store: Any) -> Any:
-    return {
-        "clock": clock,
-        "notes": note_store,
-        # RESOLVER, not a constant — see `build_tools`' own note. This deployment has two units
-        # (`ridgeline`, `friends`) that `policy.toml` says are never paired, so a fixed string
-        # would hand one room the other's notebook. `None` for a room policy cannot name, which…
-        "note_unit": _note_unit_of(allowlist),
-        # ONE resolver for every unit-keyed verb, so a verb outside the
-        # note tier does not silently depend on the NOTE tier being wired —
-        # two absences covering for each other.
-        "unit_for": _note_unit_of(allowlist),
     }
 
 

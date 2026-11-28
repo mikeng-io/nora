@@ -46,7 +46,6 @@ from nora.domain.observations import (
 from nora.domain.ports import EngageDecision, EngagementRequest
 from nora.engagement.context import (
     _OBSERVATION_TARGET_MAX,
-    _SOURCE_OBJECT_MAX,
     TranscriptInjection,
 )
 from nora.infra.transit import TransitClient
@@ -215,8 +214,6 @@ async def test_old_poll_pushed_beyond_40_messages_still_surfaces():
     assert "<source_object" in prompt and "closed" in prompt
     assert "p1" not in prompt
     assert "room-a" not in prompt and "acct" not in prompt
-
-
 
 
 async def test_vote_and_close_with_no_new_human_message_still_render():
@@ -402,8 +399,6 @@ class _CaptureAgent:
 
 async def _ret(value: Any) -> Any:
     return value
-
-
 
 
 async def test_the_wire_contract_refuses_a_wrong_scope_and_a_malformed_row():
@@ -1037,144 +1032,6 @@ async def _note_with_ref(
             platform="signal", conversation_id=room, handle=handle),))
 
 
-async def _newer_heads(
-    store: FakeObservationStore, n: int, *, prefix: str = "unrelated",
-) -> None:
-    for i in range(n):
-        assert await store.append(
-            observation=_obs(
-                kind="pin", ref=f"{prefix}-{i}", op="add",
-                payload=PinPayload(message=EditTarget(message_id=f"m-{i}")),
-                ago=1),
-            event_id=f"{prefix}-{i}", source_digest=f"{prefix}-{i}",
-        ) is not None
-
-
-async def _retained_source_view(
-    audit: FakeRecordStore, observations: Any, notes: Any, lineage: LineagePolicy | None = None,
-):
-    assembler = TranscriptInjection(
-        audit=audit, persons=PERSONS,
-        context_window=40, metrics=Metrics(), observations=observations,
-        notes=notes, policy=_policy(), lineage=lineage,
-    )
-    ctx = await assembler.assemble(request=_request())
-    msg = ctx.message
-    kept = await assembler._notes(msg)
-    retained, more = await assembler._retained_sources(
-        msg, kept, frozenset(obj.handle for obj in ctx.source_objects),
-    )
-    return dataclasses.replace(ctx, notes=kept, retained_sources=retained,
-                               retained_sources_more=more,
-                               lineage_room=await assembler._render_room(msg))
-
-
-async def test_a_retained_poll_survives_newer_unrelated_objects_in_the_assembler():
-    audit, store = FakeRecordStore(), FakeObservationStore()
-    await _seed(store)
-    await _newer_heads(store, _SOURCE_OBJECT_MAX + 1)
-    notes = InMemoryNoteStore()
-    await _note_with_ref(notes, _POLL_HANDLE)
-
-    ctx = await _retained_source_view(audit, store, notes)
-
-    assert len(ctx.source_objects) == _SOURCE_OBJECT_MAX
-    assert _POLL_HANDLE not in {o.handle for o in ctx.source_objects}
-    retained = [r for r in ctx.retained_sources if r.ref.handle == _POLL_HANDLE]
-    assert len(retained) == 1
-    assert retained[0].head is not None
-    assert "closed" in (retained[0].head.state or "")
-    assert retained[0].matter == "Dinner venue still open"
-    prompt = _prompt(ctx)
-    assert sum(f'object="{_POLL_HANDLE}"' in line
-               for line in prompt.splitlines() if line.startswith("<source_object")) == 1
-    assert 'matter="Dinner venue still open"' in prompt
-
-
-async def test_a_late_vote_refreshes_the_retained_polls_current_state():
-    """A vote landing after the note was written re-reads the object NOW:
-    the retained row carries the NEW tally, not the state the note saw."""
-    audit, store = FakeRecordStore(), FakeObservationStore()
-    await _seed(store)
-    await _newer_heads(store, _SOURCE_OBJECT_MAX + 1)
-    notes = InMemoryNoteStore()
-    await _note_with_ref(notes, _POLL_HANDLE)
-    assert await store.append(
-        observation=_obs(kind="poll", ref="p1", op="add",
-                         payload=PollPayload(voter_ref="v2", option_ref="s"),
-                         ago=1, position=4),
-        event_id="late-vote", source_digest="late-vote") is not None
-    await _newer_heads(store, _SOURCE_OBJECT_MAX + 1, prefix="after-vote")
-
-    ctx = await _retained_source_view(audit, store, notes)
-
-    retained = next(r for r in ctx.retained_sources
-                    if r.ref.handle == _POLL_HANDLE)
-    assert retained.head is not None
-    assert "sushi" in (retained.head.state or "")
-
-
-async def test_closing_the_poll_does_not_retire_the_matter():
-    """A poll `revise` → closed is source-object state only: the note stays
-    open in the index and its ref still resolves the now-closed head."""
-    audit, store = FakeRecordStore(), FakeObservationStore()
-    await _seed(store)
-    await _newer_heads(store, _SOURCE_OBJECT_MAX + 1)
-    notes = InMemoryNoteStore()
-    note = await _note_with_ref(notes, _POLL_HANDLE)
-
-    ctx = await _retained_source_view(audit, store, notes)
-
-    assert note.id in {n.id for n in ctx.notes}
-    assert any(r.ref.handle == _POLL_HANDLE and r.head is not None
-               and "closed" in (r.head.state or "")
-               for r in ctx.retained_sources)
-
-
-async def test_retiring_the_matter_retires_its_reference_but_keeps_history():
-    """`note_set_status`'s supersede removes the note from `standing` — its
-    ref resolves nowhere — while `read` still returns the retired row."""
-    audit, store = FakeRecordStore(), FakeObservationStore()
-    await _seed(store)
-    await _newer_heads(store, _SOURCE_OBJECT_MAX + 1)
-    notes = InMemoryNoteStore()
-    note = await _note_with_ref(notes, _POLL_HANDLE)
-    retired = await notes.supersede(
-        key="u1", target=note.id, replaced_by=None,
-        because="retired-closed", source=None, now_ms=NOW_MS,
-        expected_head=None)
-
-    assert retired == 1
-    ctx = await _retained_source_view(audit, store, notes)
-    assert ctx.retained_sources == ()
-    assert note.id not in {n.id for n in ctx.notes}
-    found = await notes.read(unit="u1", note_id=note.id)
-    assert found is not None
-    assert found[0].object_refs[0].handle == _POLL_HANDLE
-
-
-async def test_scope_invalid_and_unresolvable_refs_are_explicit_never_dropped():
-    """A ref naming ANOTHER room resolves nothing here (the boundary is the
-    scope check); a well-formed handle the store does not hold comes back
-    `unresolved`, not silently absent."""
-    audit, store = FakeRecordStore(), FakeObservationStore()
-    await _seed(store)
-    notes = InMemoryNoteStore()
-    await _note_with_ref(notes, _POLL_HANDLE, room="room-b")
-    ghost = object_handle("poll", "p-ghost", account_key="acct", thread="")
-    await _note_with_ref(notes, ghost)
-
-    ctx = await _retained_source_view(audit, store, notes)
-
-    assert not [r for r in ctx.retained_sources if r.ref.conversation_id == "room-b"]
-    unresolved = [r for r in ctx.retained_sources if r.head is None]
-    assert [r.ref.handle for r in unresolved] == [ghost]
-    prompt = _prompt(ctx)
-    assert 'unresolved="yes"' in prompt
-
-
-
-
 async def test_note_revision_replaces_object_refs_atomically():
     """`append_revision` with a supplied `object_refs` replaces the pointer
     set under the same CAS as the body; `None` keeps the existing set —
@@ -1200,36 +1057,6 @@ async def test_note_revision_replaces_object_refs_atomically():
     assert [r.handle for r in found[0].object_refs] == [other]
 
 
-
-
-
-
-async def test_a_withheld_note_does_not_leak_its_title_through_retained_sources():
-    audit, store, notes = FakeRecordStore(), FakeObservationStore(), InMemoryNoteStore()
-    await _seed(store)
-    await _newer_heads(store, 14)
-    note = await _note_with_ref(notes, _POLL_HANDLE)
-    notes.notes[note.id] = dataclasses.replace(note, established_in="another-room")
-    ctx = await _retained_source_view(
-        audit, store, notes,
-        lineage=LineagePolicy.from_policy(_policy(), mode="on"))
-    prompt = _prompt(ctx)
-    assert "Dinner Friday?" in prompt
-    assert "Dinner venue still open" not in prompt
-    assert not ctx.retained_sources
-
-
-async def test_note_read_returns_only_the_retained_handles():
-    from tests.test_note_tools import _tools as note_tools
-    notes = InMemoryNoteStore()
-    note = await _note_with_ref(notes, _POLL_HANDLE)
-    out = await note_tools(notes=notes, unit="u1", conversation_id=CID)["note_read"](
-        title=note.title)
-    assert out["status"] == "ok"
-    assert out["object_refs"] == [_POLL_HANDLE]
-    assert CID not in json.dumps(out)
-
-
 async def test_forwarded_metadata_detail_projects_its_source_reference():
     audit, store = FakeRecordStore(), FakeObservationStore()
     origin = "discord:generated-guild/generated-channel/generated-message"
@@ -1247,39 +1074,6 @@ async def test_forwarded_metadata_detail_projects_its_source_reference():
         scope=SourceScope(platform="discord", account_key="acct", conversation_id=CID),
         kind="message_metadata", object_ref="forwarded")
     assert head.state["fields"]["forward_origin"] == origin
-
-
-
-
-async def test_a_retained_signal_contact_keeps_top_level_values():
-    audit, store = FakeRecordStore(), FakeObservationStore()
-    rid = await store.append(
-        observation=_obs(kind="artifact", ref="shared-contact", op="create",
-                         payload=ArtifactPayload(artifact_kind="contact", metadata={
-                             "display_name": "Example Contact",
-                             "organization": "Example Org",
-                             "phones": ["extension 42"],
-                             "emails": ["shared@example.invalid"]}), ago=60),
-        event_id="contact-event", source_digest="contact-digest")
-    assert rid is not None
-    await _newer_heads(store, _SOURCE_OBJECT_MAX + 1)
-    handle = object_handle("artifact", "shared-contact", account_key="acct")
-    notes = InMemoryNoteStore()
-    await _note_with_ref(notes, handle)
-    ctx = await _retained_source_view(audit, store, notes)
-    retained = next(r for r in ctx.retained_sources if r.ref.handle == handle)
-    assert retained.head is not None
-    for value in ("Example Org", "extension 42", "shared@example.invalid"):
-        assert value in retained.head.state
-        assert value in _prompt(ctx)
-    tools = _tools(audit, store)
-    history = await _call(tools, "record_query", kind="artifact", object=handle,
-                          history=True)
-    as_of = await _call(tools, "record_query", kind="artifact", object=handle,
-                        at_id=rid)
-    assert history["status"] == as_of["status"] == "ok"
-    assert "extension 42" in json.dumps(history)
-    assert "shared@example.invalid" in json.dumps(as_of)
 
 
 @pytest.mark.parametrize("own", [True, False], ids=["own", "other"])

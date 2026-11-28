@@ -164,7 +164,6 @@ def wiring(tmp_path, restore_logging):
         persons=persons,
         deliverer=deliverer, metrics=metrics, room=room, question="邊個係阿豹",
         transit_source=_UNREACHABLE_TRANSIT, context_window=40,
-        notes=notes, note_unit=lambda _platform, _cid: UNIT,
     )
     return {"tools": {t.tool_name: t for t in tools}, "log": log, "metrics": metrics,
             "sink": sink, "notes": notes}
@@ -317,30 +316,6 @@ async def test_no_tool_line_carries_a_transcript_body_or_a_reply(wiring):
         assert secret not in text, secret
     # ...and the reply's LENGTH is there, which is the thing that is safe.
     assert _tool_lines(wiring["log"])[-1]["chars"] == 6
-
-
-async def test_no_tool_line_carries_what_a_memory_read_returned(wiring):
-    """The memory half of the same rule. What `note_read` hands the model is a
-    note body distilled from what people said, and it is as unsafe in a log nobody
-    scans as a transcript line is. Both halves are asserted: the RESULT carries the
-    marker (so the read really reached it) and the LOG does not (so absence means
-    something)."""
-    marker = "Miles is from Ridgeline and likes espresso"
-    await wiring["notes"].create(
-        unit=UNIT, title="Miles", description="where he is from",
-        uncertainty="not settled yet", closing_condition="somebody decides",
-        established_in=GROUP, body=f"## Decided\n## Open\n- {marker} [501]",
-        established_by="tag:miles", now_ms=1_770_000_000_000, anchor_date=20261011,
-    )
-
-    result = await _call(wiring["tools"]["note_read"], title="Miles")
-
-    assert result["status"] == "ok"
-    assert marker in json.dumps(result, ensure_ascii=False)
-    line = _tool_lines(wiring["log"])[-1]
-    assert line["tool"] == "note_read" and line["status"] == "ok"
-    text = wiring["log"].read_text()
-    assert "Ridgeline" not in text and "espresso" not in text
 
 
 # ---- the tag_id bridge -------------------------------------------------------

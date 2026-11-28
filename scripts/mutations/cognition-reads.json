@@ -98,41 +98,6 @@
     "target": "tests/integration/test_rollup_read.py::test_a_message_hidden_after_a_build_stops_counting_at_the_next_one"
   },
   {
-    "name": "standing_read: a section that fails lineage is shown",
-    "file": "nora/agent/standing_read.py",
-    "old": "    if allowed[HOLD_OPEN] and standing.hold_open is not None:\n",
-    "new": "    if standing.hold_open is not None:\n",
-    "target": "tests/infra/test_standing_read.py::test_a_section_that_fails_lineage_is_withheld_and_the_rest_is_shown"
-  },
-  {
-    "name": "standing_read: a surprise (exclude_persons) is not applied",
-    "file": "nora/agent/standing_read.py",
-    "old": "        exclude_persons=standing.exclude_persons,\n",
-    "new": "        exclude_persons=(),\n",
-    "target": "tests/infra/test_standing_read.py::test_a_surprise_withholds_every_section_at_once"
-  },
-  {
-    "name": "standing_read: a head whose chain does not end at it is given the newest revision's id",
-    "file": "nora/infra/sql/standing.py",
-    "old": "            standing=head, revision_id=str(newest.id) if matches and newest else None,\n",
-    "new": "            standing=head, revision_id=str(newest.id) if newest else None,\n",
-    "target": "tests/infra/test_standing_read.py::test_a_chain_that_does_not_end_at_the_head_gives_no_id_never_another_positions"
-  },
-  {
-    "name": "standing_read: the revision id is not exposed",
-    "file": "nora/agent/standing_read.py",
-    "old": "            **({\"revision\": head.revision_id} if head.revision_id is not None else {}),\n",
-    "new": "            \"revision\": None,\n",
-    "target": "tests/infra/test_standing_read.py::test_the_tool_shows_the_sections_and_the_revision_it_stands_at"
-  },
-  {
-    "name": "standing_read: a failing store reads as no position (nothing_found, not unavailable)",
-    "file": "nora/memory/adapters/tools/standing.py",
-    "old": "            log.exception(\"standing_read failed\")\n            _record(metrics, \"standing_read\", \"unavailable\")\n            return {\"status\": \"unavailable\", \"note\": _STANDING_OFF}\n",
-    "new": "            log.exception(\"standing_read failed\")\n            return {\"status\": \"nothing_found\", \"note\": _STANDING_NONE}\n",
-    "target": "tests/infra/test_standing_read.py::test_a_failing_store_is_unavailable_not_nothing_found"
-  },
-  {
     "name": "surface: a tag turn is offered the Dreamer loop's reads",
     "file": "nora/agent/surface.py",
     "old": "DREAMER_LOOP_TOOLS: frozenset[str] = frozenset({\"rollup_read\", \"social_read\"})",
@@ -157,13 +122,6 @@
     "name": "composition: the registry is not handed the Rollup read",
     "file": "nora/app/composition_agent.py",
     "old": "        \"rollup\": SqlRollupRead(engine),",
-    "new": "",
-    "target": "tests/test_composition.py::test_the_composed_registry_holds_the_rollup_read_and_the_standing_head"
-  },
-  {
-    "name": "composition: the registry is not handed the Standing head",
-    "file": "nora/app/composition_agent.py",
-    "old": "        \"standing_head\": standing_store,",
     "new": "",
     "target": "tests/test_composition.py::test_the_composed_registry_holds_the_rollup_read_and_the_standing_head"
   },
@@ -217,17 +175,17 @@
     "target": "tests/unit/test_rollup_read_interval.py::test_two_rooms_with_one_label_are_both_counted_never_one_overwriting_the_other"
   },
   {
-    "name": "standing_read: a missing revision renders as null (minor 1)",
-    "file": "nora/agent/standing_read.py",
-    "old": "            **({\"revision\": head.revision_id} if head.revision_id is not None else {}),\n",
-    "new": "            \"revision\": head.revision_id,\n",
-    "target": "tests/infra/test_standing_read.py::test_a_head_with_no_revision_omits_the_key_not_null"
-  },
-  {
     "name": "surface: a fire turn or a worker is offered rollup_read",
     "file": "nora/agent/surface.py",
     "old": "            return self.dreamer or (self.tag_turn and not self.worker)\n",
     "new": "            return True\n",
     "target": "tests/unit/test_tool_surface.py::test_rollup_read_is_a_tag_turns_tool_and_no_other_occasions"
+  },
+  {
+    "name": "A divergent legacy Standing head is given the latest revision id",
+    "file": "nora/infra/sql/standing.py",
+    "old": "            standing=head, revision_id=str(newest.id) if matches and newest else None,\n",
+    "new": "            standing=head, revision_id=str(newest.id) if newest else None,\n",
+    "target": "tests/infra/test_standing_revision.py::test_a_legacy_head_with_a_divergent_chain_has_no_revision_id"
   }
 ]

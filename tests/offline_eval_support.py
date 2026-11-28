@@ -351,8 +351,6 @@ def build_eval_tool_registry(
         transit=cast(Any, CannedTransitSource()),
         presence=CannedPresenceReader(),
         circles=(Circle(circle_id=EVAL_CIRCLE_ID, person_ids=frozenset({_EVAL_PERSON_ID})),),
-        notes=notes,
-        note_unit=(lambda _platform, _conv: note_unit) if notes else None,
         # The observation Record's reads (`poll_list`, `poll_read`,
         # `room_state_read`, `record_query`'s kind branch): wired whenever the
         # caller holds a store — production always does — so a live run's

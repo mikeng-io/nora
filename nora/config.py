@@ -32,14 +32,8 @@ from nora.domain.ports import (
     DREAM_MAX_STORE_CALLS_PER_TICK,
 )
 from nora.domain.standing import (
-    DEFAULT_STANDING_MAX_CHARS,
     DEFAULT_STANDING_STORE_TIMEOUT_SECONDS,
-    DEFAULT_WORKING_SET_MAX_CHARS,
-    DEFAULT_WORKING_SET_MAX_ITEMS,
     GRAPH_DEBRIEF_STORE_CALLS,
-    STANDING_BODY_CEILING_CHARS,
-    WORKING_SET_CEILING_BYTES,
-    WORKING_SET_CEILING_ITEMS,
 )
 
 # `nora.config` may import `nora.domain` — the forbidden direction is the
@@ -2239,154 +2233,18 @@ class OtpConfig(BaseModel):
 
 
 class StandingConfig(BaseModel):
-    """The debrief stage's gate and its numbers.
-
-    `NotesConfig`'s shape: the whole section is optional and every field
-    defaults, and `enabled` defaults to **False**, because a new subsystem does
-    not switch itself on. This one is the only background-ish tier whose work
-    happens **inside the live reply slot**, so switching it on lengthens a hold
-    that real people wait behind. Off, composition builds no `debrief.Wiring`,
-    the stage returns without awaiting, and `<standing>` never renders.
-
-    **`max_chars` is a knob AND the database has a ceiling, and they are two
-    different jobs.** This value is the operating cap the sink refuses at,
-    tunable without a migration, because the right size is a judgement about
-    prompts. `standing_body_fits_the_ceiling_check` is the absolute bound no
-    writer can pass, config included; a constraint is DDL and cannot be a knob.
-    **A `max_chars` above the ceiling refuses to START** (`policy.toml`'s own
-    shape) rather than failing at the first oversized fold.
-
-    **Why 1200.** Standing is injected on the volatile tail of EVERY turn, so
-    its size is a per-turn tax rather than a storage question: ~300 tokens in
-    English, but approaching 1200 tokens in a CJK-heavy room, and rooms are mixed
-    by default, so the cap is read against the denser case.
-
-    **`fold_batch = 200`, the batch size.** The fold reads
-    `since_including_nora(after_id=watermark, limit=fold_batch)`: the NEXT
-    fold_batch rows since the last fold's row-id watermark, so every fold resumes
-    where the last one ended. 200 is a batch size, not a recency window, so there
-    is deliberately NO cap relationship to `[store] context_window`.
-
-    **`timeout_seconds = 20`, and the number that matters is the SUM**, which is
-    why the sum is a startup GATE (`max_slot_hold_seconds` below) and not a
-    sentence here.
-
-    The LATENCY gate is a different reading: `nora_debrief_seconds` p95 <= 5s,
-    measured against the SECOND-QUEUED tag, because the cost never lands on the
-    person being reviewed (who already has their reply) and always lands on
-    whoever is behind them. `max_slot_hold_seconds` bounds the worst case; this
-    bounds the typical one. Raise either only against its own reading.
-
-    `model` empty means `[llm] model`, the same defaulting `[language]
-    exchange_model` uses. A separate name is available because the fold is a
-    different job from replying (one structured output, no tools, no audience)
-    and may want a cheaper or a more literal model.
-    """
+    """Model and store budget for the graph debrief."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    enabled: bool = False
-    max_chars: int = Field(default=DEFAULT_STANDING_MAX_CHARS, ge=1)
-    # `working_set`'s own two operating caps, `max_chars`'s siblings and the SAME
-    # two-layer split: these are the judgement call, tunable without a migration;
-    # `WORKING_SET_CEILING_ITEMS`/`_BYTES` (asserted below) are the DDL backstop no
-    # config value may pass. A found option gets its own budget rather than sharing
-    # `max_chars`' 1200 characters on purpose; see `DEFAULT_WORKING_SET_MAX_ITEMS`'s
-    # docstring.
-    working_set_max_items: int = Field(default=DEFAULT_WORKING_SET_MAX_ITEMS, ge=1)
-    working_set_max_chars: int = Field(default=DEFAULT_WORKING_SET_MAX_CHARS, ge=1)
-    # The fold's batch size. Every fold reads `since_including_nora(after_id=watermark,
-    # limit=fold_batch)`: the NEXT fold_batch rows since the last fold's watermark.
-    # It is a batch size, not a recency window, so it deliberately has NO cap
-    # relationship to `[store] context_window`.
-    fold_batch: int = Field(default=200, ge=1)
     timeout_seconds: float = Field(default=20.0, gt=0)
-    # The bound on the stage's TWO STORE CALLS, the read of the prior position and
-    # the write of the revised one. Both run while the per-conversation lock is HELD
-    # and `create_sql_engine` is a bare `create_async_engine` with no
-    # `command_timeout`, so without a bound a connection hanging mid-query during the
-    # post-reply fold would wedge that conversation indefinitely.
-    #
-    # Small on purpose: a single-row primary-key read and a single-row upsert against
-    # a local Postgres. If either takes seconds the database is in trouble and the
-    # honest answer is `unavailable`, not a longer wait held in front of the next
-    # person in the room.
     store_timeout_seconds: float = Field(
         default=DEFAULT_STANDING_STORE_TIMEOUT_SECONDS, gt=0)
     model: str = ""
-    # The fold's reasoning budget, DECLARED rather than inherited: the tag path
-    # passes `[llm] reasoning_effort` explicitly (`tier.reasoning_effort`), and so
-    # does this one.
-    #
-    # **The value is deliberately NOT argued here.** The fold is integration (read
-    # the prior position and the trace, write the revised one), not research, so a
-    # low or absent budget is plausible, but its effort is a measurement, not a
-    # setting. The decidable test is to run the same fold at several budgets over a
-    # FIXED SET OF REAL TRACES and score whether the revised position (a) preserves
-    # what the prior held and (b) integrates what the trace added; both are checkable
-    # by comparison, no judge needed. `tag_trace` is retained so that set exists.
-    #
-    # So this key makes that test RUNNABLE, and empty means "inherit `[llm]
-    # reasoning_effort`", so that switching the tier on changes one thing at a time.
-    # A closed set, unlike `[llm] reasoning_effort`'s bare `str`. The OpenAI client
-    # types this parameter as exactly these values, so a typo ("hgh") would reach the
-    # provider and come back a 400 DURING a fold, inside the conversation's slot.
-    # Typed, it is a boot failure instead, the refuse-to-start posture the rest of
-    # this section uses. `""` is the seventh legal value and means "inherit `[llm]`".
     reasoning_effort: Literal[
         "", "none", "minimal", "low", "medium", "high", "xhigh", "max"
     ] = ""
-
-
-    # Covers one pending retry and the current pass's debrief, including store waits.
     max_slot_hold_seconds: float = Field(default=100.0, gt=0)
-
-    @model_validator(mode="after")
-    def _max_chars_stays_under_the_database_ceiling(self) -> StandingConfig:
-        if self.max_chars > STANDING_BODY_CEILING_CHARS:
-            raise ValueError(
-                f"[standing] max_chars = {self.max_chars} is above the "
-                f"database ceiling of {STANDING_BODY_CEILING_CHARS} "
-                f"(standing_body_fits_the_ceiling_check). The ceiling is DDL "
-                f"and cannot be raised from config; every fold above it would "
-                f"be refused by Postgres at write time."
-            )
-        return self
-
-    @model_validator(mode="after")
-    def _working_set_caps_stay_under_the_database_ceiling(self) -> StandingConfig:
-        """`working_set_max_items`/`_max_chars`'s own version of the check
-        above — refuse to START rather than fail at the first oversized fold,
-        `StandingConfig`'s own posture applied to `working_set`'s pair of
-        operating caps instead of `body`'s one."""
-        if self.working_set_max_items > WORKING_SET_CEILING_ITEMS:
-            raise ValueError(
-                f"[standing] working_set_max_items = "
-                f"{self.working_set_max_items} is above the database ceiling "
-                f"of {WORKING_SET_CEILING_ITEMS} "
-                f"(standing_working_set_fits_the_ceiling_check). The ceiling "
-                f"is DDL and cannot be raised from config."
-            )
-        if self.working_set_max_chars > WORKING_SET_CEILING_BYTES:
-            raise ValueError(
-                f"[standing] working_set_max_chars = "
-                f"{self.working_set_max_chars} is above the database ceiling "
-                f"of {WORKING_SET_CEILING_BYTES} bytes "
-                f"(standing_working_set_fits_the_ceiling_check). The ceiling "
-                f"is DDL and cannot be raised from config."
-            )
-        return self
-
-
-class CultureConfig(BaseModel):
-    """Compatibility settings for the retired Culture fold."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    enabled: bool = False
-    wake_batch: int = Field(default=200, ge=1)
-    stale_seconds: int = Field(default=604_800, ge=3600)
-    batch_limit: int = Field(default=300, ge=1)
 
 
 class RetentionConfig(BaseModel):
@@ -2455,25 +2313,6 @@ class LessonsConfig(BaseModel):
     #: sentence in it; 2048 leaves a reasoning model room before it answers.
     check_timeout_seconds: float = Field(default=60.0, gt=0)
     check_max_tokens: int = Field(default=2048, ge=128)
-
-
-class NotesConfig(BaseModel):
-    """The note tier's gate. `enabled` defaults to **False**, because a new
-    subsystem does not switch itself on. On: the store is built, `<notes>`
-    renders whatever is standing on a tag turn and its tools are reachable;
-    the Cognition session (`[cognition]`) is the background writer that
-    creates, revises, retires and merges notes. Off: composition wires
-    `notes=None`, and no block is emitted.
-
-    **There is deliberately no render cap here.** A note silently missing from
-    the index is invisible to her, and invisible is indistinguishable from
-    absent (R-27); the prompt budget is paid by the per-entry caps in
-    `nora.domain.notes` and by retiring settled notes.
-    """
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    enabled: bool = False
 
 
 class XaiImageGenConfig(BaseModel):
@@ -3486,6 +3325,15 @@ class Config(BaseModel):
     def reject_retired_memory_names(cls, data: object) -> object:
         if not isinstance(data, dict):
             return data
+        for section in ("notes", "culture"):
+            if section in data:
+                raise ValueError(f"[{section}] has been removed; delete the section")
+        standing = data.get("standing")
+        if isinstance(standing, dict):
+            for key in ("enabled", "max_chars", "fold_batch",
+                        "working_set_max_items", "working_set_max_chars"):
+                if key in standing:
+                    raise ValueError(f"[standing] {key} has been removed; delete the key")
         renamed_keys = {"index": {"drain_seconds": "refresh_seconds"}}
         if "memory_index" in data:
             values = data["memory_index"]
@@ -3575,22 +3423,7 @@ class Config(BaseModel):
     # during the voice-note custody stage.
     speech: SpeechConfig = SpeechConfig()
     heartbeat: HeartbeatConfig = HeartbeatConfig()
-    # Optional and defaulted — see `NotesConfig`. Ships INERT
-    # (`enabled = false`); off, composition wires `notes=None` into
-    # `TranscriptInjection` and the `<notes>` block never renders. On, the
-    # index is read from `SqlNoteStore` on every tag — the Cognition session
-    # writes notes (`note_create`/`note_revise`/`note_set_status`/`note_merge`), so it
-    # is empty until it has.
-    notes: NotesConfig = NotesConfig()
-    culture: CultureConfig = CultureConfig()
     lessons: LessonsConfig = LessonsConfig()
-    # Ships INERT (`enabled = false`): off, composition builds no adaptor.
-    # Optional and defaulted — see `StandingConfig`. Ships INERT
-    # (`enabled = false`); off, composition builds no `debrief.Wiring`, the
-    # debrief stage returns without awaiting anything, and `<standing>` never
-    # renders. It is the one optional tier whose work runs INSIDE the live
-    # reply slot, so turning it on lengthens a hold real people wait behind —
-    # a decision, not a default.
     standing: StandingConfig = StandingConfig()
     # Optional and defaulted — see `MusicConfig`. Ships INERT
     # (`enabled = false`); off, `AdapterRegistry.from_config` builds no

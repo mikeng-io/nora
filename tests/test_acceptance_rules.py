@@ -506,62 +506,6 @@ async def test_r51_a_media_description_is_never_invented():
     assert len(store.comprehended) == 1, "the control must actually comprehend"
 
 
-def test_recall_lookups_is_offered_as_evidence_not_only_as_a_cache():
-    """DEC-112. `recall_lookups` is offered as her EVIDENCE, not only as a cache.
-    A `when` clause that sold the tool as a COST saving — «call this before
-    re-running…» — left it unread while she retracted sourced, correct answers as
-    老作 rather than read them back; being called a liar does not feel like being
-    about to re-search.
-
-    The evidence framing lives in the tool's SCHEMA docstring — the single source
-    of truth for what the tool is for — and the position lives in `conduct.md`.
-    Revert either and this goes red.
-    """
-    import inspect
-
-    from nora.memory.adapters.tools import meta as lookups_module
-
-    src = inspect.getsource(lookups_module)
-    # The merged docstring is the LLM-facing one (Strands reads the callable's
-    # docstring as the schema description). Assert the evidence framing
-    # survived into it: `actually`, `doubted`/`guessed`, and the retained
-    # cost framing `re-running`.
-    start = src.find("def recall_lookups(")
-    assert start != -1, "recall_lookups callable not found in meta.py"
-    open_q = src.find('"""', start)
-    close_q = src.find('"""', open_q + 3)
-    doc = src[open_q + 3:close_q].lower()
-
-    # The half DEC-92's prose could not reach: this is her EVIDENCE, not a cache.
-    assert "actually" in doc, doc
-    assert "doubted" in doc or "guessed" in doc, doc
-    # The original cost framing is kept, not replaced — re-running is still waste.
-    assert "re-running" in doc, doc
-
-    conduct = (ROOT / "nora" / "doctrine" / "rooms" / "conduct.md").read_text()
-    # The law half of «Being contradicted» lives in rooms/constraints.md.
-    law = (ROOT / "nora" / "doctrine" / "rooms" / "constraints.md").read_text()
-    section = law.split("# When you are told you are wrong", 1)[1].split("\n# ", 1)[0]
-    # The prose is hard-wrapped, so every phrase below spans a newline in the
-    # file; match on the sentence, not on the line breaks it happens to have.
-    contradicted = " ".join(section.split())
-
-    # Not remembering the checking is not evidence the checking did not happen.
-    assert ("Not remembering whether you checked is not the same as not having "
-            "checked") in contradicted, contradicted
-    # She has a record of what she checked, still in the log, and is told to
-    # read it before concluding she guessed.
-    assert ("the grounds you checked before may still be in the record"
-            ) in contradicted, contradicted
-    # Conceding a fault she does not have is a lie, not modesty.
-    assert "blame turned" in contradicted, contradicted
-
-    # The position must NOT name the tool: tools are described by their schemas,
-    # and an authored copy is a cache with no invalidation.
-    assert "recall_lookups" not in conduct
-    assert "recall_lookups" not in law
-
-
 # name -> the scope folder it ships under, same table as
 # tests/test_doctrine_content.py::_SCOPE_FOLDER.
 _DOCTRINE_SCOPE_FOLDER = {

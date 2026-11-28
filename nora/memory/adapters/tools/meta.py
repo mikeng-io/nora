@@ -1,102 +1,12 @@
 from __future__ import annotations
 
-import json
 import logging
-from datetime import UTC, datetime, timedelta
 
 from nora.agent.toolkit.results import _record
 from nora.domain.checkpoint import Checkpoint, parse_lists
 from nora.infra.releases import compare_versions
-from nora.memory.adapters.tools.shared import (
-    RECALL_LOOKUPS_DEFAULT,
-    RECALL_LOOKUPS_MAX,
-    RECALL_LOOKUPS_MAX_CHARS,
-    RECALL_LOOKUPS_WINDOW_DAYS,
-)
 
 log = logging.getLogger("nora.tools")
-
-
-def _make_recall_lookups(deps):
-    metrics = deps.metrics
-    tool_call_log_store = deps.tool_call_log_store
-    bound_conversation_id = deps.bound_conversation_id
-
-    async def recall_lookups(limit: int = RECALL_LOOKUPS_DEFAULT) -> dict:
-        """Pull back what you already looked up in THIS conversation, within the last 7 days.
-        Reach for it before re-running something that might already be known.
-
-        It is your record of what you actually checked. Reach for it too when
-        an earlier answer is doubted, or you can't tell if you checked or
-        guessed.
-
-        Returns `status`: ok (`entries`), nothing_found or unavailable.
-
-        Args:
-            limit: How many recent lookups to pull back, newest first.
-                Defaults to 10, and capped whatever you ask for.
-        """
-        if tool_call_log_store is None:
-            _record(metrics, "recall_lookups", "unavailable")
-            return {
-                "status": "unavailable",
-                "note": "I can't see what I looked up before, because that record "
-                "isn't set up here. Say so, and don't claim you never "
-                "checked.",
-            }
-        clamped = max(1, min(limit, RECALL_LOOKUPS_MAX))
-        since = datetime.now(UTC) - timedelta(days=RECALL_LOOKUPS_WINDOW_DAYS)
-        try:
-            rows = await tool_call_log_store.recent(
-                conversation_id=bound_conversation_id,
-                since=since,
-                limit=clamped,
-            )
-        except Exception:
-            log.exception("recall_lookups failed")
-            _record(metrics, "recall_lookups", "unavailable")
-            return {
-                "status": "unavailable",
-                "note": "I couldn't check what I've already looked up. Say so: "
-                "a failed read is not the same as never having checked.",
-            }
-        if not rows:
-            _record(metrics, "recall_lookups", "nothing_found")
-            return {
-                "status": "nothing_found",
-                "note": "Nothing is logged for this conversation in the last 7 "
-                "days, so there is no earlier lookup to point to.",
-            }
-        now_ts = datetime.now(UTC)
-        entries = [
-            {
-                "tool_name": r.tool_name,
-                "tool_input": r.tool_input,
-                "tool_result": r.tool_result,
-                "age_seconds": (now_ts - r.created_at).total_seconds(),
-            }
-            for r in rows
-        ]
-        # A total-character budget on top of the row-count cap above — rows
-        # come back newest-first, so stopping once the budget is spent drops
-        # the OLDEST (least-relevant) entries, never the newest.
-        budgeted: list[dict] = []
-        spent = 0
-        truncated = False
-        for entry in entries:
-            entry_chars = len(json.dumps(entry["tool_result"]))
-            if budgeted and spent + entry_chars > RECALL_LOOKUPS_MAX_CHARS:
-                truncated = True
-                break
-            spent += entry_chars
-            budgeted.append(entry)
-        _record(metrics, "recall_lookups", "ok", count=len(budgeted))
-        result: dict = {"status": "ok", "entries": budgeted}
-        if truncated:
-            result["truncated"] = True
-        return result
-
-    return recall_lookups
 
 
 def _make_version_list(deps):

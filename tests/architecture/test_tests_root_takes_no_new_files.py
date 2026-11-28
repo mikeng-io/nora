@@ -97,7 +97,6 @@ _ALLOWED: frozenset[str] = frozenset(
         "test_migration.py",
         "test_model_per_tag.py",
         "test_models.py",
-        "test_note_tools.py",
         "test_output_contracts.py",
         "test_parking_client.py",
         "test_peer_history.py",

@@ -6,15 +6,9 @@ from typing import Literal
 
 from nora.agent.rollup_read import iso as rollup_iso
 from nora.agent.rollup_read import parse_interval, render_row, visible_rows
-from nora.agent.standing_ledger import ledger_permits
-from nora.agent.standing_read import render_standing
 from nora.agent.toolkit.results import _ROLLUP_TIME, _record
 from nora.agent.toolkit.rooms import _ambiguous_person
 from nora.agent.turn_recording import record_requirement
-from nora.domain.lineage import (
-    ROW,
-    room_key,
-)
 from nora.domain.models import (
     PersonRef,
 )
@@ -32,9 +26,6 @@ from nora.memory.adapters.tools.shared import (
     _ROLLUP_SUBJECT,
     _ROLLUP_UNLABELLED,
     _ROLLUP_WITHHELD,
-    _STANDING_NONE,
-    _STANDING_OFF,
-    _STANDING_WITHHELD,
 )
 
 log = logging.getLogger("nora.tools")
@@ -92,121 +83,6 @@ def _make_rollup_read(deps):
         return None  # type: ignore[return-value]
 
     return rollup_read
-
-
-def _make_standing_read(deps):
-    ledger = deps.ledger
-    metrics = deps.metrics
-    room = deps.room
-    standing_head = deps.standing_head
-    _lineage_target = deps._lineage_target
-    _rollup_name = _make__rollup_name(deps)
-    bound_conversation_id = deps.bound_conversation_id
-
-    async def standing_read() -> dict:
-        """Read Standing and its history. Call this when you need the full ledger.
-
-        Returns the legacy sections and their revision, plus all visible ledger
-        entries, each with its revision and history. Statuses: ok, nothing_found, unavailable.
-        """
-        if standing_head is None:
-            _record(metrics, "standing_read", "unavailable", reason="unwired")
-            return {"status": "unavailable", "note": _STANDING_OFF}
-        bound = await _lineage_target("standing_read")
-        if bound is None:
-            return {"status": "unavailable", "note": _STANDING_OFF}
-        target = bound[0]
-        try:
-            head = await standing_head.read_head(
-                platform=room.platform,
-                conversation_id=bound_conversation_id,
-            )
-        except Exception:
-            log.exception("standing_read failed")
-            _record(metrics, "standing_read", "unavailable")
-            return {"status": "unavailable", "note": _STANDING_OFF}
-        shown, withheld = (None, 0) if head is None else render_standing(head, target)
-        shown = shown or {}
-        if ledger is not None and target.room is not None:
-            try:
-                entries = await ledger.read(
-                    unit=target.room.unit,
-                    platform=room.platform,
-                    conversation_id=bound_conversation_id,
-                )
-                visible = [e for e in entries if ledger_permits(e, target)]
-                withheld += len(entries) - len(visible)
-                if visible:
-                    for e in visible:
-                        record_requirement(
-                            DisclosureRequirement(
-                                room_key(e.platform, e.conversation_id),
-                                e.lineage.section(ROW),
-                                e.exclude_persons,
-                            )
-                        )
-                    shown["entries"] = [
-                        {
-                            "id": e.id,
-                            "kind": e.kind,
-                            "scope": e.scope,
-                            "status": e.status,
-                            "subject": e.subject,
-                            "body": e.body,
-                            "revision": e.revision,
-                            "opened_at": rollup_iso(e.opened_at),
-                            "last_revised_at": rollup_iso(e.last_revised_at),
-                            "last_moved_at": (
-                                rollup_iso(e.last_moved_at) if e.last_moved_at is not None else None
-                            ),
-                            "closed_at": rollup_iso(e.closed_at)
-                            if e.closed_at is not None
-                            else None,
-                            "note_id": e.note_id,
-                            "owed_to": [
-                                "the room" if p == "room" else _rollup_name(p) for p in e.owed_to
-                            ],
-                            "due_at": rollup_iso(e.due_at) if e.due_at is not None else None,
-                            "note_ids": list(e.note_ids),
-                            "decision_ids": list(e.decision_ids),
-                            "history": [
-                                {
-                                    "revision": h.revision,
-                                    "subject": h.subject,
-                                    "body": h.body,
-                                    "status": h.status,
-                                    "scope": h.scope,
-                                    "last_revised_at": rollup_iso(h.last_revised_at),
-                                }
-                                for h in await ledger.history(unit=e.unit, kind=e.kind, id=e.id)
-                                if ledger_permits(h, target)
-                            ],
-                        }
-                        for e in visible
-                    ]
-            except Exception:
-                log.exception("standing ledger read failed")
-                _record(metrics, "standing_read", "unavailable")
-                return {"status": "unavailable", "note": _STANDING_OFF}
-        if not shown:
-            _record(metrics, "standing_read", "nothing_found", withheld=withheld)
-            return {
-                "status": "nothing_found",
-                "note": _STANDING_WITHHELD if withheld else _STANDING_NONE,
-            }
-        _record(
-            metrics,
-            "standing_read",
-            "ok",
-            withheld=withheld,
-            revision=head is not None and head.revision_id is not None,
-        )
-        result: dict = {"status": "ok", **shown}
-        if withheld:
-            result["note"] = _STANDING_WITHHELD
-        return result
-
-    return standing_read
 
 
 async def _rollup_read__fetch(c):
@@ -328,5 +204,3 @@ async def _rollup_read__finish(c):
         c.result["note"] = " ".join(c.notes)
     return (True, None, c.result)
     return (False, None, None)
-
-

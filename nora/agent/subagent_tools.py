@@ -61,8 +61,8 @@ NOT_LOOKUPS: frozenset[str] = frozenset({
     "instagram_read", "instagram_search", "x_read", "x_search",
     "linkedin_read", "linkedin_search",
     # reads that belong to a live turn or to a Dreamer pass
-    "load_tools", "recall_lookups", "music_status", "search_gifs",
-    "computer_session_list", "rollup_read", "standing_read",
+    "load_tools", "music_status", "search_gifs",
+    "computer_session_list", "rollup_read",
     # Nora's own handle on background jobs: a worker that held it would recurse
     "subagent_list", "subagent_read",
 })

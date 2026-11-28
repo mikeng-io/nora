@@ -851,8 +851,6 @@ async def test_a_fire_turn_for_an_unwired_platform_fails_rather_than_speaking(
 # ---------------------------------------------------------------------------
 
 
-
-
 async def test_unregistered_kind_fails_closed(
     persons: Persons, doctrine_store, metrics: Metrics,
 ) -> None:
@@ -887,31 +885,11 @@ async def test_a_reminder_row_has_no_occasion_and_fails_closed(
 # --- <standing> on the fire path --------------------------------------
 
 
-
-
-
-
-
 # ---------------------------------------------------------------------------
 # The note tier on the fire path
 # ---------------------------------------------------------------------------
 # The participation determination grounds on «transcript + standing/notes»;
 # these pin the read itself, the fail-soft accounting, and the wiring-gap state.
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 # ---------------------------------------------------------------------------
@@ -2154,12 +2132,6 @@ async def test_a_decision_log_that_is_down_never_fails_a_fire_turn(
     ) == 1
 
 
-
-
-
-
-
-
 def _decision_policy() -> Policy:
     """A two-room unit: the Signal room the window closed in, and the
     Discord HOME room a proactive row fires into.
@@ -2418,8 +2390,6 @@ async def test_a_fire_turn_publishes_the_heartbeat_deadline_not_the_loops(
     assert seen and seen[0] is not None and 6.0 < seen[0] <= 7.0, seen
 
 
-
-
 @pytest.mark.parametrize("location", [True, False])
 async def test_a_fire_turn_carries_its_rooms_location_trust_into_where_is(
     persons: Persons, doctrine_store, metrics: Metrics, location: bool,
@@ -2618,8 +2588,6 @@ async def test_a_proactive_act_is_withheld_when_the_whole_read_failed(
 async def test_proactive_event_offers_graph_reads_and_excludes_legacy_tools(
     kind, persons, doctrine_store, metrics,
 ):
-    from nora.testing.memo_store import InMemoryMemoStore
-    from nora.testing.note_store import InMemoryNoteStore
 
     room = Conversation(
         platform="signal", ids=frozenset({"conv-1"}), persons=None,
@@ -2636,8 +2604,6 @@ async def test_proactive_event_offers_graph_reads_and_excludes_legacy_tools(
         )
     calls: list[dict] = []
     registry = ToolRegistry(
-        notes=InMemoryNoteStore(), memos=InMemoryMemoStore(), standing_head=object(),
-        note_unit=lambda *_: "friends",
         graph_retrieval=object(), engagement_graph_retrieval=object(), intention_admission=object(),
     )
     path = _fire_path(

@@ -9,17 +9,15 @@ tuple would make `reply_to=2` quote an older, unseen row.
 from __future__ import annotations
 
 from nora.agent.registry import ToolRegistry
+from nora.agent.room import Room
 from nora.domain.models import DeliveryStatus, TranscriptRow
 from nora.obs.metrics import Metrics
+from nora.persons import Persons
+from nora.testing import FakeRecordStore
 from tests.fakes import SinkSender
-from tests.test_note_tools import (
-    GROUP,
-    MILES,
-    NOW,
-    _FakePersons,
-    _NullStore,
-    _room,
-)
+
+GROUP = "fixture-room"
+NOW = 1_788_000_000_000
 
 
 def _row(i: int) -> TranscriptRow:
@@ -49,10 +47,12 @@ class _Deliverer(SinkSender):
 
 def _tools(deliverer=None) -> dict:
     registry = ToolRegistry()
+    persons = Persons({}, {})
     specs = registry.specs(
-        store=_NullStore(), conversation_id=GROUP, conversation_type="group",
-        persons=_FakePersons(MILES),
-        deliverer=deliverer or _Deliverer(), metrics=Metrics(), room=_room(),
+        store=FakeRecordStore(), conversation_id=GROUP, conversation_type="group",
+        persons=persons,
+        deliverer=deliverer or _Deliverer(), metrics=Metrics(),
+        room=Room(platform="signal", conversation_id=GROUP, roster_source=None, persons=persons),
         transcript=SHOWN, lookup_window=READ,
     )
     return {spec.name: spec.call for spec in specs}

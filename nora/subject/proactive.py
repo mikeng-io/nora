@@ -13,7 +13,6 @@ from nora.domain.rollup import room_key
 from nora.domain.ticks import tick_of_at, tick_start_ms
 from nora.infra.sql import create_sql_engine
 from nora.infra.sql.cognitive_graph_schema import GRAPH_STIMULUS_CLAIM
-from nora.infra.sql.notes import SqlNoteStore
 
 from .obtain import Subject
 
@@ -26,9 +25,9 @@ class ActPass:
 
 
 async def owe(
-    subject: Subject, *, note_title: str, intent: str, decided_hours_ago: float = 6.0,
+    subject: Subject, *, intent: str, decided_hours_ago: float = 6.0,
 ) -> str:
-    """Seed the due request in the case's room with its existing note premise."""
+    """Seed the due request in the case's room."""
     platform, room = subject.room
     if not subject.deps.config_reload.policy.proactive_allowed(
         platform=platform, conversation_id=room,
@@ -38,9 +37,6 @@ async def owe(
     due = datetime.fromtimestamp(tick_start_ms(tick_of_at(now)) / 1000, UTC)
     engine = create_sql_engine(subject.database_url)
     try:
-        notes = await SqlNoteStore(engine).standing(unit=subject.unit)
-        if sum(note.title == note_title for note in notes) != 1:
-            raise LookupError("The act case must name one open note in its unit")
         async with engine.begin() as conn:
             return await memory.wire.seed_scheduled_intention(
                 conn, unit=subject.unit, room=room_key(platform, room),

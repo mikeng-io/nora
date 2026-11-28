@@ -146,8 +146,8 @@ def test_every_declared_tool_is_built(wiring):
         "poll_list", "poll_read", "room_state_read",
         # Built here like every closure; only a Dreamer loop is OFFERED them
         # (`nora.agent.surface.DREAMER_LOOP_TOOLS`).
-        "rollup_read", "standing_read", "social_read", "group_members",
-        "lookup_person", "recall_lookups",
+        "rollup_read", "social_read", "group_members",
+        "lookup_person",
         "calculate",
         "transit",
         "route",
@@ -211,9 +211,9 @@ def test_every_declared_tool_is_built(wiring):
         # Running build context plus public release metadata and notes.
         "version_list", "version_read",
         # The note tier's four verbs.
-        "note_read", "note_search",
+
         # DEC-306: one kept memo of the unit.
-        "memo_read",
+
     }
 
 
@@ -1682,55 +1682,7 @@ async def test_send_reply_still_says_refused_when_a_guard_stops_it(wiring):
     assert capped.held_count == 0
 
 
-def test_the_note_schemas_do_not_teach_her_a_phrase_to_say_out_loud(wiring):
-    """Asked what she changed, she must not answer by explaining the mechanism
-    (that the room's 「open note」 was still unsettled). That phrase is nobody's
-    but the tool layer's, and a schema is the surface the model matches on
-    (DEC-78 found a schema-token change moving routing 0/16 → 16/16 where an
-    always-on doctrine maxim moved nothing). A ban in `voice.md` would compete
-    with the phrase in her own tool schema, so the phrase is absent from the
-    schema instead. The tools' CONTRACT is untouched — the three states, the
-    read-before-write latch, the argument descriptions — and this pins the
-    vocabulary.
-
-    **Only the phrase moves, and the replacement stays concrete**: a docstring
-    that opens on a dangling «one of these» costs legibility for nothing. «a
-    note's content» drops the phrase and keeps the referent.
-
-    Asserted on `tool_spec["description"]`, which is what Strands actually
-    sends, not on `__doc__`.
-    """
-    def described(name: str) -> str:
-        return " ".join(wiring["tools"][name].tool_spec["description"].split()).lower()
-
-    for name in ("note_read", "note_search"):
-        assert "open note" not in described(name), (
-            f"{name}'s schema teaches «open note» — the tool layer's phrase, "
-            "not the room's, and she says what her schemas call things."
-        )
-
-
 # ---- a note title survives the trip through the index -----------------------
-
-
-def test_a_note_handle_round_trips_through_an_escaped_index():
-    """The title IS the handle, and every index escapes what it renders (R-13):
-    `note_render` and the proactive `<open_notes>` both put it through
-    `escape`. So a note called «Dinner & drinks» must not reach the model as
-    «Dinner &amp;amp; drinks»: `note_read` tells her to
-    type the title back "exactly as `<notes>` shows it", and the stored title
-    has no entity in it.
-
-    The cost of a refused call is more than a retry. A proactive `remind` written without
-    its `note_id` falls through `ProactiveScreen` to the flag-only path, so the
-    cancellation that fires when a note has moved on never runs — the decision
-    becomes unlinkable rather than merely retried.
-    """
-    from nora.domain.prompt import escape
-    from nora.language.note_render import render_notes  # noqa: F401  (the index)
-
-    for title in ("Dinner & drinks Saturday", "Trip <Sep> plan", "A & B > C"):
-        assert note_handle(escape(title)) == note_handle(title), title
 
 
 def test_the_handle_still_ignores_case_and_surrounding_space():

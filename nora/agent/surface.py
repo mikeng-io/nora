@@ -32,7 +32,6 @@ from typing import Any
 
 from opentelemetry import baggage
 
-from nora.agent.catalog.groups import LEGACY_ENGAGEMENT_TOOLS
 from nora.obs.tracing import record_eval_event
 
 #: The music verbs. Discord-only by construction — their bodies gate on the
@@ -122,8 +121,6 @@ class ToolScope:
     engagement: bool = False
 
     def admits(self, name: str) -> bool:
-        if self.engagement and name in LEGACY_ENGAGEMENT_TOOLS:
-            return False
         if self.grant is not None and name not in self.grant:
             return False
         if name in TAG_ONLY_TOOLS and not self.tag_turn:
