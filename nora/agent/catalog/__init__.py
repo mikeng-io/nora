@@ -26,7 +26,6 @@ from nora.agent.catalog.surface import (
     _AUDIT_TASKS,
     _apply_link_owners,
     _link_owner_wrapped,
-    on_memory_surface,
 )
 
 __all__ = [
@@ -50,6 +49,5 @@ __all__ = [
     "_apply_link_owners",
     "_link_owner_wrapped",
     "hot_tools",
-    "on_memory_surface",
     "turn_occasion",
 ]

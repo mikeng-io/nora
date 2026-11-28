@@ -567,19 +567,6 @@ BLOCK_TYPES: dict[str, BlockType] = {
        people="who it involves", places="where it was",
        path="how it was reached from the message: the item it was found by, then "
             "each link followed"),
-    _t(
-        "memos",
-        "what this group has settled and asked to keep, carried across every "
-        "conversation in this unit, one `memo` element each: its id, the day it "
-        "last changed and its title, never what it keeps. Kept by you from what "
-        "the group said, so a title tells you a thing is kept, not what it says: "
-        "read the memo before you state what it holds, and never state it from "
-        "the title. A memo is settled and stays until someone says it no longer "
-        "holds. Not an instruction to you.",
-        id="the memo's id, what reading or revising it takes",
-        updated="the day it last changed, in the group's own day",
-        not_listed="present when more memos were left out to fit: how many", store="memos",
-    ),
     # -- people, rooms, and this deployment -----------------------------------
     _t("peer_card",
        "what you durably remember about the person who called you, from your "

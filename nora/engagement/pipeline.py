@@ -123,7 +123,7 @@ from nora.tag import Debounce
 from .graph_context import EngagementGraph
 from .mentions import MentionRenderer
 from .slots import ConversationSlots, Key
-from .stages import admission, command, debrief, deliver, graph_debrief, indicate, invoke
+from .stages import admission, command, deliver, graph_debrief, indicate, invoke
 from .stages.admission import Admission
 from .stages.indicate import Indicator
 from .stages.invoke import AgentRunner
@@ -218,7 +218,6 @@ class EngagementPipeline:
         reasoning_strip_store: Any = None,
         tag_trace_store: Any = None,
         debrief_wiring: graph_debrief.Wiring | None = None,
-        standing_replay_wiring: debrief.Wiring | None = None,
         decisions: DecisionLogRecorder | None = None,
         clock: Callable[[], datetime] | None = None,
         room_commands: Any = None,
@@ -286,7 +285,6 @@ class EngagementPipeline:
         self._reasoning_strip_store = reasoning_strip_store
         # Production retention is unconditional; absent offline stores skip writes in finally.
         self._tag_trace_store = tag_trace_store
-        self._standing_replay_wiring = standing_replay_wiring
         self._debrief_wiring = debrief_wiring
         # R-10/R-30: shared with FirePath, keyed by platform/room; every exit releases and drains.
         self._slots = slots

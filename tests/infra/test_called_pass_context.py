@@ -25,6 +25,7 @@ from tests.infra.test_pass_anchors import pointers
 from tests.infra.test_pass_assembly import _counted
 from tests.infra.test_retrieval_scope import PERSON, ROOM, UNIT, write_edge
 from tests.infra.test_retrieval_scope import scenario as scope_scenario
+from tests.infra.test_situation_staleness import intention
 from tests.unit.test_engagement_pipeline import _msg, _request
 
 scenario = scope_scenario
@@ -163,3 +164,44 @@ async def test_a_called_pass_carries_the_graph_lesson_and_no_legacy_block(scenar
     assert len(lessons) == 1 and "fixture-lesson" in (lessons[0].text or "")
     assert "fixture-lesson" in shown
     assert "<lessons" not in rendered.replace("<graph_lessons", "")
+
+
+async def test_called_uses_graph_standing_and_keeps_room_situations(scenario, called):
+    access, ctx, row, now = called
+    await intention(scenario, "unit-standing", origin_room=None, asserted_at=now)
+    await scenario.claim("room-situation", part="situation", asserted_at=now)
+    await write_edge(scenario, "room-situation", "room-here", "about")
+    assembler, _retrieval = _counted(scenario)
+
+    _, rendered, shown = await _prompt(
+        EngagementGraph(access, wire.message_graph_ids(scenario.engine), assembler),
+        ctx, row, now,
+    )
+
+    blocks = elements(rendered)
+    standing = blocks.findall("graph_standing")
+    assert len(standing) == 1
+    assert "unit-standing" in standing[0].text
+    assert "room-situation" in standing[0].text
+    assert {"unit-standing", "room-situation"} <= shown
+    assert not {"notes", "memos", "standing"} & {block.tag for block in blocks}
+
+
+@pytest.mark.parametrize("scope", [
+    {"unit": "different-unit"},
+    {"excluded_identities": [PERSON]},
+], ids=["unit-boundary", "excluded-identity"])
+async def test_called_standing_omits_unreadable_unit_intentions(scenario, called, scope):
+    access, ctx, row, now = called
+    await intention(scenario, "visible-standing", origin_room=None, asserted_at=now)
+    await intention(scenario, "unreadable-standing", origin_room=None, asserted_at=now, **scope)
+    assembler, _retrieval = _counted(scenario)
+
+    _, rendered, shown = await _prompt(
+        EngagementGraph(access, wire.message_graph_ids(scenario.engine), assembler),
+        ctx, row, now,
+    )
+
+    assert "visible-standing" in elements(rendered).find("graph_standing").text
+    assert "unreadable-standing" not in rendered
+    assert "unreadable-standing" not in shown

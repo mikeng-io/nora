@@ -5,15 +5,10 @@ from datetime import datetime
 from typing import Any, Protocol
 from uuid import UUID
 
-from nora.domain.notes import (
-    Note,
-    NoteRevision,
-)
 from nora.domain.record_query import RecordHit, RecordQuery
 from nora.domain.rollup_read import RollupRead, RollupReadQuery
 from nora.domain.self_presence import UnitRooms
 from nora.domain.social_stream import RecordedItem
-from nora.domain.standing import StandingHead
 
 
 class RoomDirectory(Protocol):
@@ -123,94 +118,3 @@ class SocialItemsSource(Protocol):
         end: datetime,
         limit: int,
     ) -> list[RecordedItem]: ...
-
-
-class StandingHeadSource(Protocol):
-    """The Standing head `standing_read` shows, with its revision id
-    (`nora.infra.sql.standing.SqlStandingStore.read_head`)."""
-
-    async def read_head(
-        self,
-        *,
-        platform: str,
-        conversation_id: str,
-    ) -> StandingHead | None: ...
-
-
-class NoteCollaborator(Protocol):
-    """Structural type for the note store — `nora.infra.sql.notes.SqlNoteStore`
-    in production, `nora.testing.note_store.InMemoryNoteStore` in tests.
-
-    A local Protocol keeps the layered import boundary:
-    `nora.agent` may not import `nora.infra` under the layered import contract,
-    and `nora.testing` is not a production dependency either — so this module
-    can only name the SHAPE. There is no port in `nora.domain.ports` to import
-    instead; the two implementations share
-    `tests/contract/test_note_store_contract.py`, which is what actually holds
-    them to one behaviour. A read by title resolves through Standing and
-    follows a merged title to its successor.
-    """
-
-    async def standing(self, *, unit: str) -> tuple[Note, ...]: ...
-
-    async def read(
-        self,
-        *,
-        unit: str,
-        note_id: str,
-    ) -> tuple[Note, NoteRevision] | None: ...
-
-    async def search(
-        self,
-        *,
-        unit: str,
-        query: str,
-        limit: int,
-    ) -> tuple[tuple[Note, str], ...]: ...
-
-    async def create(
-        self,
-        *,
-        unit: str,
-        title: str,
-        description: str,
-        uncertainty: str,
-        closing_condition: str,
-        established_in: str,
-        body: str,
-        established_by: str,
-        now_ms: int,
-        anchor_date: int | None = None,
-        anchor_entity_ids: tuple[str, ...] = (),
-    ) -> Note: ...
-
-    async def append_revision(
-        self,
-        *,
-        unit: str,
-        note_id: str,
-        body: str,
-        parent_revision_id: str,
-        established_by: str,
-        now_ms: int,
-        evidence_room: str | None = None,
-    ) -> NoteRevision: ...
-
-    async def merged_successor_by_title(
-        self,
-        *,
-        unit: str,
-        title: str,
-    ) -> Note | None: ...
-
-    # `remind`'s one-open-row check asks the two questions the fire-time screen asks
-    # (`nora/app/proactive_screen.py`): has the tag path moved this note since a waiting
-    # row was linked, and is a waiting row's retired note one that was MERGED into this
-    async def revision_chain(
-        self,
-        *,
-        unit: str,
-        note_id: str,
-    ) -> tuple[NoteRevision, ...]: ...
-
-    async def successor(self, *, unit: str, note_id: str) -> Note | None: ...

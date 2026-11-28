@@ -161,6 +161,10 @@ _NO_PRODUCTION_CALLER: dict[tuple[str, str], _Pin] = {
             "The removed legacy session was its only production caller. Remove it with the store.",
         )
         for module, name in (
+            ("memo.py", "kept"),
+            ("notes.py", "merged_successor_by_title"),
+            ("notes.py", "standing"),
+            ("standing_ledger.py", "span_rows"),
             ("record_query.py", "by_refs"),
             ("tag_traces.py", "by_tag"),
             ("reminders.py", "count_pending"),
@@ -264,13 +268,9 @@ _NO_PRODUCTION_CALLER: dict[tuple[str, str], _Pin] = {
         "(docs/design/cognition/loop.md). The poller writes "
         "states; nothing reads social items yet.",
     ),
-    ("standing.py", "write_if_unchanged"): _Pin(
+    ("standing.py", "read_head"): _Pin(
         "operator_script",
-        "The compare-and-set write for a manual Standing edit (docs/design/"
-        "cognition-loop/data.md §9, 2026-09-25). Its one caller is "
-        "`scripts/standing_edit.py`, deliberately outside `nora/` — this is "
-        "the operator's own entry point, not a verb the tag/participation "
-        "loop should ever reach, and `_call_sites` scans `nora/` only.",
+        "The offline cognitive-loop state census reads the retained legacy head.",
     ),
     ("observations.py", "resolve_targets"): _Pin(
         "deferred_consumer",

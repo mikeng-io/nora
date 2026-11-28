@@ -45,7 +45,6 @@ COMPOSERS = frozenset(
         "nora.language.doctrine_check:render_check_input",
         "nora.language.documents_render:render_documents",
         "nora.language.lesson_render:render_lessons",
-        "nora.language.memo_render:render_memos",
         "nora.language.note_render:render_notes",
         "nora.language.context_render:render_members",
         "nora.language.context_render:render_rooms",

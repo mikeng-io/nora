@@ -1,7 +1,5 @@
 from collections.abc import Callable, Iterable
-from dataclasses import dataclass
 from datetime import datetime
-from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncEngine
 
@@ -11,17 +9,12 @@ from nora.agent.lineage import LineagePolicy
 from nora.domain.memory_index import QueryEmbedder
 from nora.domain.ports import SearchProvider
 from nora.infra.embedder import QUERY_TIMEOUT_SECONDS, LlamaEmbedder, fingerprint, model_file
-from nora.infra.sql import SqlEntryStore
 from nora.infra.sql.item_registration import (
     RegistrationScope,
     RuntimeRevisions,
     SqlItemRegistration,
 )
-from nora.infra.sql.memo import SqlMemoStore
-from nora.infra.sql.notes import SqlNoteStore
 from nora.infra.sql.rollups import SqlRollupStore
-from nora.infra.sql.standing import SqlStandingStore
-from nora.infra.sql.standing_ledger import SqlStandingLedger
 from nora.memory.adapters.act_store import SqlActStore
 from nora.memory.adapters.admission_rows import SqlAdmissionRows
 from nora.memory.adapters.admission_store import SqlAdmissionStore
@@ -56,7 +49,6 @@ from nora.memory.adapters.retrieval_store import SqlRetrieval
 from nora.memory.adapters.review_anchors import SqlReviewTargets as SqlReviewTargets
 from nora.memory.adapters.subject_claims import SqlSubjectClaims
 from nora.memory.adapters.tools import build as _build
-from nora.memory.adapters.tools.notes import _make__resolve
 from nora.memory.adapters.tools.search import GraphReadTools
 from nora.memory.adapters.tools.wake import WAKE_HISTORY_TOOLS as WAKE_HISTORY_TOOLS
 from nora.memory.adapters.tools.wake import WAKE_TOOLS as WAKE_TOOLS
@@ -96,10 +88,6 @@ def delivery_arbitration(engine: AsyncEngine, policy: Policy) -> DeliveryArbitra
     return DeliveryArbitration(SqlDeliveryHistory(engine), policy)
 
 
-def make_resolve(deps):
-    return _make__resolve(deps)
-
-
 def act_envelope(
     engine: AsyncEngine, registration: SqlItemRegistration | None = None,
 ) -> ActEnvelope:
@@ -112,51 +100,6 @@ def bridge_act_envelope(engine: AsyncEngine) -> ActEnvelope:
     return act_envelope(engine, SqlItemRegistration(
         RegistrationScope(policy, persons), RuntimeRevisions({}, policy, persons),
     ))
-
-
-@dataclass(frozen=True)
-class StoresWiring:
-    standing_store: Any
-
-
-def stores(engine) -> StoresWiring:
-    # Standing. The STORE is built unconditionally, REUSING `engine` for the same reason its
-    # four neighbours above do — the read half feeds `TranscriptInjection`, whose own
-    # `_standing` returns `None` for a `None` store, so an always-built store costs one…
-    standing_store = SqlStandingStore(engine)
-    return StoresWiring(standing_store=standing_store)
-
-
-@dataclass(frozen=True)
-class LedgerWiring:
-    ledger_store: Any
-
-
-def ledger(engine, metrics) -> LedgerWiring:
-    ledger_store = SqlStandingLedger(engine, metrics=metrics)
-    return LedgerWiring(ledger_store=ledger_store)
-
-
-@dataclass(frozen=True)
-class NotesWiring:
-    memo_store: Any
-    note_store: Any
-    entry_store: Any
-
-
-def notes(cfg, engine) -> NotesWiring:
-    # The note tier's store, REUSING `engine` like every store above, and gated on its OWN
-    # flag. Off, `TranscriptInjection` gets `notes=None` and `_notes` answers `()` without a
-    # query. No `metrics=`: `SqlNoteStore.__init__` takes an engine and nothing else on…
-    note_store: SqlNoteStore | None = SqlNoteStore(engine) if cfg.notes.enabled else None
-    # The memo tier (DEC-306): what a unit settled and keeps. No flag: with none kept every
-    # read renders nothing. ONE instance for the tag and fire `<memos>` and `memo_read`…
-    memo_store = SqlMemoStore(engine)
-    # The shared Notebook entry store — the topic account is its only kind so far.
-    # No flag, same reason as the memo store: only a session writes an entry.
-    entry_store = SqlEntryStore(engine)
-    return NotesWiring(
-        memo_store=memo_store, note_store=note_store, entry_store=entry_store)
 
 
 def admission(

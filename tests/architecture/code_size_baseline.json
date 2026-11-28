@@ -75,11 +75,7 @@
     "comment_blocks": 17
   },
   "evals/rebuilt/entry.py": {
-    "comment_blocks": 12,
-    "functions": {
-      "standing": 134
-    },
-    "internal_docstrings": 1
+    "comment_blocks": 10
   },
   "evals/rebuilt/fold_evidence.py": {
     "internal_docstrings": 2
@@ -203,13 +199,12 @@
     "internal_docstrings": 1
   },
   "nora/agent/prefill.py": {
-    "file_lines": 1151,
-    "comment_blocks": 31,
+    "file_lines": 968,
+    "comment_blocks": 30,
     "functions": {
-      "_standing_block": 142,
       "_transcript_block": 147
     },
-    "internal_docstrings": 19
+    "internal_docstrings": 15
   },
   "nora/agent/punctuation.py": {
     "internal_docstrings": 1
@@ -225,10 +220,10 @@
     "internal_docstrings": 4
   },
   "nora/agent/registry.py": {
-    "file_lines": 1269,
-    "comment_blocks": 29,
+    "file_lines": 1227,
+    "comment_blocks": 26,
     "functions": {
-      "ToolRegistry.__init__": 390
+      "ToolRegistry.__init__": 357
     },
     "internal_docstrings": 5
   },
@@ -288,8 +283,8 @@
   "nora/agent/tools.py": {
     "comment_blocks": 14,
     "functions": {
-      "build_tool_specs": 354,
-      "build_tools": 129
+      "build_tool_specs": 342,
+      "build_tools": 124
     }
   },
   "nora/agent/video_desk.py": {
@@ -358,10 +353,10 @@
     "internal_docstrings": 1
   },
   "nora/app/composition.py": {
-    "file_lines": 1246,
+    "file_lines": 1225,
     "comment_blocks": 14,
     "functions": {
-      "_compose_dependencies": 805
+      "_compose_dependencies": 785
     },
     "internal_docstrings": 1
   },
@@ -467,9 +462,9 @@
     "comment_blocks": 5
   },
   "nora/config.py": {
-    "file_lines": 3934,
-    "comment_blocks": 81,
-    "internal_docstrings": 16
+    "file_lines": 3767,
+    "comment_blocks": 75,
+    "internal_docstrings": 15
   },
   "nora/doctrine/loader.py": {
     "file_lines": 939,
@@ -490,7 +485,7 @@
     "comment_blocks": 2
   },
   "nora/domain/block_types.py": {
-    "file_lines": 833,
+    "file_lines": 820,
     "comment_blocks": 16,
     "internal_docstrings": 1
   },
@@ -604,8 +599,8 @@
     "internal_docstrings": 5
   },
   "nora/domain/models.py": {
-    "file_lines": 908,
-    "comment_blocks": 38
+    "file_lines": 896,
+    "comment_blocks": 37
   },
   "nora/domain/music.py": {
     "comment_blocks": 2
@@ -722,12 +717,11 @@
     "internal_docstrings": 2
   },
   "nora/engagement/context.py": {
-    "file_lines": 918,
-    "comment_blocks": 15,
+    "comment_blocks": 9,
     "functions": {
       "TranscriptInjection._observation_reads": 147
     },
-    "internal_docstrings": 13
+    "internal_docstrings": 9
   },
   "nora/engagement/debrief_render.py": {
     "comment_blocks": 9,
@@ -738,7 +732,7 @@
     "internal_docstrings": 1
   },
   "nora/engagement/pipeline.py": {
-    "file_lines": 1243,
+    "file_lines": 1241,
     "comment_blocks": 40,
     "functions": {
       "EngagementPipeline._run_turn": 650
@@ -1216,13 +1210,13 @@
     "internal_docstrings": 1
   },
   "nora/infra/sql/standing.py": {
-    "comment_blocks": 7,
+    "comment_blocks": 6,
     "internal_docstrings": 2
   },
   "nora/infra/sql/standing_revise.py": {
     "comment_blocks": 4,
     "functions": {
-      "standing_revise": 135
+      "standing_revise": 134
     }
   },
   "nora/infra/sql/stimuli.py": {
@@ -1313,9 +1307,9 @@
     "comment_blocks": 1
   },
   "nora/ingest/relevance_gate.py": {
-    "file_lines": 916,
-    "comment_blocks": 25,
-    "internal_docstrings": 7
+    "file_lines": 831,
+    "comment_blocks": 22,
+    "internal_docstrings": 6
   },
   "nora/ingest/stages/edit_media.py": {
     "comment_blocks": 1
@@ -1644,12 +1638,11 @@
     "internal_docstrings": 3
   },
   "nora/subject/knowledge.py": {
-    "file_lines": 858,
-    "comment_blocks": 13,
+    "comment_blocks": 10,
     "functions": {
-      "know": 235
+      "know": 131
     },
-    "internal_docstrings": 3
+    "internal_docstrings": 2
   },
   "nora/subject/lexical_seed.py": {
     "internal_docstrings": 1
@@ -1664,10 +1657,7 @@
     "internal_docstrings": 6
   },
   "nora/subject/standing_fold.py": {
-    "comment_blocks": 5,
-    "functions": {
-      "read_fold_turn": 126
-    }
+    "comment_blocks": 4
   },
   "nora/tag.py": {
     "internal_docstrings": 2
@@ -1798,10 +1788,6 @@
   "scripts/signoz_provision.py": {
     "comment_blocks": 1,
     "internal_docstrings": 2
-  },
-  "scripts/standing_edit.py": {
-    "comment_blocks": 2,
-    "internal_docstrings": 1
   },
   "scripts/testmon_record.py": {
     "internal_docstrings": 1
@@ -2147,11 +2133,7 @@
   "tests/infra/test_social_read.py": {
     "internal_docstrings": 1
   },
-  "tests/infra/test_standing_edit.py": {
-    "comment_blocks": 1
-  },
   "tests/infra/test_standing_ledger.py": {
-    "file_lines": 860,
     "comment_blocks": 1
   },
   "tests/infra/test_standing_revision.py": {
@@ -2335,26 +2317,26 @@
     "comment_blocks": 6
   },
   "tests/offline_eval_harness.py": {
-    "comment_blocks": 21,
+    "comment_blocks": 20,
     "functions": {
-      "run_case": 262
+      "run_case": 230
     },
     "internal_docstrings": 7
   },
   "tests/offline_eval_support.py": {
-    "file_lines": 1072,
+    "file_lines": 1070,
     "comment_blocks": 17,
     "internal_docstrings": 2
   },
   "tests/offline_pipeline.py": {
     "comment_blocks": 17,
     "functions": {
-      "build_offline_pipeline": 321
+      "build_offline_pipeline": 303
     }
   },
   "tests/test_acceptance_rules.py": {
-    "file_lines": 926,
-    "comment_blocks": 33,
+    "file_lines": 870,
+    "comment_blocks": 32,
     "internal_docstrings": 1
   },
   "tests/test_affected_tests.py": {
@@ -2371,12 +2353,12 @@
     "internal_docstrings": 3
   },
   "tests/test_composition.py": {
-    "file_lines": 1510,
+    "file_lines": 1468,
     "comment_blocks": 7,
     "internal_docstrings": 2
   },
   "tests/test_config.py": {
-    "file_lines": 1988,
+    "file_lines": 1910,
     "comment_blocks": 7,
     "internal_docstrings": 6
   },
@@ -2431,7 +2413,6 @@
     "internal_docstrings": 1
   },
   "tests/test_guards_deliverer.py": {
-    "file_lines": 801,
     "comment_blocks": 5
   },
   "tests/test_guards_leak.py": {
@@ -2446,7 +2427,7 @@
     "internal_docstrings": 1
   },
   "tests/test_guards_tool_call_log.py": {
-    "comment_blocks": 2,
+    "comment_blocks": 1,
     "internal_docstrings": 2
   },
   "tests/test_life360_client.py": {
@@ -2475,9 +2456,6 @@
     "comment_blocks": 3,
     "internal_docstrings": 1
   },
-  "tests/test_note_tools.py": {
-    "comment_blocks": 3
-  },
   "tests/test_output_contracts.py": {
     "comment_blocks": 2,
     "internal_docstrings": 1
@@ -2496,9 +2474,9 @@
     "internal_docstrings": 1
   },
   "tests/test_prefill.py": {
-    "file_lines": 1587,
+    "file_lines": 1423,
     "comment_blocks": 6,
-    "internal_docstrings": 6
+    "internal_docstrings": 5
   },
   "tests/test_relay.py": {
     "internal_docstrings": 3
@@ -2533,8 +2511,8 @@
     "comment_blocks": 2
   },
   "tests/test_skill_content.py": {
-    "file_lines": 1143,
-    "comment_blocks": 10,
+    "file_lines": 1123,
+    "comment_blocks": 9,
     "internal_docstrings": 5
   },
   "tests/test_social_bridge_client.py": {
@@ -2572,7 +2550,7 @@
     "internal_docstrings": 18
   },
   "tests/test_tools.py": {
-    "file_lines": 1838,
+    "file_lines": 1790,
     "comment_blocks": 10,
     "internal_docstrings": 1
   },
@@ -2664,7 +2642,7 @@
     "internal_docstrings": 1
   },
   "tests/unit/test_context_selector_render.py": {
-    "internal_docstrings": 3
+    "internal_docstrings": 2
   },
   "tests/unit/test_debrief.py": {
     "file_lines": 1624,
@@ -2708,7 +2686,7 @@
     "internal_docstrings": 2
   },
   "tests/unit/test_engagement_context.py": {
-    "comment_blocks": 3,
+    "comment_blocks": 1,
     "internal_docstrings": 1
   },
   "tests/unit/test_engagement_deliver.py": {
@@ -2744,7 +2722,7 @@
     "internal_docstrings": 1
   },
   "tests/unit/test_fire_path.py": {
-    "file_lines": 2678,
+    "file_lines": 2644,
     "comment_blocks": 11,
     "internal_docstrings": 5
   },
@@ -2796,9 +2774,6 @@
   },
   "tests/unit/test_judge_source_names_speakers.py": {
     "comment_blocks": 1
-  },
-  "tests/unit/test_lineage.py": {
-    "internal_docstrings": 1
   },
   "tests/unit/test_link_owners.py": {
     "comment_blocks": 1,
@@ -2915,7 +2890,7 @@
     "internal_docstrings": 1
   },
   "tests/unit/test_platform_observation_wired.py": {
-    "file_lines": 1351,
+    "file_lines": 1117,
     "comment_blocks": 2
   },
   "tests/unit/test_pr584_astra_readiness.py": {
@@ -2943,9 +2918,9 @@
     "comment_blocks": 2
   },
   "tests/unit/test_relevance_gate.py": {
-    "file_lines": 1321,
+    "file_lines": 1154,
     "comment_blocks": 11,
-    "internal_docstrings": 2
+    "internal_docstrings": 1
   },
   "tests/unit/test_rollup_determinism.py": {
     "comment_blocks": 1,
@@ -3002,7 +2977,7 @@
     "internal_docstrings": 1
   },
   "tests/unit/test_summons_occasion.py": {
-    "file_lines": 896
+    "file_lines": 894
   },
   "tests/unit/test_summons_reads_the_post.py": {
     "internal_docstrings": 1
@@ -3018,10 +2993,10 @@
     "internal_docstrings": 1
   },
   "tests/unit/test_tool_registry.py": {
-    "file_lines": 1053,
-    "comment_blocks": 15,
+    "file_lines": 1034,
+    "comment_blocks": 14,
     "functions": {
-      "test_budgets_match_todays_table": 182
+      "test_budgets_match_todays_table": 175
     },
     "internal_docstrings": 1
   },

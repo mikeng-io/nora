@@ -29,12 +29,10 @@ from nora.agent.toolkit.files import (
 )
 from nora.agent.toolkit.ports import (
     DocumentPublisher,
-    NoteCollaborator,
     RecordQuerySource,
     RollupReadSource,
     RoomDirectory,
     SocialItemsSource,
-    StandingHeadSource,
 )
 from nora.agent.toolkit.results import _record, _record_media
 from nora.agent.toolkit.rooms import _known_names
@@ -73,7 +71,6 @@ from nora.domain.media import (
     born_in_room,
 )
 from nora.domain.media_join import MediaJoin
-from nora.domain.memo import MemoStore
 from nora.domain.mobility_forecast import (
     place_words,
 )
@@ -92,8 +89,6 @@ from nora.domain.ports import (
     SteamPresenceProvider,
     VoicePresenceSource,
 )
-from nora.domain.standing_ledger import StandingLedger
-from nora.domain.tool_call_log import ToolCallLogStore
 from nora.infra.social.readings import READ_CONCURRENCY as _INSTAGRAM_READ_CONCURRENCY
 from nora.infra.vision.preprocess import (
     VIDEO_CHUNK_SECONDS,
@@ -157,7 +152,6 @@ class ToolDeps:
     releases: Any = None
     giphy_source: GifSource | None = None
     reaction_picker: ReactionPicker | None = None
-    tool_call_log_store: ToolCallLogStore | None = None
     computer: SandboxRuntime | None = None
     computer_events: ComputerEventStore | None = None
     computer_settings: ComputerToolSettings | None = None
@@ -171,9 +165,6 @@ class ToolDeps:
     computer_context_invalidate: Callable[[str], None] | None = None
     artifact_link_base: str = ""
     relay: Relay | None = None
-    notes: NoteCollaborator | None = None
-    note_unit: Callable[[str, str], str | None] | None = None
-    memos: MemoStore | None = None
     unit_for: Callable[[str, str], str | None] | None = None
     supplied_unit: str | None = None
     music: MusicToolBridge | None = None
@@ -191,8 +182,6 @@ class ToolDeps:
     observations: Any = None
     lineage: LineagePolicy | None = None
     rollup: RollupReadSource | None = None
-    standing_head: StandingHeadSource | None = None
-    ledger: StandingLedger | None = None
     graph_profiles: GraphProfileReader | None = None
     social_items: SocialItemsSource | None = None
     subagent: SubagentDesk | None = None
@@ -246,9 +235,6 @@ class ToolDeps:
     _instagram_slots: Any = field(init=False, default=None)
     _instagram_story_urls: Any = field(init=False, default=None)
     _instagram_pages: Any = field(init=False, default=None)
-    note_heads: Any = field(init=False, default=None)
-    notes_off: Any = field(init=False, default=None)
-    memos_off: Any = field(init=False, default=None)
     reaction_asked: Any = field(init=False, default=None)
     gif_candidates: Any = field(init=False, default=None)
     gif_query: Any = field(init=False, default=None)
@@ -361,26 +347,6 @@ class ToolDeps:
 
     def _init_derived(self) -> None:
         """Derived state shared by the tool bodies: off-notes, scratch maps, actor labels."""
-        note_heads: dict[str, str] = {}
-        object.__setattr__(self, "note_heads", note_heads)
-        notes_off = {
-            "status": "unavailable",
-            "note": (
-                "I can't reach my notes right now. Say so "
-                "plainly: «there's nothing written down» and «I couldn't look» are different "
-                "answers."
-            ),
-        }
-        object.__setattr__(self, "notes_off", notes_off)
-        memos_off = {
-            "status": "unavailable",
-            "note": (
-                "I can't reach what this group has kept "
-                "right now. Say so plainly: «nothing is kept» and «I couldn't look» are different "
-                "answers."
-            ),
-        }
-        object.__setattr__(self, "memos_off", memos_off)
         reaction_asked = [False]
         object.__setattr__(self, "reaction_asked", reaction_asked)
         gif_candidates: dict[str, GifCandidate] = {}
@@ -583,19 +549,15 @@ class ToolDeps:
             }
         return found.refs[0]
 
-    def _notebook(self) -> NoteCollaborator | None:
-        """The wired store, or None — BOTH halves of the wiring checked as one."""
-        return self.notes if self._unit() else None
-
     def _unit(self) -> str | None:
         """This turn's unit, or `None` when it cannot be named."""
         if self.supplied_unit:
             return self.supplied_unit
-        resolver = self.unit_for or self.note_unit
+        resolver = self.unit_for
         if resolver is None:
             return None
         try:
             return resolver(self.room.platform, self.bound_conversation_id)
         except Exception:
-            log.exception("note unit resolution failed")
+            log.exception("tool unit resolution failed")
             return None

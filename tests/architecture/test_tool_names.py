@@ -115,6 +115,7 @@ _SNAPSHOT_SHA256 = (
 
 #: Retired tool names, including renamed snapshot entries. The exempt set shrinks with it.
 _RENAMED_SINCE: frozenset[str] = frozenset({
+    "note_read", "note_search", "memo_read", "standing_read", "recall_lookups",
     # Replaced by the public release list/read pair.
     "version",
     # The session still has its own note vocabulary.

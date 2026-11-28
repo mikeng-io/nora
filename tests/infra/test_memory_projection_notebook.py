@@ -16,10 +16,12 @@ from uuid import uuid4
 import psycopg
 import pytest
 import sqlalchemy as sa
+from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nora.domain.culture import character_key, nora_character_key, unit_culture_key
 from nora.domain.gatherings import RSVP, Gathering, GatheringStatus, RSVPResponse
 from nora.domain.models import NormalizedMessage
+from nora.domain.note_body import citations_in
 from nora.domain.notes import Note, NoteSupersedeReason
 from nora.infra.sql import memory_index
 from nora.infra.sql.engine import create_sql_engine
@@ -32,7 +34,6 @@ from nora.infra.sql.schema import (
     NOTE,
     NOTE_REVISION,
 )
-from nora.subject.knowledge import _seed_note_with_id
 from tests.fixtures.gatherings import SeededGatheringStore
 from tests.fixtures.legacy_projection import (
     ProjectingCultureStore,
@@ -254,6 +255,28 @@ async def test_a_note_cites_what_its_head_revision_cites(engine):
         ("note", note.id, "cites", "message", second),
         ("note", note.id, "cites", "message", first),
     }
+
+
+async def _seed_note_with_id(
+    engine: AsyncEngine, *, note: Note, body: str, established_by: str, written_at: int,
+) -> None:
+    """Seed a legacy note and its first revision with a fixed head id."""
+    async with engine.begin() as conn:
+        await conn.execute(sa.insert(NOTE).values(
+            id=note.id, unit=note.unit, title=note.title,
+            description=note.description, uncertainty=note.uncertainty,
+            closing_condition=note.closing_condition,
+            anchor_date=note.anchor_date,
+            anchor_entity_ids=list(note.anchor_entity_ids),
+            established_in=note.established_in, created_at=note.created_at,
+            head_revision_id=note.head_revision_id, revisit_at=note.revisit_at,
+        ))
+        await conn.execute(sa.insert(NOTE_REVISION).values(
+            id=note.head_revision_id, note_id=note.id, body=body,
+            parent_revision_id=None, written_at=written_at,
+            established_by=established_by, instruction_sha256=None, model=None,
+            citations=list(citations_in(body)),
+        ))
 
 
 async def test_a_seeded_sandbox_note_is_projected(engine):

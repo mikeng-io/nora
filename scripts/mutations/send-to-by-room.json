@@ -54,33 +54,5 @@
   "old": "if kind := (internal_span(outbound)\n                    or scan_reply(outbound, content_checks=self._content_checks)):",
   "new": "if False:",
   "target": "tests/test_relay.py::test_text_that_fails_the_egress_scan_never_leaves"
- },
- {
-  "name": "thread topics pass the ledger lineage gate",
-  "file": "nora/conversation/adapters/tools/rooms.py",
-  "old": "visible = [e for e in threads if ledger_permits(e, c.target)]",
-  "new": "visible = threads",
-  "target": "tests/infra/test_standing_ledger.py::test_room_list_never_calls_an_unreadable_ledger_empty[withheld]"
- },
- {
-  "name": "withheld threads are not an empty readable ledger",
-  "file": "nora/conversation/adapters/tools/rooms.py",
-  "old": "if len(visible) != len(threads):",
-  "new": "if False:",
-  "target": "tests/infra/test_standing_ledger.py::test_room_list_never_calls_an_unreadable_ledger_empty[withheld]"
- },
- {
-  "name": "unreadable threads have unavailable status",
-  "file": "nora/conversation/adapters/tools/rooms.py",
-  "old": "unavailable = {\"status\": \"unavailable\", \"note\": \"I couldn't check this room's threads.\"}",
-  "new": "unavailable = {\"status\": \"nothing_found\", \"note\": \"No threads on record.\"}",
-  "target": "tests/infra/test_standing_ledger.py::test_room_list_never_calls_an_unreadable_ledger_empty"
- },
- {
-  "name": "thread previews carry their source requirements",
-  "file": "nora/conversation/adapters/tools/rooms.py",
-  "old": "for e in visible:\n            record_requirement(\n                DisclosureRequirement(\n                    room_key(e.platform, e.conversation_id),\n                    e.lineage.section(ROW),\n                    e.exclude_persons,\n                )\n            )\n        topics =",
-  "new": "            topics =",
-  "target": "tests/infra/test_standing_ledger.py::test_room_list_threads_are_topics_by_room_newest_first"
  }
 ]

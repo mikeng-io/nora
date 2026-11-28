@@ -319,7 +319,7 @@ def test_lookup_tools_is_the_reads_that_declare_the_three_states():
     """
     lookups = ToolRegistry().lookup_tools()
     assert lookups, "R-97 armed on an empty set could never fire"
-    assert {"who_said", "memory_search", "weather", "note_read"} <= lookups
+    assert {"who_said", "memory_search", "weather", "room_read"} <= lookups
     assert "load_transcript" not in lookups          # read_only, no status axis
     assert "intention_commit" not in lookups              # three_state, but a WRITE
     assert "send_reply" not in lookups

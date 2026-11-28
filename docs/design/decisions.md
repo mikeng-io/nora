@@ -151,7 +151,7 @@ owns:
 | DEC-107 | A sticker is fetchable media carried by an opaque token, a separate axis from its media type. | [media/comprehension](media/comprehension.md) | `tests/contract/test_media_source_contract.py` | — |
 | DEC-108 | A sticker is described by what it depicts, never by the sender's intent. | [media/comprehension](media/comprehension.md) | `tests/contract/test_media_interpreter_contract.py` | — |
 | DEC-110 | A medium's reading is deduplicated twice: by platform identity first, then by content sha256. | [media/comprehension](media/comprehension.md) | `tests/unit/test_sticker_reader.py::test_an_identity_hit_makes_no_platform_call_at_all` | — |
-| DEC-112 | Her evidence is carried across turns so a pushback is checked against what she found, not conceded. | [agent/doctrine](agent/doctrine.md) | `tests/test_acceptance_rules.py::test_recall_lookups_is_offered_as_evidence_not_only_as_a_cache` | — |
+| DEC-112 | Her evidence is carried across turns so a pushback is checked against what she found, not conceded. | [agent/doctrine](agent/doctrine.md) | `tests/infra/test_item_registration.py::test_item_writer_registers_with_its_planes` | — |
 | DEC-115 | The presence analytics layer is a consumer-neutral service whose neutrality is an import contract. | [presence](presence/README.md) | NOT ENFORCED | — |
 | DEC-116 | `web_fetch` reads a known page through the search provider's extract endpoint and returns it as untrusted evidence. | [social/public-web](social/public-web.md) | `tests/test_web_fetch_tool.py` | — |
 | DEC-118 | Discord and Signal both receive and store every attachment, not only stickers. | [platform/discord](platform/discord.md) | `tests/contract/test_media_source_contract.py::test_discord_fetches_an_attachment_by_its_own_url` | — |

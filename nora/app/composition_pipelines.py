@@ -13,7 +13,6 @@ from nora.app.dispatch import Dispatcher
 from nora.app.raw_clients import _DebriefModelClient
 from nora.app.wake_rooms import WakeRoomSlots
 from nora.engagement.pipeline import EngagementPipeline
-from nora.engagement.stages.debrief import Wiring as DebriefWiring
 from nora.engagement.stages.graph_debrief import Wiring as GraphDebriefWiring
 from nora.infra.sql.record_query import SqlRecordQuery
 from nora.ingest.pipeline import IngestPipeline
@@ -25,28 +24,19 @@ from nora.ingest.pipeline import IngestPipeline
 class SharedWiring:
     _spawn: Any
     assembler: Any
-    shared: Any
     action_state: Any
 
 
 def build_shared(
     access: Any, allowlist: Any, audit: Any, background: Any, cfg: Any,
     clock: Any, computer_context: Any, documents_context: Any,
-    engine: Any, ledger_store: Any, media_join: Any,
-    memo_store: Any, metrics: Any,
-    note_store: Any, observation_store: Any, persons: Any, presence_reader: Any,
+    engine: Any, media_join: Any,
+    metrics: Any,
+    observation_store: Any, persons: Any, presence_reader: Any,
     quote_window: Any, registry: Any,
-    rosters: Any, standing_store: Any, subagents_context: Any, tag_trace_store: Any,
+    rosters: Any, subagents_context: Any, tag_trace_store: Any,
     unit_rooms: Any,
 ) -> SharedWiring:
-    shared = shared_reader(
-        ledger=ledger_store,
-        record_query=SqlRecordQuery(engine),
-        standing=standing_store if cfg.standing.enabled else None,
-        traces=tag_trace_store,
-        ai_peer=cfg.agent.name,
-        rooms_of_unit=lambda unit: unit_rooms.get(unit, ()),
-    )
     action_state = shared_reader(
         record_query=SqlRecordQuery(engine), traces=tag_trace_store,
         ai_peer=cfg.agent.name, rooms_of_unit=lambda unit: unit_rooms.get(unit, ()),
@@ -60,16 +50,7 @@ def build_shared(
         clock=clock,
         rosters=rosters,
         self_ids=registry.self_aliases(),
-        # `None` while `[notes] enabled = false`. `policy=allowlist` is the SAME policy.toml
-        # instance the ingest pipeline and `EngagementPipeline` are given below — the assembler
-        # needs it for one thing only, naming the unit a room belongs to (`Conversation.unit`,…
-        notes=note_store,
-        memos=memo_store,
         policy=allowlist,
-        # Standing's READ half. `None` while `[standing] enabled = false`, the shipped default,
-        # so `<standing>` renders nothing. Unlike `notes` beside it this needs no `policy=` at
-        # all: a position is keyed `(platform, conversation_id)` and is NOT shared across a…
-        shared=shared,
         # The media join. The same instance every other transcript builder holds — the
         # comprehension a spawned job wrote is the one the transcript renders, the one the note
         # tier reads and the one `media_fetch` serves, and separate copies of that decision…
@@ -99,7 +80,7 @@ def build_shared(
         background.spawn(coro)
 
     return SharedWiring(
-        _spawn=_spawn, assembler=assembler, shared=shared, action_state=action_state,
+        _spawn=_spawn, assembler=assembler, action_state=action_state,
     )
 
 
@@ -130,38 +111,6 @@ def build_ingest(
         language=cfg.speech.stt.language,
     )
     return IngestWiring(ingest=ingest)
-
-
-@dataclass(frozen=True)
-class StandingWiring:
-    debrief_wiring: Any
-
-
-async def standing(
-    audit: Any, cfg: Any, clock: Any, content_checks: Any,
-    dreamer_instructions: Any, ledger_store: Any, lineage: Any, media_join: Any,
-    metrics: Any, standing_store: Any, tag_trace_store: Any,
-) -> StandingWiring:
-    # The debrief's collaborators, as ONE object that is either present or absent
-    # (`debrief.Wiring` — the shape is deliberate: four optional parameters would let a
-    # deployment wire the store and forget the client, which runs the stage, finds nothing…
-    debrief_wiring: DebriefWiring | None = None
-    if cfg.standing.enabled:
-        debrief_wiring = DebriefWiring(
-            store=standing_store,
-            media_join=media_join,
-            client=_debrief_client(cfg),
-            objective=dreamer_instructions,
-            record_store=audit,
-            max_chars=cfg.standing.max_chars,
-            fold_batch=cfg.standing.fold_batch,
-            timeout_seconds=cfg.standing.timeout_seconds,
-            store_timeout_seconds=cfg.standing.store_timeout_seconds,
-            working_set_max_items=cfg.standing.working_set_max_items,
-            working_set_max_chars=cfg.standing.working_set_max_chars,
-            content_checks=content_checks,
-        )
-    return StandingWiring(debrief_wiring=debrief_wiring)
 
 
 def _debrief_client(cfg: Any) -> _DebriefModelClient:
@@ -222,7 +171,7 @@ def build_engagement(
     reasoning_strip_store: Any, registry: Any, room_commands: Any,
     rosters: Any, runner: Any,
     slots: Any, tag_trace_store: Any, tier: Any, tool_call_log_store: Any,
-    tool_registry: Any, graph: Any, standing_replay_wiring: DebriefWiring | None = None,
+    tool_registry: Any, graph: Any,
 ) -> EngagementWiring:
 
     engagement = EngagementPipeline(
@@ -260,7 +209,7 @@ def build_engagement(
         tool_call_log_store=tool_call_log_store,
         reasoning_strip_store=reasoning_strip_store,
         tag_trace_store=tag_trace_store,
-        debrief_wiring=debrief_wiring, standing_replay_wiring=standing_replay_wiring,
+        debrief_wiring=debrief_wiring,
         # The shared decision log. The tag path only WRITES: somebody addressed her, so it is
         # never in doubt about whether to speak. What it writes is what the other two deciders
         # could not see.

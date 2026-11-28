@@ -80,7 +80,6 @@ async def test_obtain_returns_the_production_graph(spec, clean_pg_url, cognition
         assert spec.policy is not None
         spec = replace(
             spec, policy=spec.policy + "home_room = true\n",
-            overrides={"notes.enabled": True},
         )
     requests: list[dict] = []
     daemon = FakeSignalDaemon()

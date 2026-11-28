@@ -3,7 +3,7 @@ untagged burst is worth Nora's attention at all.
 
 WHAT THIS MODULE IS
 -------------------
-Admission control and nothing else: ONE call, transcript + standing, no tools,
+Admission control and nothing else: ONE call, transcript, no tools,
 no doctrine, no loop, JSON out. It is deliberately not a full agent turn (whole
 doctrine, every tool, the turn's whole budget) run on every quiescence-closed
 window to answer "is this worth speaking to?".
@@ -15,7 +15,7 @@ peer card, so it cannot — and must not pretend to. That question belongs to
 the participation turn behind the gate, which keeps its right to silence. The
 two questions are separate on purpose:
 
-    gate  — is this worth a reply from anyone?      ~1-2k, transcript+standing
+    gate  — is this worth a reply from anyone?      ~1-2k, transcript
     turn  — do I hold anything real to add?         the full turn, everything
 
 A gate that guessed the second question would be a full turn in a cheaper coat.
@@ -69,7 +69,6 @@ import time
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from typing import Any, Literal, Protocol
-from xml.sax.saxutils import escape
 
 from pydantic import BaseModel, Field
 
@@ -84,7 +83,6 @@ from nora.domain.composed import legacy_composed
 from nora.domain.media_join import MediaJoin
 from nora.domain.models import TranscriptRow
 from nora.domain.ports import RecordStore
-from nora.domain.prompt import age as _age
 from nora.domain.prompt import one_line as _one_line
 from nora.domain.provenance import instruction_sha256
 from nora.obs.metrics import Metrics
@@ -165,21 +163,6 @@ class GateVerdictSchema(BaseModel):
         default=-1.0,
         description="0.0-1.0 that the room wants the agent; omit rather than guess",
     )
-
-
-class StandingReader(Protocol):
-    """The gate's view of `StandingStore`: one verb, `read`.
-
-    Narrow on purpose. The gate never writes a position and typing it as the
-    full `StandingStore` said otherwise — which is not only a wider contract
-    than it needs, it obliged every test double to grow a `write` that exists
-    only to be refused. `nora.engagement.stages.debrief.ModelClient`'s
-    precedent: one consumer, one verb, a documented structural type.
-    """
-
-    async def read(
-        self, *, platform: str, conversation_id: str
-    ) -> Any | None: ...
 
 
 class ModelClient(Protocol):
@@ -367,7 +350,7 @@ def build_system_prompt(instruction: str, capabilities: str = "") -> str:
 _GATE_SELF_NAME = "assistant"
 
 
-#: The two blocks the gate is allowed to see, and no third. Declared as data
+#: The transcript the gate is allowed to see. Declared as data
 #: for the same reason `nora.agent.prefill._BLOCKS` is: so «what does the gate
 #: carry» is a table to read rather than a trace through `render_context`, and
 #: so a third row can be caught by a test. `key="turn"` for both
@@ -376,7 +359,6 @@ _GATE_SELF_NAME = "assistant"
 #: thing here.
 _BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
     ("transcript", 10, "turn"),
-    ("standing", 20, "turn"),
 )
 
 #: `name -> (order, key)`, derived so `render_context` cannot restate a row
@@ -388,10 +370,9 @@ _ROW: dict[str, tuple[int, BlockKey]] = {
 
 def render_context(
     transcript: tuple[TranscriptRow, ...],
-    standing: tuple[str, int] | str | None,
     *, now: datetime | None = None, window: int | None = None,
 ) -> str:
-    """The two blocks the gate is allowed to see, and no third.
+    """The transcript the gate is allowed to see.
 
     Rendered here rather than reusing the tag path's prefill assembler
     because that assembler's job is to build the RICHEST prompt it can, and
@@ -446,25 +427,7 @@ def render_context(
         was=lambda r: r.edit.was if r.edit else None,
         turn=lambda r: r.turn_handle,
     ) if rows else "(no messages)"
-    # Standing is Nora's own folded text rather than a member's, but it is
-    # rendered in the same document and a fold summarises what people said —
-    # so the same collapse applies rather than trusting the tier above.
-    # `(body, updated_at)`; a bare string still works and renders no age.
-    standing_body, written = (
-        standing if isinstance(standing, tuple) else (standing, None)
-    )
-    standing_block = escape(_one_line(standing_body or "")) or "(none)"
-    # THROUGH THE INJECTOR, and DESCRIBED BY TYPE. Each block's framing is its
-    # own `description=`, where content cannot reach it and where it cannot
-    # disagree with how the prefill path describes the same two blocks.
-    #
-    # `<standing>` renders `(none)` rather than nothing, and that is load-
-    # bearing rather than cosmetic: the instruction leans on this block being
-    # the only thing that can establish what she owes the room, so its absence
-    # has to be READABLE. An empty body would be dropped by `assemble` and the
-    # sentence explaining what its absence means would go with it.
     transcript_order, transcript_key = _ROW["transcript"]
-    standing_order, standing_key = _ROW["standing"]
     return assemble((
         ContextBlock(
             name="transcript", order=transcript_order, key=transcript_key,
@@ -480,14 +443,6 @@ def render_context(
             attrs=(("window", str(window)),) if window is not None else (),
             body=legacy_composed(transcript_block),
         ),
-        ContextBlock(
-            name="standing", order=standing_order, key=standing_key,
-            attrs=(
-                (("written", _age(written, clock)),) if written is not None
-                else ()
-            ),
-            body=legacy_composed(standing_block),
-        ),
     )).rstrip("\n")
 
 
@@ -497,8 +452,6 @@ class RelevanceGate:
 
     Collaborators arrive through `__init__` only — no `*_fn` hooks and no
     module-level state, per the repo's test-seam policy. `records` and
-    `standing` are the same ports the fire path reads, so the gate sees the
-    same room the turn behind it would.
     """
 
     def __init__(
@@ -509,9 +462,7 @@ class RelevanceGate:
         records: RecordStore,
         metrics: Metrics,
         persons: Persons | None = None,
-        standing: StandingReader | None = None,
         transcript_limit: int = 40,
-        standing_timeout_seconds: float = 2.0,
         call_timeout_seconds: float = 20.0,
         media_join: MediaJoin | None = None,
         capabilities: str = "",
@@ -537,15 +488,9 @@ class RelevanceGate:
         # decision exists to close, here on the one call that reads every
         # opted-in room.
         self._persons = persons
-        # `None` is the dormant default, not an error: `[standing] enabled =
-        # false` is a shipped configuration, and a gate that refused to run
-        # without a position would make an optional tier mandatory.
-        self._standing = standing
         self._transcript_limit = transcript_limit
-        self._standing_timeout_seconds = standing_timeout_seconds
         # The gate's OWN ceiling on the model call, mirroring
-        # `[relevance_gate] timeout_seconds` the way `transcript_limit` and
-        # `standing_timeout_seconds` above mirror their keys. A client that
+        # `[relevance_gate] timeout_seconds`. A client that
         # already bounds itself (the composition root's does, and the
         # architecture suite requires it to) makes this a backstop rather than
         # a second policy — both fire as `timeout`, so which one wins is not
@@ -639,10 +584,9 @@ class RelevanceGate:
             if instruction is None:
                 self._emit(_fail_closed("no_instruction"), platform, conversation_id)
                 return _fail_closed("no_instruction")
-            standing = await self._read_standing(platform, conversation_id)
             system = build_system_prompt(instruction.text, self._capabilities)
             prompt = build_user_message(render_context(
-                transcript, standing, window=self._transcript_limit,
+                transcript, window=self._transcript_limit,
             ))
             # The digest is retained regardless — the retained transcript
             # re-derives the prompt exactly. The prompt ALSO reaches a span by
@@ -666,7 +610,6 @@ class RelevanceGate:
                 # that carries the verdict: a run of no_go verdicts reads very
                 # differently depending on this.
                 "nora.relevance_gate.capabilities": bool(self._capabilities),
-                "nora.relevance_gate.standing": standing is not None,
             })
             verdict = await self._ask(system, prompt)
             self._emit(verdict, platform, conversation_id)
@@ -809,34 +752,6 @@ class RelevanceGate:
             return rows
         return self._persons.name_transcript(rows, platform=platform)
 
-    async def _read_standing(
-        self, platform: str, conversation_id: str,
-    ) -> tuple[str, int] | None:
-        """The room's position, or `None`. Fail-SOFT and counted — the three
-        states `FirePath._read_standing` distinguishes, for its reason: no
-        store is the dormant default and is not an error; no row is a
-        conversation never folded; a FAILED read is neither and is counted.
-        """
-        if self._standing is None:
-            return None
-        try:
-            row = await asyncio.wait_for(
-                self._standing.read(platform=platform, conversation_id=conversation_id),
-                timeout=self._standing_timeout_seconds,
-            )
-        except Exception:
-            log.exception("relevance gate standing read failed")
-            self._metrics.inc(
-                "nora_errors_total", stage="relevance_gate_standing", platform=platform,
-            )
-            return None
-        # The BODY AND ITS AGE. The instruction's fourth category — «a
-        # commitment SHE made that is being followed up … only the standing
-        # block can establish this» — is a question about WHEN, and so is
-        # «anything the room has already moved past». Both are undecidable
-        # against a paragraph with no time on it, so the age renders with the
-        # body, as in the prefill's renderer.
-        return (row.body, row.updated_at) if row is not None else None
 
     def _count(self, verdict: GateVerdict, platform: str, conversation_id: str) -> None:
         if verdict.source == "fail_closed":

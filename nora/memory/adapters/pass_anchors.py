@@ -1,7 +1,7 @@
 """Compile each pass's prefetch seeds with scoped, lookup-only graph reads."""
 
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 
 import sqlalchemy as sa
@@ -135,6 +135,9 @@ class SqlPassAnchors:
                 rows = await scoped_rows(conn, authority, target, dm_rooms, ceiling=ceiling)
                 queries = _AnchorQueries(conn, rows, authority)
                 seeds = await queries.build(data, now)
+                if isinstance(data, (CalledInput, AmbientInput, ProactiveInput)):
+                    standing = await queries.open_standing(limit=declaration.window[2] + 1)
+                    seeds = replace(seeds, ids=tuple(dict.fromkeys((*seeds.ids, *standing))))
                 people = await self._identity_people(seeds.people, authority)
                 rooms = tuple(dict.fromkeys(
                     authority.room_keys[ref] for ref in seeds.rooms if ref in authority.room_keys
@@ -313,14 +316,18 @@ class _AnchorQueries:
         ).order_by(r.graph_id)))
 
     async def debrief(self, data: DebriefInput) -> _Seeds:
+        return _Seeds((*data.items, *await self.open_standing()), (self._scope.room,))
+
+    async def open_standing(self, *, limit: int | None = None) -> tuple[str, ...]:
         r = self._rows
         aliases = tuple(ref for ref, key in self._scope.room_keys.items()
                         if key == self._scope.room)
+        # ponytail: a bounded read takes the first graph IDs, regardless of urgency.
         ids = await self._conn.scalars(sa.select(r.graph_id).where(
             r.kind == "intention", r.state == "open",
             sa.or_(r.origin_room.is_(None), r.origin_room.in_(aliases)),
-        ).order_by(r.graph_id))
-        return _Seeds((*data.items, *ids), (self._scope.room,))
+        ).order_by(r.graph_id).limit(limit))
+        return tuple(ids)
 
     async def review(self, data: ReviewInput, now: datetime) -> _Seeds:
         aliases = tuple(ref for ref, key in self._scope.room_keys.items()

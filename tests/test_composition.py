@@ -700,17 +700,12 @@ async def test_compute_enabled_without_an_adapter_boots_and_spawns_no_poller(
         await deps.background.cancel_all()
 
 
-async def test_the_composed_registry_holds_the_rollup_read_and_the_standing_head(
-    cfg, no_build_stamp,
-):
-    """Both reads are SELECTs with no flag: a composed graph always wires them, so
-    `rollup_read` reaches a tag turn and `standing_read` the Cognition session.
-    Unwired, the registry withholds each from every surface, silently."""
+async def test_the_composed_registry_holds_the_rollup_reader(cfg, no_build_stamp):
     deps = await build_dependencies(cfg)
     try:
         registry = deps.engagement._tool_registry
-        assert registry._rollup is not None and registry._standing_head is not None
-        assert {"rollup_read", "standing_read"}.isdisjoint(registry._withheld)
+        assert registry._rollup is not None
+        assert "rollup_read" not in registry._withheld
     finally:
         await deps.background.cancel_all()
 
@@ -901,48 +896,12 @@ async def test_the_dreamer_runs_on_a_model_that_can_stop(cfg):
 
 
 
-async def test_standing_disabled_still_wires_graph_debrief_without_legacy_fold(cfg):
-    """Disabling the room fold leaves canonical action facts readable, without
-    asking the shared reader to read a dormant room position store."""
+async def test_graph_debrief_is_wired_without_a_legacy_memory_switch(cfg):
     deps = await build_dependencies(cfg)
-    assert deps.engagement._debrief_wiring is not None
-    assert deps.engagement._standing_replay_wiring is None
-    reader = deps.engagement._context._shared_reader
-    assert reader is not None
-    view = await reader(unit="friends", now_ms=1000)
-    assert "findings" not in dict(view.sources)
-
-
-async def test_standing_enabled_wires_the_same_store_to_both_halves(cfg, tmp_path):
-    """**One instance, two callers**, and this is the structural half of a
-    non-negotiable: the fold must read the position it is about to overwrite.
-    Two separate store objects would still satisfy every type here and still be
-    the same row, but it is the kind of wiring that invites a later change to
-    give the reader a cache — at which point the fold corrects a stale position
-    and the contradiction is back."""
-    from unittest.mock import patch
-
-    from nora.domain.standing import Standing
-
-    (tmp_path / "policy.toml").write_text(_HOME_POLICY)
-    deps = await build_dependencies(override_config(cfg, {"standing.enabled": True}))
-    wiring = deps.engagement._standing_replay_wiring
-    assert wiring is not None
-    await wiring.store.write(standing=Standing(
-        platform="signal", conversation_id="g1", body="generated open decision",
-        fold_count=1, updated_at=1000,
-    ))
-    with patch.object(wiring.store, "read", wraps=wiring.store.read) as read:
-        view = await deps.engagement._context._shared_reader(unit="friends", now_ms=2000)
-    read.assert_any_await(platform="signal", conversation_id="g1")
-    assert any(e.kind == "standing" and e.subject == "generated open decision"
-               for e in view.entries)
-    assert "acts" not in dict(view.sources)
-    assert wiring.max_chars == 1200
-    # Read the value from the config under test, not a hardcoded literal: the operator
-    # owns fold_batch, and a literal breaks when it is changed.
-    assert wiring.fold_batch == cfg.standing.fold_batch
-    assert wiring.record_store is deps.ingest._audit
+    try:
+        assert deps.engagement._debrief_wiring is not None
+    finally:
+        await deps.background.cancel_all()
 
 
 async def test_the_debrief_model_defaults_to_the_reply_model(cfg):
@@ -950,7 +909,7 @@ async def test_the_debrief_model_defaults_to_the_reply_model(cfg):
     exchange_model` uses. An empty string reaching the provider would be a 400 on the
     first fold, in production, after a config change that looked like it left the model
     alone."""
-    deps = await build_dependencies(override_config(cfg, {"standing.enabled": True}))
+    deps = await build_dependencies(cfg)
     assert deps.engagement._debrief_wiring.client.model == cfg.llm.model
 
 
@@ -960,7 +919,7 @@ async def test_the_debrief_reads_its_objective_from_the_instruction_substrate(cf
     actually resolving the objective, because a `Wiring` holding an object with
     the right method name and no such objective behind it would look identical
     here and fail on the first fold."""
-    deps = await build_dependencies(override_config(cfg, {"standing.enabled": True}))
+    deps = await build_dependencies(cfg)
     body = deps.engagement._debrief_wiring.objective.objective_body("debrief")
     assert "Re-judge each open intention" in body
     assert "pass's recorded items" in body
@@ -984,14 +943,14 @@ async def test_the_debrief_declares_a_reasoning_effort_rather_than_inheriting_si
     # and empty falls back to `[llm]`. Asserting only the fallback goes red once
     # the operator sets a value, which pins today's config rather than the rule.
     explicit = await build_dependencies(override_config(
-        cfg, {"standing.enabled": True, "standing.reasoning_effort": "none"}))
+        cfg, {"standing.reasoning_effort": "none"}))
     # Read off the PROVIDER the client built, not a field it stored. The
     # effort's whole job is to reach the request; an attribute nobody sends would
     # satisfy a stored-field check and change nothing about the call.
     assert _effort_of(explicit.engagement._debrief_wiring.client) == "none"
 
     inherited = await build_dependencies(override_config(
-        cfg, {"standing.enabled": True, "standing.reasoning_effort": ""}))
+        cfg, {"standing.reasoning_effort": ""}))
     assert (_effort_of(inherited.engagement._debrief_wiring.client)
             == cfg.llm.reasoning_effort)
 
@@ -1007,7 +966,6 @@ async def test_an_unusable_reasoning_effort_refuses_to_start(cfg):
     # corrupts the one it falls back to.
     with pytest.raises(StartupError, match="reasoning effort"):
         await build_dependencies(override_config(cfg, {
-            "standing.enabled": True,
             "standing.reasoning_effort": "",
             "llm.reasoning_effort": "hgh",
         }))
@@ -1167,7 +1125,7 @@ async def test_the_proactive_runner_thinks_at_its_own_effort(cfg, tmp_path):
     right at effort `none`."""
     (tmp_path / "policy.toml").write_text(_HOME_POLICY)
     deps = await build_dependencies(override_config(cfg, {
-        "notes.enabled": True, "heartbeat.enabled": True,
+        "heartbeat.enabled": True,
         "participation.enabled": True, "participation.reasoning_effort": "none",
         "proactive.reasoning_effort": "low",
     }))

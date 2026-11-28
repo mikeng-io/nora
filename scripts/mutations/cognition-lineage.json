@@ -35,13 +35,6 @@
   "target": "tests/unit/test_lineage.py::test_presence_is_refused"
  },
  {
-  "name": "mode on renders only the notes whose lineage passes",
-  "file": "nora/agent/prefill.py",
-  "old": "    notes = view.notes if view is not None and _enforced(ctx) else ctx.notes",
-  "new": "    notes = ctx.notes",
-  "target": "tests/unit/test_lineage.py::test_a_note_is_not_rendered_in_a_wider_room_and_the_rest_are"
- },
- {
   "name": "the backfill marks a later revision citing nothing unresolved",
   "file": "nora/infra/sql/migrations/versions/0073_lineage.py",
   "old": "                || CASE WHEN p.missing OR (NOT p.cites AND NOT p.first)",
@@ -75,13 +68,6 @@
   "old": "        if other.unit != here.unit:\n            continue",
   "new": "        if False:\n            continue",
   "target": "tests/infra/test_record_query.py::test_another_groups_rooms_are_not_even_counted"
- },
- {
-  "name": "mode off builds no view",
-  "file": "nora/agent/prefill.py",
-  "old": "    if target is None or target.mode == \"off\":",
-  "new": "    if target is None:",
-  "target": "tests/unit/test_lineage.py::test_mode_off_computes_nothing"
  },
  {
   "name": "a text search never matches a deleted message",

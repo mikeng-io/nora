@@ -387,19 +387,14 @@ async def test_a_key_kept_verbatim_in_a_memo_is_still_refused_in_a_reply(store, 
     """DEC-226 (R-18 amended): a memo's `## Kept` line may hold a key-shaped value
     verbatim (D5, DEC-306), and the memo validator and the store accept it; the
     reply that quotes it back is still refused at egress, like any key."""
-    from nora.domain.memo import parse_memo_body
-    from nora.domain.note_body import Shown, ShownMessage
     from nora.testing.memo_store import InMemoryMemoStore
 
     key = "sk-abcdefghijklmnopqrstuvwx"
-    body = parse_memo_body(
-        f"## Kept\n- the router key is {key} [101]",
-        shown=Shown(rendered=(ShownMessage(101, "P1"),)),
-    )
+    body = f"## Kept\n- the router key is {key} [101]"
     memos = InMemoryMemoStore()
     memo = await memos.create(
         unit="u", platform="signal", conversation_id="g1", title="router key",
-        body=body.text, citations=("101",), mode="told", established_by="cognition:u",
+        body=body, citations=("101",), mode="told", established_by="cognition:u",
         model=None, now_ms=1,
     )
     kept = (await memos.get(unit="u", memo_id=memo.id)).head.body

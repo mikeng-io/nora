@@ -513,12 +513,6 @@ enabled = true
 shadow = false
 [participation]
 enabled = true
-[standing]
-enabled = true
-[culture]
-enabled = true
-[notes]
-enabled = true
 [store]
 data_dir = "/generated/data"
 max_per_conversation = 100

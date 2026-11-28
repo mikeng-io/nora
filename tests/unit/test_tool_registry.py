@@ -74,14 +74,12 @@ def _room() -> Room:
 #: is wired (`[record_query] enabled`), and the declared-surface tests below
 #: ask about every tool.
 _RECORD = object()
-#: The same for the two Dreamer-only reads (`rollup_read`, `standing_read`).
+#: The same for the Dreamer-only `rollup_read`.
 _ROLLUP = object()
-_STANDING = object()
 #: `room_list`'s profile reader, never called.
 _GRAPH_PROFILES = object()
 #: `social_read`'s social stream read, never called.
 _SOCIAL_ITEMS = object()
-_MEMOS = object()
 #: The document service, never called: both document tools are offered only when one
 #: is wired (`[documents] enabled`).
 _DOCUMENTS = object()
@@ -177,9 +175,8 @@ def _built_tools(registry: ToolRegistry, *, dream_adaptor: str = "proactive") ->
 
 def test_the_registry_exposes_every_declared_tool():
     tools = _built_tools(ToolRegistry(
-        record=_RECORD, rollup=_ROLLUP, standing_head=_STANDING, graph_profiles=_GRAPH_PROFILES,
+        record=_RECORD, rollup=_ROLLUP, graph_profiles=_GRAPH_PROFILES,
         social_items=_SOCIAL_ITEMS,
-        memos=_MEMOS,
         computer=FakeSandboxRuntime(), browser=FakeBrowserRunner(), documents=_DOCUMENTS,
         computer_admission=object(), browser_manager=object(),
     ))
@@ -195,8 +192,8 @@ def test_the_registry_exposes_every_declared_tool():
         # under lineage.
         "record_query",
         # the Dreamer-only reads.
-        "rollup_read", "standing_read", "social_read", "group_members",
-        "lookup_person", "recall_lookups", "calculate",
+        "rollup_read", "social_read", "group_members",
+        "lookup_person", "calculate",
         "transit", "route", "place_info", "saved_places", "where_is",
         # DEC-156: the coordinate -> street-address fetch surface. `where_is`
         # carries no address, so this is the ONLY tool that resolves one, and
@@ -246,10 +243,6 @@ def test_the_registry_exposes_every_declared_tool():
         # and tests/unit/test_subagent_tools.py pins where they ARE built.)
         # DEC-97: what she is running, and what was in an earlier version.
         "version_list", "version_read",
-        # The Notebook readers.
-        "note_read", "note_search",
-        # DEC-306: one kept memo of the unit.
-        "memo_read",
     }
 
 
@@ -322,8 +315,6 @@ def test_budgets_match_todays_table():
         "memory_search": 8,
         "memory_read": 8,
         "intention_commit": 4,
-        # 2: run once, notice a different `limit` is needed, run once more.
-        "recall_lookups": 2,
         # Nora's computer. `computer_run` 12: a
         # write, run, read the error, fix, run again loop, twice in a turn.
         # `computer_read` 8: a few files or one long file read on. `write` 8:
@@ -456,17 +447,12 @@ def test_budgets_match_todays_table():
         "set_music_volume": 2,
         # One metadata list, then notes for up to two selected releases.
         "version_list": 1, "version_read": 2,
-        "note_read": 3, "note_search": 2,
-        # `memo_read` is 3 like `note_read` (DEC-306): a couple of memos and a re-read.
-        "memo_read": 3,
         # 1: one write answers the ask; a second call is the model looping on
         # a tool it should have trusted to have worked (35 §2).
         "profile_dispute": 1,
         # `rollup_read` is 4 like `where_been` (cheap local SELECTs, so the round
-        # trip is the cost); `standing_read` is 1 (the head does not move inside a
-        # session's read of one room). A Cognition session raises both per agenda
-        # item (`nora.app.cognition_wiring`).
-        "rollup_read": 4, "standing_read": 1,
+        # trip is the cost).
+        "rollup_read": 4,
         # `social_read` is 3: one person, a narrower window, then another
         # person.
         "social_read": 3,
@@ -516,9 +502,8 @@ def test_adapting_produces_objects_the_agent_factory_accepts():
         model="deepseek-v4-flash", max_tokens=400, temperature=0.7, client=client,
     )
     tools = _built_tools(ToolRegistry(
-        record=_RECORD, rollup=_ROLLUP, standing_head=_STANDING, graph_profiles=_GRAPH_PROFILES,
+        record=_RECORD, rollup=_ROLLUP, graph_profiles=_GRAPH_PROFILES,
         social_items=_SOCIAL_ITEMS,
-        memos=_MEMOS,
         computer=FakeSandboxRuntime(), browser=FakeBrowserRunner(), documents=_DOCUMENTS,
         computer_admission=object(), browser_manager=object(),
     ))
@@ -945,7 +930,7 @@ READ_ONLY = frozenset({"document_list",
     # a Record read under lineage.
     "record_query", "poll_list", "poll_read", "room_state_read",
     "saved_places", "who_said", "load_transcript", "group_members", "lookup_person",
-    "recall_lookups", "media_fetch",
+    "media_fetch",
     # DEC-316: the graph surface's memory search, an index read
     "memory_search", "memory_read",
     # reads a shared file; the account cannot write.
@@ -955,12 +940,8 @@ READ_ONLY = frozenset({"document_list",
     # The two parking verbs: live reads that act on nothing —
     # vacancy lookups and nearby discovery, no writes anywhere.
     "parking_status", "find_parking",
-    "note_read", "note_search",
-    # DEC-306: one kept memo of the unit, a SELECT.
-    "memo_read",
-    # Dreamer-only SELECTs of the Rollup's
-    # current build and of a room's Standing head.
-    "rollup_read", "standing_read", "social_read",
+
+    "rollup_read", "social_read",
     "music_status",
     # DEC-151, DEC-201: the X tools are pure reads at all three layers, the
     # tools' closed vocabulary, the bridge's host-side allowlist, this

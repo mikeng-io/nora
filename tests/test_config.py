@@ -614,34 +614,6 @@ def test_the_legacy_reminders_section_is_refused_by_name(toml_path):
         load(toml_path)
 
 
-def test_the_notes_section_is_optional_and_ships_inert(toml_path):
-    """The note tier's `[notes]`, its `[facts]` sibling's shape and reasoning:
-    a config.toml written before this section existed must keep loading under
-    `extra="forbid"`, and `enabled` must default to False — the tier ships
-    dormant and an operator turns it on deliberately, which is what keeps a
-    `<notes>` block out of every tag until somebody decides otherwise.
-
-    One field only, and the ABSENCE is the assertion worth making: there is no
-    render cap here, unlike `[facts]`' two slice caps. The index is uncapped on
-    purpose — a note missing from it is invisible to her, and invisible is
-    indistinguishable from absent — so a top-N knob would be a supported way to
-    reintroduce that failure. The per-entry caps in `nora.domain.notes` are where
-    the prompt budget is held instead."""
-    text = toml_path.read_text()
-    head, _, tail = text.partition("[notes]\n")
-    assert tail, "config.example.toml no longer declares [notes]"
-    remainder = tail.split("\n[", 1)
-    toml_path.write_text(head + ("[" + remainder[1] if len(remainder) > 1 else ""))
-
-    cfg = load(toml_path)
-
-    assert cfg.notes.enabled is False
-    assert not hasattr(cfg.notes, "max_rendered_notes"), (
-        "the note index is uncapped by design (§5.1) — a render cap here "
-        "would make a note silently invisible"
-    )
-
-
 def test_presence_config_carries_no_ids(toml_path):
     """The [presence] section holds only operational knobs — no circle or member
     ids. Circle membership lives in identity.toml, so config.toml
@@ -1025,8 +997,6 @@ def test_a_partial_budget_block_fills_the_rest_from_the_default(toml_path):
     assert budget.timeout_seconds == DreamBudgetConfig().timeout_seconds == 120.0
 
 
-
-
 def test_a_zero_budget_field_is_a_startup_failure(toml_path):
     """`ge=1`/`gt=0` on every field, for `LimitsConfig`'s own reason: a cap that
     can be zeroed is a cap an operator can turn into a silent outage by hand,
@@ -1245,36 +1215,11 @@ def test_an_unknown_reasoning_effort_refuses_to_start():
         _reasoning_effort("nope", source="[relevance_gate] reasoning_effort")
 
 
-def test_a_standing_cap_above_the_database_ceiling_refuses_to_start(toml_path):
-    """**The startup refusal, not a runtime one.** `max_chars` is a knob and
-    `standing_body_fits_the_ceiling_check` is DDL that cannot be one, so a
-    config above the ceiling means every fold the sink accepted is refused by
-    Postgres — a config error discovered on the live reply path rather than
-    at boot. `policy.toml`'s own refuse-to-start shape, applied to a number.
-    """
-    toml_path.write_text(
-        toml_path.read_text().replace("max_chars = 1200", "max_chars = 5000"))
-    with pytest.raises(ConfigError, match="ceiling"):
-        load(toml_path)
-
-
-def test_a_standing_cap_exactly_at_the_ceiling_is_allowed(toml_path):
-    """The boundary from the accepting side: the ceiling is the largest value a
-    writer may pass, not the first one it may not."""
-    toml_path.write_text(
-        toml_path.read_text().replace("max_chars = 1200", "max_chars = 4000"))
-    assert load(toml_path).standing.max_chars == 4000
-
-
 def test_an_unknown_standing_key_is_a_startup_failure(toml_path):
-    """`extra="forbid"`, so `fold_batc = 200` is a boot failure rather than a
-    silently ignored line that leaves the fold batch meaning something else."""
-    # `_set_key` first (asserts the edit landed) so the typo surgery below
-    # cannot silently no-op when the operator changes the fold_batch value —
-    # the exact failure this file's `_set_key` docstring exists to prevent.
-    text = _set_key(toml_path.read_text(), "fold_batch", "200")
-    toml_path.write_text(text.replace("fold_batch = 200", "fold_batc = 200"))
-    with pytest.raises(ConfigError):
+    load(toml_path)
+    text = toml_path.read_text()
+    toml_path.write_text(text.replace("[standing]\n", "[standing]\ntimeout_second = 2\n"))
+    with pytest.raises(ConfigError, match=r"standing\.timeout_second"):
         load(toml_path)
 
 
@@ -1304,8 +1249,6 @@ def _uncomment_and_set(text: str, key: str, value: str) -> str:
     )
     assert n == 1, f"commented {key} not found exactly once ({n} matches)"
     return new
-
-
 
 
 def test_the_dream_unit_hold_refuses_an_explicit_budget_the_timeouts_do_not_fit(
@@ -1352,8 +1295,6 @@ def test_an_explicit_dream_unit_hold_above_the_minimum_is_accepted(toml_path):
     cfg = load(toml_path)
     assert cfg.dreamer.max_unit_hold_seconds == known_minimum + 1
     assert cfg.dreamer_max_unit_hold_seconds() == known_minimum + 1
-
-
 
 
 def test_the_standing_slot_hold_refuses_a_budget_the_timeouts_do_not_fit(toml_path):
@@ -1425,30 +1366,6 @@ def test_the_slot_hold_check_fires_even_while_standing_is_off(toml_path):
     """
     toml_path.write_text(_set_key(toml_path.read_text(), "max_slot_hold_seconds", "1.0"))
     with pytest.raises(ConfigError, match="hold a conversation's slot"):
-        load(toml_path)
-
-
-def test_a_standing_fold_batch_bigger_than_the_reply_window_is_accepted(toml_path):
-    """There is no `window` cap relationship: `fold_batch` is a BATCH SIZE, not a
-    recency window — the fold reads the NEXT `fold_batch` rows since its row-id
-    watermark, which may reach further back than `[store] context_window` (that is
-    the whole point; the watermark replaces the reply path's window). A value larger
-    than `context_window` must LOAD, or the read could not do its job."""
-    # `_set_key` asserts the edit landed — a hardcoded `str.replace` on the
-    # shipped value would silently no-op if the operator changes fold_batch.
-    toml_path.write_text(_set_key(toml_path.read_text(), "fold_batch", "400"))
-    cfg = load(toml_path)
-    assert cfg.standing.fold_batch == 400
-    assert cfg.standing.fold_batch > cfg.store.context_window
-
-
-def test_a_standing_fold_batch_of_zero_refuses_to_start(toml_path):
-    """`fold_batch` is a batch size, so the one hard bound it has is the
-    domain one: a fold that reads zero rows is a fold that does nothing, and a
-    `ge=1` constraint is what refuses it at startup rather than at the first
-    fold."""
-    toml_path.write_text(_set_key(toml_path.read_text(), "fold_batch", "0"))
-    with pytest.raises(ConfigError):
         load(toml_path)
 
 
@@ -1662,10 +1579,6 @@ def test_a_floor_that_is_not_hh_mm_or_an_unknown_zone_refuses_to_start(toml_path
 # ── [cognition]: what the wake needs ───────────────────────────────────────
 
 
-
-
-
-
 def _write(path, text):
     path.write_text(text)
     return path
@@ -1677,8 +1590,6 @@ def test_the_failure_backoff_and_grounding_keys_load_with_their_documented_defau
         assert (c.record_chars, c.message_chars, c.register_lines) == (40000, 400, 40)
         # window unknown: no overflow is ever proven to be the agenda's
         assert (c.model_window_tokens, c.overflow_window_fraction) == (None, 0.8)
-
-
 
 
 #: The tag turn's own loop bounds on the live deployment: `[llm.limits]` turns /
@@ -1803,18 +1714,6 @@ def test_the_template_pins_the_budget_blocks_it_declares(toml_path):
     assert (subagent.output_tokens, subagent.timeout_seconds) == (
         COGNITION_OUTPUT_TOKENS, COGNITION_TIMEOUT_SECONDS,
     )
-
-
-def test_the_standing_section_is_optional_and_ships_inert(toml_path):
-    """A config.toml written before this section existed keeps loading under
-    `extra="forbid"`, with the tier OFF."""
-    text = toml_path.read_text()
-    start = text.index("\n[standing]")
-    toml_path.write_text(text[:start] + text[text.index("\n[music]"):])
-    cfg = load(toml_path)
-    assert cfg.standing.enabled is False
-    assert (cfg.standing.max_chars, cfg.standing.fold_batch) == (1200, 200)
-    assert cfg.standing.model == ""
 
 
 def test_the_dream_unit_hold_ships_unset_and_derives_a_default(toml_path):
@@ -1985,4 +1884,27 @@ def test_video_gen_refuses_a_resolution_other_than_480p(toml_path):
     text = toml_path.read_text()
     toml_path.write_text(text.replace('resolution = "480P"', 'resolution = "768P"', 1))
     with pytest.raises(ConfigError):
+        load(toml_path)
+
+@pytest.mark.parametrize("section", ["notes", "culture"])
+def test_retired_memory_sections_are_refused_by_name(toml_path, section):
+    load(toml_path)
+    with toml_path.open("a") as config:
+        config.write(f"\n[{section}]\nenabled = false\n")
+    with pytest.raises(ConfigError, match=rf"\[{section}\] has been removed"):
+        load(toml_path)
+
+
+@pytest.mark.parametrize("key, value", [
+    ("enabled", "false"),
+    ("max_chars", "1000"),
+    ("fold_batch", "40"),
+    ("working_set_max_items", "4"),
+    ("working_set_max_chars", "750"),
+])
+def test_retired_standing_keys_are_refused_by_name(toml_path, key, value):
+    load(toml_path)
+    text = toml_path.read_text()
+    toml_path.write_text(text.replace("[standing]\n", f"[standing]\n{key} = {value}\n"))
+    with pytest.raises(ConfigError, match=rf"\[standing\] {key} has been removed"):
         load(toml_path)

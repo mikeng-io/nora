@@ -274,8 +274,8 @@ def standing(
     """Read the room's open intentions, recent endings and situation claims."""
     room_intentions = tuple(
         row for row in result.rows if row.kind == "intention" and (
-            (_in_room(row, room) or row.origin_room is None) and row.state == "open"
-            if open_room_and_unit else _in_room(row, room)
+            (_in_room(row, room) and (not open_room_and_unit or row.state == "open"))
+            or (row.origin_room is None and row.state == "open")
         )
     )
     due = {row.graph_id for row in room_intentions if intention_is_due(row, now)}

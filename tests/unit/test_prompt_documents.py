@@ -175,7 +175,6 @@ def tag_context(
         "tag-1", message, PersonRef("miles", "Miles", aliases=("阿Miles",)),
         (row(body, name=name),), ("likes espresso",), 0.0,
         tagger_card=("asked about dinner",),
-        notes=(),
         # TWO people, because `<person>` is a framed block that repeats — a
         # one-person fixture cannot tell a row that repeats from a block served
         # twice, which is what `test_a_prompt_never_serves_the_same_block_twice`
@@ -298,7 +297,7 @@ BUILDERS = {
         trace=trace(body, name=name), prior=standing(), display_name="Nora",
         metrics=Metrics(), tz=UTC),
     "relevance_gate": lambda body="去邊食", *, name="Grant": render_context(
-        (row(body, name=name),), (standing().body, TS), now=NOW),
+        (row(body, name=name),), now=NOW),
     "skills": skills,
     "arrivals": arrivals,
 }
@@ -361,14 +360,11 @@ SHAPES = {
 <people_in_window description>
   <person description fields name>
   <person description fields name>
-<notes description fields id_kind>
-<memos description fields>
 <transcript description fields window>
   <m age at author_id from n>""",
     "relevance_gate": """
 <transcript description fields>
-  <m age from n>
-<standing description fields written>""",
+  <m age from n>""",
     "skills": """
 <available_skills description fields>
   <skill name when_to_load>""",

@@ -32,7 +32,6 @@ from typing import Any
 
 from opentelemetry import baggage
 
-from nora.agent.catalog.groups import LEGACY_ENGAGEMENT_TOOLS
 from nora.obs.tracing import record_eval_event
 
 #: The music verbs. Discord-only by construction — their bodies gate on the
@@ -46,7 +45,6 @@ DISCORD_ONLY_TOOLS: frozenset[str] = frozenset({
 #: Tools used by the Cognition session.
 #:
 #: `rollup_read` is also a tag-path tool (`TAG_READABLE_LOOP_TOOLS`, below).
-#: `standing_read` is an ordinary read: ledger budgets point every occasion to it.
 #: `social_read` reads the social stream's recorded items; the tag path keeps
 #: the live `instagram_*` reads instead (design/cognition-loop/observation.md).
 #: It is not a tag-path tool, so a reply neither pays its prompt nor can route
@@ -122,8 +120,6 @@ class ToolScope:
     engagement: bool = False
 
     def admits(self, name: str) -> bool:
-        if self.engagement and name in LEGACY_ENGAGEMENT_TOOLS:
-            return False
         if self.grant is not None and name not in self.grant:
             return False
         if name in TAG_ONLY_TOOLS and not self.tag_turn:

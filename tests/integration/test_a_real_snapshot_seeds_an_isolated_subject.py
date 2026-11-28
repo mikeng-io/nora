@@ -290,54 +290,10 @@ async def test_the_judges_source_names_every_speaker_and_marks_hers(sandbox, sou
         assert raw not in joined
 
 
-async def test_the_sandbox_holds_the_position_she_held_then(sandbox, source) -> None:
-    """The earlier fold, with the `updated_at` it had — not the one written two
-    hours later."""
-    await _seed(sandbox, source)
-    eng = create_sql_engine(sandbox.database_url)
-    try:
-        standing = await SqlStandingStore(eng).read(platform=ROOM[0], conversation_id=ROOM[1])
-    finally:
-        await eng.dispose()
-    assert standing is not None
-    assert standing.body == "they are deciding whether friday still works"
-    assert standing.updated_at == BEFORE_MS - 3 * HOUR
-
-
 def _culture_head(key: str) -> sa.Select[tuple[str]]:
     return sa.select(CULTURE_REVISION.c.body).join(
         CULTURE, CULTURE.c.head_revision_id == CULTURE_REVISION.c.id,
     ).where(CULTURE.c.key == key)
-
-
-async def test_the_sandbox_holds_the_culture_account_current_then(sandbox, source) -> None:
-    """Under the subject's OWN culture key — resolved from the policy entry the
-    room composes with, which for this room is its id."""
-    await _seed(sandbox, source)
-    eng = create_sql_engine(sandbox.database_url)
-    try:
-        async with eng.connect() as conn:
-            head = (await conn.execute(_culture_head(sandbox.culture_key))).one()
-    finally:
-        await eng.dispose()
-    assert head.body == "they confirm plans late and nobody minds"
-
-
-async def test_the_sandbox_holds_the_notebook_as_it_stood_then(sandbox, source) -> None:
-    """One note under the subject's OWN unit (the policy entry's), with the body
-    its AS-OF revision carried — not the head's, written four hours after —
-    and not the note created five hours after."""
-    await _seed(sandbox, source)
-    eng = create_sql_engine(sandbox.database_url)
-    try:
-        notes = SqlNoteStore(eng)
-        standing = await notes.standing(unit=sandbox.unit)
-        assert [n.title for n in standing] == ["Friday dinner"]
-        revision = await notes.revision_by_id(revision_id=standing[0].head_revision_id)
-    finally:
-        await eng.dispose()
-    assert revision is not None
-    assert revision.body == "nobody has confirmed friday"
 
 
 # --- the source is untouched -------------------------------------------------
@@ -552,70 +508,6 @@ async def test_the_subject_seeds_distinct_open_intentions(sandbox) -> None:
 
 # --- a note's SOURCE id, end to end -----------------------------------------
 
-
-async def test_a_seeded_note_keeps_its_source_id_end_to_end(sandbox, source, engine):
-    linked = await SqlNoteStore(engine).create(
-        unit="nora", title="Generated signup", description="who is running",
-        uncertainty="open", closing_condition="somebody answers",
-        established_in=ROOM[1], body="The signup is open.",
-        established_by="test-seed", now_ms=BEFORE_MS - HOUR, anchor_date=20260920,
-    )
-    await _seed(sandbox, source)
-    sandbox_engine = create_sql_engine(sandbox.database_url)
-    try:
-        notes = await SqlNoteStore(sandbox_engine).standing(unit=sandbox.unit)
-        [sandbox_note] = [n for n in notes if n.title == linked.title]
-        assert sandbox_note.id == linked.id
-    finally:
-        await sandbox_engine.dispose()
-
-
-async def test_a_note_anchored_only_by_entities_seeds_end_to_end(
-    sandbox, source, engine,
-) -> None:
-    """A note with entity anchors and no date is a legal note. It arrives in the
-    sandbox with the same anchor rather than being refused.
-
-    Revert `anchor_entity_ids` in `nora.subject.sandbox._note_seed` and this
-    goes RED: the note reaches `Note.__post_init__` with no anchor."""
-    await SqlNoteStore(engine).create(
-        unit="nora", title="Ongoing thing", description="a running topic",
-        uncertainty="open", closing_condition="it ends",
-        established_in=ROOM[1], body="still going",
-        established_by="test-seed", now_ms=BEFORE_MS - HOUR,
-        anchor_date=None, anchor_entity_ids=("ent-1",),
-    )
-
-    await _seed(sandbox, source)
-
-    sandbox_engine = create_sql_engine(sandbox.database_url)
-    try:
-        standing = await SqlNoteStore(sandbox_engine).standing(unit=sandbox.unit)
-        [note] = [n for n in standing if n.title == "Ongoing thing"]
-        assert note.anchor_date is None
-        assert note.anchor_entity_ids == ("ent-1",)
-    finally:
-        await sandbox_engine.dispose()
-
-
-async def test_a_hand_written_entity_anchored_note_seeds_through_create(sandbox) -> None:
-    """The other `know()` path: a `NoteSeed` with no source id goes through
-    `SqlNoteStore.create`, which must receive the entity anchor too.
-
-    Revert `anchor_entity_ids=` on `know()`'s `notes.create` call and this
-    goes RED: the note reaches the store with no anchor."""
-    await know(sandbox, Knowledge(notes=(NoteSeed(
-        title="Hand written", description="a running topic", body="still going",
-        anchor_date=None, anchor_entity_ids=("ent-2",),
-    ),)), now_ms=BEFORE_MS)
-
-    sandbox_engine = create_sql_engine(sandbox.database_url)
-    try:
-        standing = await SqlNoteStore(sandbox_engine).standing(unit=sandbox.unit)
-        [note] = [n for n in standing if n.title == "Hand written"]
-        assert note.anchor_entity_ids == ("ent-2",)
-    finally:
-        await sandbox_engine.dispose()
 
 # --- an OLDER row_history image missing a newer column must restore to SQL
 #     NULL, not error or misbehave -----------------------------------------

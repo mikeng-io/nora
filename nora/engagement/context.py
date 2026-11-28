@@ -18,36 +18,25 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from collections.abc import Awaitable, Callable, Mapping, Sequence, Set
+from collections.abc import Callable, Mapping, Sequence, Set
 from dataclasses import replace
 from datetime import datetime
-from typing import Any, NamedTuple, Protocol
+from typing import Any, NamedTuple
 
 from nora.access import IdentityAccess
 from nora.agent.clock import local_now
 from nora.agent.lineage import (
     LineagePolicy,
-    derived_view,
-    excluded,
-    section_permits,
-    visible_sections,
 )
-from nora.agent.room import Room
-from nora.agent.standing_ledger import ledger_permits, ledger_target
 from nora.domain.blocks import row_speaker
 from nora.domain.computer_context import ComputerView
 from nora.domain.documents_context import DocumentsView
 from nora.domain.lineage import (
-    BODY,
-    HOLD_OPEN,
-    I_OWE,
-    WORKING_SET,
     RenderRoom,
 )
 from nora.domain.managed import room_scope_id
 from nora.domain.management import Scope, ScopeKind
 from nora.domain.media_join import MediaJoin
-from nora.domain.memo import Memo, MemoStore
 from nora.domain.memory_graph import Subgraph
 from nora.domain.models import (
     NormalizedMessage,
@@ -55,7 +44,6 @@ from nora.domain.models import (
     TagContext,
     TranscriptRow,
 )
-from nora.domain.notes import Note, RetainedSource
 from nora.domain.observations import (
     SourceEvent,
     SourceScope,
@@ -74,13 +62,8 @@ from nora.domain.ports import (
     RosterSource,
 )
 from nora.domain.quote_window import QuoteWindow
-from nora.domain.rollup import room_key
 from nora.domain.self_presence import Presence
-from nora.domain.shared_state import SharedView
-from nora.domain.standing import Standing
-from nora.domain.standing_ledger import LedgerEntry
 from nora.domain.subagents_context import SubagentsView
-from nora.domain.turn_record import DisclosureRequirement
 from nora.engagement.computer_context import ComputerContextReader
 from nora.engagement.documents_context import DocumentsContextReader
 from nora.engagement.self_presence import PresenceReader
@@ -100,29 +83,6 @@ _SOURCE_OBJECT_MAX = 12
 #: read, so the bound is on distinct targets, not on event count. A target
 #: past the cap shows `target_unresolved`, not a scan.
 _OBSERVATION_TARGET_MAX = 8
-
-
-class StandingNotesReader(Protocol):
-    """The one note-tier verb this assembler needs — `SqlNoteStore.standing`,
-    narrowed to a Protocol for the same reason every other collaborator here is
-    one: `TranscriptInjection` takes Protocol-typed collaborators only, so it
-    never imports `nora.infra`.
-
-    Declared HERE rather than in `nora.domain.ports` because the prefill is
-    the only reader that needs THIS verb: `note_read`/`note_search` reach the
-    tier through `nora.agent.tools` and ask it different questions. It would
-    move to `ports` as an alias if a second reader wanted `standing` itself.
-
-    **Never raises**, the promise every critical-path read in this module
-    makes. `SqlNoteStore.standing` does not yet make it — it is a bare
-    `SELECT` — which is why `_notes` guards rather than trusts.
-    """
-
-    async def standing(self, *, unit: str) -> tuple[Note, ...]:
-        """Every note in `unit` that has not been retired. Uncapped by
-        design: a note missing from the index is invisible to her, and
-        invisible is indistinguishable from absent."""
-        ...
 
 
 class _Prefetch(NamedTuple):
@@ -164,7 +124,6 @@ class TranscriptInjection:
         quote_window: QuoteWindow | None = None,
         ai_peer: str = "",
         display_name: str = "",
-        notes: StandingNotesReader | None = None,
         policy: Policy | None = None,
 
         media_join: MediaJoin | None = None,
@@ -173,8 +132,6 @@ class TranscriptInjection:
         computer: ComputerContextReader | None = None,
         documents: DocumentsContextReader | None = None,
         subagents: SubagentsContextReader | None = None,
-        memos: MemoStore | None = None,
-        shared: Callable[..., Awaitable[SharedView]] | None = None,
         clock: Callable[[], datetime] | None = None,
         rosters: Mapping[str, RosterSource] | None = None,
         self_ids: Set[str] = frozenset(),
@@ -192,14 +149,6 @@ class TranscriptInjection:
         # at a fixed instant ranks and dates the pre-fetch at that instant.
         # `None` is the wall clock.
         self._clock = clock or local_now
-        # `<memos>` (DEC-306): the unit's kept memos, unit-wide like `notes`.
-        # `None` renders no block.
-        self._memos_store = memos
-        # The unit's shared cognitive state reader (docs/design/cognition/graph.md
-        # 20-standing.md): one callable bound at the composition
-        # root over the canonical stores, `None` in every harness that wires
-        # none — which renders no `<standing>` block.
-        self._shared_reader = shared
         self._access = access or IdentityAccess.for_files(persons, policy)
         self._context_window = context_window
         # `None` renders everything that was read (every harness that predates
@@ -210,30 +159,7 @@ class TranscriptInjection:
         self._metrics = metrics
         self._ai_peer = ai_peer
         self._display_name = display_name
-        # `notes` is `None` while `[notes] enabled = false`: the note tier is
-        # dormant, the same "not configured" shape `ai_peer=""` uses to disable
-        # the self/tagger card reads below.
-        self._notes_store = notes
-        # policy.toml, ONLY so `_notes` can name the unit a room belongs
-        # to (`Conversation.unit`, DEC-105). Nothing else in this class
-        # reads it, and nothing here decides admission — by the time a tag
-        # reaches the assembler ingest has already applied the allowlist
-        # (DEC-18). Passing the Policy rather than a resolved unit string
-        # keeps this correct when a deployment runs two social units: the unit
-        # is a property of the ROOM, resolved per message.
         self._policy = policy
-        # Standing. `None` while `[standing] enabled = false`.
-        #
-        # **It is the whole `StandingStore`, not a read-only narrowing**, which
-        # differs from every other reader above. `nora.domain.ports.StandingStore`
-        # has two verbs and the debrief stage needs both, so narrowing it here
-        # would mean constructing the store twice or threading two names for one
-        # object — and the fold requires that the READ and the WRITE are the
-        # same row seen twice. One port, one instance, two callers.
-        #
-        # It is keyed `(platform, conversation_id)` and needs no `Policy`,
-        # unlike `notes`: a position is held in a room, not shared
-        # across a unit's rooms, so there is no unit to resolve.
         # THE MEDIA JOIN. `messages.body` carries `[image a3f2c1]` and nothing
         # more; the comprehension lives in `media_objects`, and the join is
         # where the two meet — in the ASSEMBLER and not in
@@ -433,109 +359,6 @@ class TranscriptInjection:
             self._metrics.inc("nora_errors_total", stage="context", platform=msg.platform)
             return ()
 
-    async def _shared(
-        self, msg: NormalizedMessage, ref: PersonRef | None,
-    ) -> SharedView | None:
-        """The unit's shared cognitive state, projected for THIS destination.
-
-        Unit-scoped like `_notes`, with the ledger read's own destination
-        predicate applied to each entry so a room sees every entry it may and
-        `permitted=False` on the rest — never an absence that reads as
-        nothing there. A wired read failure returns an unavailable view;
-        `None` is reserved for a reader that was never wired.
-        """
-        if self._shared_reader is None:
-            return None
-        convo = (
-            self._policy.conversation(msg.platform, msg.conversation_id)
-            if self._policy is not None
-            else None
-        )
-        if convo is None:
-            log.warning(
-                "no policy conversation for %s/%s — the shared state cannot "
-                "be scoped to a unit; continuing without it",
-                msg.platform, msg.conversation_id,
-            )
-            self._metrics.inc(
-                "nora_errors_total", stage="shared_state", platform=msg.platform)
-            return SharedView(
-                unit="", status="unavailable",
-                as_of_ms=int(self._clock().timestamp() * 1000),
-            )
-        permit = None
-        permit_req = None
-        standing_permits = None
-        if self._lineage is not None:
-            room = Room(
-                platform=msg.platform, conversation_id=msg.conversation_id,
-                roster_source=self._rosters.get(msg.platform),
-                tagger=ref, self_ids=self._self_ids, access=self._access,
-            )
-            target = await self._render_room(msg)
-            try:
-                narrowed = await ledger_target(target, room)
-            except Exception:
-                # A permit that cannot be built withholds EVERYTHING: an
-                # unfiltered unit read into one room is the disclosure
-                # failure, so the read itself is reported unavailable —
-                # the failure the renderer can show.
-                log.exception(
-                    "shared-state permit build failed for %s:%s",
-                    msg.platform, msg.conversation_id,
-                )
-                return SharedView(
-                    unit=convo.unit, status="unavailable",
-                    as_of_ms=int(self._clock().timestamp() * 1000),
-                )
-            if narrowed is not None:
-                def permit(entry: LedgerEntry) -> bool:
-                    return ledger_permits(entry, narrowed)
-
-                def permit_req(requirements: tuple[DisclosureRequirement, ...]) -> bool:
-                    # Turn-record items carry their own per-item disclosure;
-                    # the same lineage predicates decide it for this room.
-                    # An item carrying NO requirements has no gate to
-                    # check — withhold, never vacuously permit.
-                    return bool(requirements) and all(
-                        req.known
-                        and not excluded(req.exclude_persons, narrowed)
-                        and section_permits(
-                            req.entries, narrowed, origin=req.origin)
-                        for req in requirements
-                    )
-
-                def standing_permits(position: Standing) -> dict[str, bool]:
-                    # The derived-view gate, run against the destination's
-                    # RenderRoom: an excluded or unpermitted section is
-                    # withheld exactly as the retired standing blocks did.
-                    return visible_sections(
-                        position.lineage,
-                        (BODY, HOLD_OPEN, I_OWE, WORKING_SET), narrowed,
-                        origin=room_key(position.platform, position.conversation_id),
-                        exclude_persons=position.exclude_persons,
-                    )
-        try:
-            return await asyncio.wait_for(self._shared_reader(
-                unit=convo.unit,
-                room=(msg.platform, msg.conversation_id),
-                permit=permit,
-                permit_req=permit_req,
-                standing_permits=standing_permits,
-                now_ms=int(self._clock().timestamp() * 1000),
-            ), timeout=5.0)
-        except Exception:
-            # A wired reader that fails is NOT an unwired one: `None` would
-            # re-enable the legacy fold in `_debrief` — the independent
-            # thinker the wired route retired. `unavailable` keeps the
-            # record-only route and says why.
-            log.exception("shared-state read failed; continuing without it")
-            self._metrics.inc(
-                "nora_errors_total", stage="shared_state", platform=msg.platform)
-            return SharedView(
-                unit=convo.unit, status="unavailable",
-                as_of_ms=int(self._clock().timestamp() * 1000),
-            )
 
     async def _observation_reads(
         self, msg: NormalizedMessage,
@@ -685,76 +508,6 @@ class TranscriptInjection:
             max(0, len(heads) - len(objects)),
         )
 
-    async def _retained_sources(
-        self, msg: NormalizedMessage, notes: tuple[Note, ...],
-        shown_handles: frozenset[str],
-    ) -> tuple[tuple[RetainedSource, ...], int]:
-        """This room's retained lane: the `object_refs` open notes of the
-        unit curated, resolved through `head_for_handle` under each ref's
-        OWN scope — never the recency page.
-
-        A ref naming another room contributes nothing here (the digest binds
-        account and thread, and the room check is the boundary); one the
-        page already shows contributes nothing twice. A ref the store no
-        longer resolves comes back `head=None` — the explicit unresolved
-        marker the render names, never a dropped row. Fail-soft and
-        counted like the sibling read: a failed resolve is one marker,
-        not a failed turn."""
-        if self._observations is None:
-            return (), 0
-        if self._lineage is not None and self._lineage.mode == "on":
-            notes = derived_view(
-                notes=notes, standing=None,
-                target=await self._render_room(msg)).notes
-        out: list[RetainedSource] = []
-        more = 0
-        seen: set[str] = set(shown_handles)
-
-        def name_of(person_ref: str) -> str | None:
-            return self._obs_actor_name(msg.platform, person_ref)
-
-        for note in notes:
-            for ref in note.object_refs:
-                if (ref.platform, ref.conversation_id) != (
-                        msg.platform, msg.conversation_id):
-                    continue
-                if ref.handle in seen:
-                    continue
-                seen.add(ref.handle)
-                if len(out) >= _SOURCE_OBJECT_MAX:
-                    more += 1
-                    continue
-                try:
-                    head = await traced_read(
-                        "observations", "retained",
-                        self._observations.head_for_handle(
-                            scope=SourceScope(
-                                platform=ref.platform, account_key="",
-                                conversation_id=ref.conversation_id,
-                                thread=ref.thread),
-                            handle=ref.handle))
-                except Exception:
-                    log.exception("retained source read failed for %s",
-                                  ref.handle[:16])
-                    self._metrics.inc(
-                        "nora_errors_total", stage="observations",
-                        platform=msg.platform)
-                    head = None
-                out.append(RetainedSource(
-                    ref=ref, matter=note.title,
-                    head=None if head is None else SourceEvent(
-                        ref=f"platform_observation:{head.head_id}",
-                        kind=head.kind, operation="state",
-                        at_ms=head.observed_ms or 0,
-                        time_quality=head.observed_quality,
-                        actor=None, actor_status="not_applicable",
-                        handle=handle_of(head),
-                        summary="", ordering=head.ordering,
-                        state=head_summary(head, name_of=name_of),
-                        received_ms=head.received_ms,
-                        revision=revision_label(head.position, head.scope),
-                        coverage=coverage_label(head.coverage))))
-        return tuple(out), more
 
     async def _observation_targets(
         self, msg: NormalizedMessage, scope: SourceScope,
@@ -810,109 +563,3 @@ class TranscriptInjection:
                 "nora_errors_total", stage="observations",
                 platform=msg.platform)
             return {}, {}
-
-    async def _memos(self, msg: NormalizedMessage) -> tuple[Memo, ...]:
-        """The unit's kept memos for `<memos>` (DEC-306), keyed on the UNIT as
-        `_notes` is and for its reason: a memo kept in the group's Signal room
-        is the same group's on Discord. Fail-soft and counted
-        (`stage="memos"`): a thinner prompt beats no reply, and «I could not
-        read them» must not look like «nothing is kept»."""
-        if self._memos_store is None:
-            return ()
-        convo = (
-            self._policy.conversation(msg.platform, msg.conversation_id)
-            if self._policy is not None else None
-        )
-        if convo is None or not convo.unit:
-            # A store wired with no unit to scope it by is a WIRING GAP, not an
-            # empty list: counted, as `_notes` counts it .
-            log.warning(
-                "no policy conversation for %s/%s; the memo index cannot be scoped "
-                "to a unit; continuing without it", msg.platform, msg.conversation_id,
-            )
-            self._metrics.inc("nora_errors_total", stage="memos", platform=msg.platform)
-            return ()
-        try:
-            return tuple(await traced_read(
-                "memos", "kept", self._memos_store.kept(unit=convo.unit),
-            ))
-        except Exception:
-            log.exception("memo-index read failed; continuing without it")
-            self._metrics.inc("nora_errors_total", stage="memos", platform=msg.platform)
-            return ()
-
-    async def _notes(self, msg: NormalizedMessage) -> tuple[Note, ...]:
-        """The standing note index.
-
-        **KEYED ON THE UNIT, NOT THE ROOM — the one read in this class
-        that is.** Every sibling above passes `msg.conversation_id`; this one
-        passes `Conversation.unit`, deliberately. DEC-105: rooms
-        sharing a unit are ONE social unit — the boundary `send_to`
-        already relays across — so a note raised in the group's Discord channel
-        belongs in its Signal room's index too, and `policy.toml`'s unit
-        key is what keeps a different social unit's notes out. `established_in`
-        (the room a note was born in) is a routing key for promotion, never a
-        filter on who sees it.
-
-        Two ways this answers `()` rather than reading, and they are different
-        states wearing the same face:
-
-        - **No store** — `[notes] enabled = false`, the dormant default. Not an
-          error, not counted. It is the last read in this assembler that can
-          be dormant.
-        - **No `Conversation` for this room** — a store is wired but there is
-          no unit to scope it by. That is a WIRING GAP (engagement and
-          ingest disagreeing about which `Policy` they hold — see
-          `EngagementPipeline`'s own `convo is not None` note), so it defaults
-          safely AND is counted: guessing a unit would render another
-          unit's notes into this room, and staying silent about it is how a
-          block goes missing for the life of a deployment.
-
-        Fail-SOFT on the read itself, like every sibling: a thinner prompt
-        beats no reply. `StandingNotesReader` is documented never to raise, but
-        `SqlNoteStore.standing` is a bare `SELECT` with no guard of its own, so
-        here the catch is a REACHABLE path rather than belt-and-braces — an
-        unreachable database would otherwise cancel this read's three siblings
-        in the `gather` and take down a turn that would have worked.
-        """
-        if self._notes_store is None:
-            return ()
-        convo = (
-            self._policy.conversation(msg.platform, msg.conversation_id)
-            if self._policy is not None
-            else None
-        )
-        if convo is None:
-            log.warning(
-                "no policy conversation for %s/%s — the note index cannot be "
-                "scoped to a unit; continuing without it",
-                msg.platform, msg.conversation_id,
-            )
-            self._metrics.inc(
-                "nora_errors_total", stage="notes", platform=msg.platform)
-            return ()
-        try:
-            standing = await traced_read(
-                "notes", "standing", self._notes_store.standing(unit=convo.unit),
-            )
-        except Exception:
-            log.exception("note-index read failed; continuing without it")
-            self._metrics.inc(
-                "nora_errors_total", stage="notes", platform=msg.platform)
-            return ()
-        # `config.toml`'s [notes] section names this metric as "the tell": the
-        # reading that matters is whether the index grows faster than it earns.
-        #
-        # It is published HERE and not from a new `gather` leaf in `assemble`,
-        # because this read already happens and a further gather leaf would push
-        # the gather past its typed overloads.
-        #
-        # It is published on the SUCCESS path only. Both returns above are `()`
-        # as well, and a gauge written there would export `0` for «the tier is
-        # off» and for «I could not read the notebook» alike — the
-        # `unavailable`-as-`nothing_found` collapse R-27 exists to prevent. The
-        # wiring gap has `nora_errors_total{stage="notes"}`; absence here says
-        # the reading was not taken.
-        self._metrics.gauge(
-            "nora_note_index_entries", len(standing), unit=convo.unit)
-        return standing

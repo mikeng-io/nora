@@ -28,6 +28,11 @@ from aiohttp import web
 from opentelemetry import trace
 
 from evals import backbone
+from nora.domain.standing import Standing
+from nora.infra.sql import create_sql_engine
+from nora.infra.sql.culture import SqlCultureStore
+from nora.infra.sql.notes import SqlNoteStore
+from nora.infra.sql.standing import SqlStandingStore
 from nora.platform.bridge.service import ActionReply, action_response
 from nora.platform.bridge.wire import ActionRequest
 from nora.subject import Knowledge, Message, SubjectSpec, know, obtain
@@ -243,16 +248,36 @@ async def seed_source(
             subject,
             Knowledge(
                 transcript=transcript,
-                standing=knowledge.standing,
-                standing_age_hours=knowledge.standing_age_hours,
-                notes=knowledge.notes,
-                culture=knowledge.culture,
                 rooms=knowledge.rooms,
                 spacing_seconds=knowledge.spacing_seconds,
             ),
             now_ms=before_ms,
             leave_room_for_arrival=False,
         )
+        # Tests that measure an as-of restore need the old rows in their source.
+        engine = create_sql_engine(url)
+        try:
+            if knowledge.standing is not None:
+                await SqlStandingStore(engine).write(standing=Standing(
+                    platform=room[0], conversation_id=room[1], body=knowledge.standing,
+                    fold_count=1,
+                    updated_at=before_ms - int((knowledge.standing_age_hours or 0) * 3_600_000),
+                ))
+            if knowledge.culture is not None:
+                await SqlCultureStore(engine).append(
+                    key=subject.culture_key, body=knowledge.culture,
+                    written_at=before_ms, established_by="fixture",
+                )
+            for offset, note in enumerate(knowledge.notes):
+                await SqlNoteStore(engine).create(
+                    unit=subject.unit, title=note.title, description=note.description,
+                    uncertainty=note.uncertainty, closing_condition=note.closing_condition,
+                    established_in=room[1], body=note.body, established_by="fixture",
+                    now_ms=before_ms + offset, anchor_date=note.anchor_date,
+                    anchor_entity_ids=note.anchor_entity_ids,
+                )
+        finally:
+            await engine.dispose()
     return Source(
         url=url, room=room, before_ms=before_ms, policy=policy, identity=identity,
         template=template,

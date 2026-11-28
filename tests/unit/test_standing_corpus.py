@@ -280,28 +280,27 @@ def test_the_corpus_is_registered_as_judge_only() -> None:
     assert "standing" in JUDGE_REQUIRED
 
 
-def test_the_corpus_holds_the_mix_the_design_asks_for() -> None:
+def test_parked_corpus_preserves_its_historical_case_mix() -> None:
     """≥3 carry, ≥3 stale, ≥2 recap on REAL moments, and the operator's own
-    residue case running — ACTIVE cases, every one a named turn at its own
-    instant.
+    residue case. The anchored cases retain their original replay anchors.
 
     Residue is the exception: no post-chain turn has the shape (options the
     room could act on, some sent), so the one residue case is the operator's
     real moment with its prior declared absent — a counterfactual, counted as
     one."""
     cases = load_all("standing")
-    active = [c for c in cases if not c.metadata.get("parked")]
-    real = [c for c in active if not c.metadata.get("counterfactual")]
+    assert all(c.metadata["parked"]["reason"] == "retired memory surface" for c in cases)
+    anchored = [c for c in cases if c.metadata["snapshot"]]
+    real = [c for c in anchored if not c.metadata.get("counterfactual")]
     kinds = collections.Counter(c.metadata["kind"] for c in real)
     assert kinds["carry"] >= 3 and kinds["stale"] >= 3, kinds
     assert kinds["recap"] >= 2, kinds
-    residue = [c for c in active if c.metadata["kind"] == "residue"]
+    residue = [c for c in anchored if c.metadata["kind"] == "residue"]
     assert residue, "the corpus measures no residue at all"
     assert all(c.metadata["counterfactual"].get("varies") == "prior" for c in residue), (
         "a residue case became real: move it out of this assertion"
     )
-    for case in active:
-        assert case.metadata["snapshot"], case.name
+    for case in cases:
         assert case.metadata["tag_id"], case.name
         assert case.expected_output.strip(), case.name
     anchors = [(c.metadata["tag_id"], c.metadata["kind"]) for c in cases]
@@ -340,30 +339,16 @@ def test_the_suite_refuses_a_judge_only_corpus_without_a_judge(monkeypatch, caps
     assert "--judge" in capsys.readouterr().err
 
 
-def test_print_input_renders_one_case_without_asking_for_a_verdict(monkeypatch, capsys) -> None:
-    """`--print-input`: the case goes down the ONE path flagged `print_input`,
-    and what prints is the model input the drive recorded — nothing else."""
+def test_print_input_refuses_a_retired_fold_before_building_the_subject(monkeypatch, capsys):
     from evals import __main__ as cli
-    from evals.backbone import NORA_SHOWN
 
-    seen = []
+    def unexpected_task(*args, **kwargs):
+        pytest.fail("a parked case must never enter the subject")
 
-    def fake_task(spec):
-        def run(case):
-            seen.append((spec.entry, case.name, case.metadata.get("print_input")))
-            return {"environment_state": [EnvironmentState(name=NORA_SHOWN, state="THE-INPUT")]}
-        return run
-
-    monkeypatch.setattr(cli, "nora_task", fake_task)
-    name = next(c.name for c in load_all("standing") if not c.metadata.get("parked"))
-    assert cli._print_input("standing", name, source_url="x") == 0
-    assert capsys.readouterr().out.strip() == "THE-INPUT"
-    assert seen == [("standing", name, True)]
-
-    # A parked case has no moment to render, and a corpus whose entry cannot
-    # render its input is refused by name.
-    parked = next(c.name for c in load_all("standing") if c.metadata.get("parked"))
+    monkeypatch.setattr(cli, "nora_task", unexpected_task)
+    parked = next(c.name for c in load_all("standing"))
     assert cli._print_input("standing", parked, source_url="x") == 2
+    assert "no active case" in capsys.readouterr().err
     assert cli._print_input("no_trigger", "anything", source_url="x") == 2
 
 
@@ -453,47 +438,6 @@ def test_the_prior_is_varied_in_the_standing_corpus_and_nothing_else_is(
     }
     with pytest.raises(ValueError, match=complaint):
         _check(corpus, row)
-
-
-# --- the working_set capture ------------------------------------------------
-
-
-def test_the_outcome_working_set_capture_reads_a_seeded_working_set() -> None:
-    """The one boundary the fold's write-back crosses: `nora.domain.standing.
-    WorkingSetItem` (`nora`-side) into `evals.rebuilt.domain.WorkingSetFinding`
-    (domain-side, no `nora` import — module docstring). Seed one, as the store
-    would hold it after a fold wrote it, and check the capture carries
-    `what`/`source`/`bears_on` and drops `found_at` (`Outcome.working_set`'s
-    own docstring: not a property a corpus or a judge grades against)."""
-    from evals.rebuilt.entry import _outcome_working_set
-    from nora.domain.standing import WorkingSetItem
-
-    seeded = (
-        WorkingSetItem(
-            what="Fu Kee chicken hotpot, Kai Tak",
-            source="web_search: 啟德 雞煲",
-            found_at=1_790_000_000_000,
-            bears_on="the bowling outing",
-        ),
-        WorkingSetItem(what="a second find", source="place_info", found_at=1),
-    )
-    captured = _outcome_working_set(seeded)
-    assert captured == (
-        WorkingSetFinding(
-            what="Fu Kee chicken hotpot, Kai Tak",
-            source="web_search: 啟德 雞煲",
-            bears_on="the bowling outing",
-        ),
-        WorkingSetFinding(what="a second find", source="place_info", bears_on=None),
-    )
-    # `found_at` is nowhere on the captured type at all — not merely unset.
-    assert not hasattr(captured[0], "found_at")
-
-
-def test_the_outcome_working_set_capture_reads_empty_as_empty() -> None:
-    from evals.rebuilt.entry import _outcome_working_set
-
-    assert _outcome_working_set(()) == ()
 
 
 def test_folded_carries_a_working_set_beside_its_position() -> None:

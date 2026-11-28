@@ -39,7 +39,6 @@ from nora.domain.ports import (
 )
 from nora.domain.quote_window import QuoteWindow
 from nora.domain.standing_ledger import StandingLedger
-from nora.engagement.context import StandingNotesReader
 from nora.engagement.graph_context import EngagementGraph
 from nora.engagement.pipeline import EngagementPipeline
 from nora.engagement.self_presence import PresenceReader
@@ -68,7 +67,7 @@ def build_offline_pipeline(
     # The assembler's remaining collaborators (`nora.app.assembler.
     # build_assembler`), all optional and `None` by default so every existing
     # caller keeps working unchanged.
-    notes: StandingNotesReader | None = None,
+    notes: object | None = None,
     standing: StandingStore | None = None,
     ledger: StandingLedger | None = None,
     observations: Any = None,
@@ -120,26 +119,9 @@ def build_offline_pipeline(
         policy=room_allowlist(), adapters=adapters,
         handles=cfg.agent.handles,
     )
-    from nora.agent.shared_state import shared_reader
-
-    harness_policy = room_allowlist()
-    # The one `standing` view (docs/design/cognition/graph.md):
-    # a reader over the same store doubles a caller passes in — `None` only
-    # when none were given, exactly like `notes` here.
-    shared = (
-        shared_reader(
-            standing=standing, ledger=ledger, ai_peer="nora",
-            rooms_of_unit=lambda unit: tuple(
-                (c.platform, c.primary_id)
-                for c in harness_policy.rooms() if c.unit == unit),
-        )
-        if standing is not None or ledger is not None else None
-    )
     assembler = build_assembler(
         cfg, audit=audit, persons=persons, access=access, metrics=metrics,
-        policy=harness_policy,
-        notes=notes,
-        shared=shared,
+        policy=room_allowlist(),
         # The media join. `None` renders the bare handles a row actually carries; an eval
         # that wants `[image a3f2c1: …]` in its prompt builds a `MediaJoin` over
         # `nora.testing.FakeMediaObjectStore`, exactly as it passes its own doubles for
@@ -151,7 +133,6 @@ def build_offline_pipeline(
         quote_window=quote_window,
         presence=presence_reader,
         # `<memos>` (DEC-306) — `None`: no memo store here, so no block.
-        memos=None,
         rosters={adapter.platform: roster_source} if roster_source else {},
         self_ids=frozenset(),
         # `<computer>` — `None`: this harness has no computer, and an eval's VM workspace

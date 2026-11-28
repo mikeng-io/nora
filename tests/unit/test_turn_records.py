@@ -4,7 +4,6 @@ from datetime import UTC, datetime
 
 import pytest
 
-from nora.agent.lineage import LineagePolicy
 from nora.agent.prefill import render_transcript
 from nora.agent.room import Room
 from nora.agent.toolkit.transcript import _transcript_messages
@@ -258,35 +257,6 @@ async def test_turn_citations_derive_note_and_memo_disclosure_and_refuse_unknown
         assert not section_permits(entries, denied, origin=None)
         assert not section_permits(entries, _target(replace(B, persons=frozenset({"p2"})))
                                    .with_live(live), origin=None)
-    from nora.agent.registry import ToolRegistry
-    from nora.obs.metrics import Metrics
-    from nora.testing import FakeRecordStore
-    from tests.fakes import SinkSender
-
-    for target, expected in ((B, "ok"), (replace(B, location=False), "nothing_found")):
-        policy = LineagePolicy(
-            rooms=(A, target, C), circles=(frozenset({"p1", "p2"}),),
-            _by_id={("discord", "room-b"): target},
-        )
-        registry = ToolRegistry(memos=SqlMemoStore(_record_engine(conn)),
-                                lineage=policy, unit_for=lambda _p, _c: "u1")
-        room = _room()
-        specs = registry.specs(
-            store=FakeRecordStore(), conversation_id="room-b", conversation_type="group",
-            persons=Persons(by_person={}, index={}),
-            deliverer=SinkSender(),
-            metrics=Metrics(), room=room,
-        )
-        read = next(s.call for s in specs if s.name == "memo_read")
-        assert (await read(memo_id=row.mid))["status"] == expected
-    for unknown_body, unit in ((body.replace("t7", "t8"), "u1"), (body, "u2")):
-        with pytest.raises(NoteBodyError, match="unknown_turn"):
-            await _revision_lineage(conn, body=unknown_body, origin="room-a", first=True, unit=unit)
-    conn.trace = replace(trace, requirements={})
-    with pytest.raises(NoteBodyError, match="unknown_turn"):
-        await _revision_lineage(conn, body=body, origin="room-a", first=True, unit="u1")
-
-
 
 
 async def test_unresolved_record_items_are_unavailable_and_denied_items_stay_resolved():

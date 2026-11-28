@@ -88,7 +88,7 @@ _SPECS_ONLY = frozenset({
     # The worker's progress record, where `checkpoint_update` writes;
     # threaded the same way as `subagent_job`.
     "checkpoint_sink",
-    "music", "tool_call_log_store",
+    "music",
     # Release readers are wired by ToolRegistry; neither test-facing wrapper owns them.
     "versions", "releases",
     # `load_tools`' per-turn shelf. Created and

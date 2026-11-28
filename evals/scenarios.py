@@ -289,11 +289,38 @@ def _check_fold_case(name: str, row: dict[str, Any]) -> None:
         raise ValueError(f"{name}: case {row['name']!r}: {'; '.join(problems)}")
 
 
+def _retired_surface_reason(corpus: str, name: str) -> str | None:
+    if corpus in {"standing", "standing_unit"}:
+        return "The legacy Standing folds and their input stores were retired."
+    if corpus == "proactive_act":
+        return "The cases seed legacy notes or room Standing before a proactive pass."
+    if corpus == "relevance_gate" and name == "real-commitment-in-standing":
+        return "The relevance gate reads the transcript without a Standing input."
+    if corpus == "participation" and name in {
+        "stalled-question-known", "stalled-question-unknown",
+        "planning-context-known", "planning-context-unknown",
+        "commitment-followup-known",
+    }:
+        return "The case depends on a retired legacy note or Standing premise."
+    if corpus == "conversational_recall" and name in {
+        "j2_tomorrows_plan", "j2_next_plan_after_a_revision",
+    }:
+        return "The recall judge names a retired note identifier as its evidence."
+    return None
+
+
 def _case(row: dict[str, Any], corpus: str = "") -> Case:
     # Resolved ONCE, here, before anything reads the case: the anchor,
     # the person, the input, the expectation, every metadata string. The
     # `name` is not: it is how `--case` selects, and it names no one.
     row = {**pseudonyms.resolve(row), "name": row["name"]}
+    parked = dict(row.get("parked") or {})
+    if why := _retired_surface_reason(corpus, row["name"]):
+        parked = {
+            "reason": "retired memory surface",
+            "why": why,
+            "returns_when": "The case is rebased onto its current input contract.",
+        }
     return Case(
         name=str(row["name"]),
         input=str(row.get("input", "")),
@@ -304,7 +331,7 @@ def _case(row: dict[str, Any], corpus: str = "") -> Case:
             "entry": str(row["entry"]),
             "expect": row["expect"],
             "snapshot": dict(row.get("snapshot") or {}),
-            "parked": dict(row.get("parked") or {}),
+            "parked": parked,
             "counterfactual": dict(row.get("counterfactual") or {}),
             "person": str(row.get("person") or pseudonyms.resolve("miles_novak")),
             "mention": bool(row.get("mention", False)),

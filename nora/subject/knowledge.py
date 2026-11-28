@@ -17,29 +17,17 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import hashlib
-import uuid
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-import sqlalchemy as sa
-from sqlalchemy.ext.asyncio import AsyncEngine
-
 import nora.memory as memory
-from nora.domain.culture import character_key, nora_character_key, unit_culture_key
 from nora.domain.media import MediaBlob
 from nora.domain.models import NormalizedMessage
-from nora.domain.note_body import citations_in
-from nora.domain.notes import Note
 from nora.domain.rollup import room_key
-from nora.domain.standing import Standing
 from nora.infra.sql import create_sql_engine
-from nora.infra.sql.culture import SqlCultureStore
 from nora.infra.sql.lessons import SqlLessonStore
-from nora.infra.sql.notes import SqlNoteStore
-from nora.infra.sql.schema import NOTE, NOTE_REVISION
-from nora.infra.sql.standing import SqlStandingStore
 
 from .obtain import Subject
 
@@ -557,70 +545,6 @@ async def last_row_id(
     return rows[-1].id if rows else 0
 
 
-async def _write_standing(
-    subject: Subject, room: tuple[str, str], body: str, *, at_ms: int,
-) -> None:
-    engine = create_sql_engine(subject.database_url)
-    try:
-        await SqlStandingStore(engine).write(
-            standing=Standing(
-                platform=room[0], conversation_id=room[1], body=body,
-                fold_count=1, updated_at=at_ms,
-            )
-        )
-    finally:
-        await engine.dispose()
-
-
-async def _seed_note_with_id(
-    engine: AsyncEngine, *, note: Note, body: str, established_by: str, written_at: int,
-) -> None:
-    """Insert ONE note and its first revision under `note.id`, exactly as
-    seeded — a SEED-ONLY primitive, independent of `nora.infra.sql.notes`.
-
-    `SqlNoteStore.create` is the production write path and always assigns a
-    fresh `uuid4`; it takes no id parameter, reasonably, since production
-    never has one to give it. A note seeded FROM a real snapshot (`nora.
-    subject.sandbox._note_seed`) already has one — the id every reminder
-    seeded alongside keeps in its payload (`_reminder_seed` copies `payload`
-    verbatim). Assigning a different id here would leave the sandbox
-    internally inconsistent: the reminder and the note would disagree about
-    what got inserted.
-
-    Same two inserts, same columns, as `SqlNoteStore._create_on_conn` (there
-    is one schema; this does not invent a second one) — kept as an
-    independent statement here rather than a call into that (private)
-    method, so this file's seeding path does not couple to its internals.
-
-    `note`'s own `__post_init__` (`nora.domain.notes`) has already run by
-    construction — it is a real `Note`, not a bag of fields — so the same
-    refusals `SqlNoteStore.create` would raise (no anchor, an over-long
-    index entry, a blank closing condition) raise here too, before either
-    insert.
-
-    `note.head_revision_id` is the CALLER's to set (it must, to construct a
-    valid `Note` at all) and is reused verbatim as the revision's own `id` —
-    one value, never generated twice, so the note's pointer and the
-    revision's identity cannot disagree.
-    """
-    async with engine.begin() as conn:
-        await conn.execute(sa.insert(NOTE).values(
-            id=note.id, unit=note.unit, title=note.title,
-            description=note.description, uncertainty=note.uncertainty,
-            closing_condition=note.closing_condition,
-            anchor_date=note.anchor_date,
-            anchor_entity_ids=list(note.anchor_entity_ids),
-            established_in=note.established_in, created_at=note.created_at,
-            head_revision_id=note.head_revision_id, revisit_at=note.revisit_at,
-        ))
-        await conn.execute(sa.insert(NOTE_REVISION).values(
-            id=note.head_revision_id, note_id=note.id, body=body,
-            parent_revision_id=None, written_at=written_at,
-            established_by=established_by, instruction_sha256=None, model=None,
-            citations=list(citations_in(body)),
-        ))
-
-
 async def know(
     subject: Subject,
     knowledge: Knowledge,
@@ -722,74 +646,12 @@ async def know(
                 now_ms=now_ms,
                 leave_room_for_arrival=leave_room_for_arrival,
             )
-        if extra.standing is not None:
-            await _write_standing(
-                subject, extra_room, extra.standing,
-                at_ms=now_ms - int((extra.standing_age_hours or 0) * 3_600_000),
-            )
-
     # A second engine over the SAME database, not a second database: the
     # composition root keeps its engine private and `Dependencies` does not
     # name it. Reaching for a private to avoid a connection pool would be the
     # trade the wrong way round.
     engine = create_sql_engine(subject.database_url)
     try:
-        if knowledge.standing is not None:
-            await SqlStandingStore(engine).write(
-                standing=Standing(
-                    platform=platform,
-                    conversation_id=conversation_id,
-                    body=knowledge.standing,
-                    fold_count=1,
-                    updated_at=now_ms - int(
-                        (knowledge.standing_age_hours or 0) * 3_600_000
-                    ),
-                )
-            )
-        if knowledge.notes:
-            notes = SqlNoteStore(engine)
-            for n, note in enumerate(knowledge.notes):
-                if note.id is not None:
-                    # SOURCE ID PRESERVED: `NoteSeed.id`'s own
-                    # docstring. `SqlNoteStore.create` always assigns a FRESH
-                    # uuid4 and has no parameter to override it — reasonably,
-                    # it is not a seeding API — so a note seeded FROM a real
-                    # snapshot goes through `_seed_note_with_id` instead,
-                    # which inserts under the id the caller already resolved
-                    # everything else against.
-                    await _seed_note_with_id(
-                        engine,
-                        note=Note(
-                            id=note.id, unit=subject.unit, title=note.title,
-                            description=note.description,
-                            uncertainty=note.uncertainty,
-                            closing_condition=note.closing_condition,
-                            established_in=conversation_id,
-                            created_at=now_ms + n,
-                            head_revision_id=str(uuid.uuid4()),
-                            anchor_date=note.anchor_date,
-                            anchor_entity_ids=note.anchor_entity_ids,
-                        ),
-                        body=note.body,
-                        established_by="case-seed",
-                        written_at=now_ms + n,
-                    )
-                    continue
-                await notes.create(
-                    # The ROOM'S unit, resolved from its policy entry at
-                    # `obtain()`.
-                    unit=subject.unit,
-                    title=note.title,
-                    description=note.description,
-                    uncertainty=note.uncertainty,
-                    closing_condition=note.closing_condition,
-                    established_in=conversation_id,
-                    body=note.body,
-                    established_by="case-seed",
-                    now_ms=now_ms + n,
-                    anchor_date=note.anchor_date,
-                    anchor_entity_ids=note.anchor_entity_ids,
-                )
         if knowledge.reminders:
             base = datetime.fromtimestamp(now_ms / 1000, tz=UTC)
             async with engine.begin() as conn:
@@ -800,57 +662,15 @@ async def know(
                         created_at=base - timedelta(seconds=seed.created_seconds_ago),
                         due_at=base + timedelta(seconds=seed.due_in_seconds),
                     )
-        if knowledge.culture is not None:
-            # `established_by` is NOT NULL on `culture_revision`
-            # (`nora/infra/sql/schema.py`), so it has to be something; the
-            # other two provenance columns are nullable and are deliberately
-            # left null rather than filled with a plausible-looking digest and
-            # model name. `"case-seed"` is the same value the notes above use —
-            # one string for "this row came from a case statement, not from a
-            # fold", so one grep finds every seeded row in a shared database.
-            await SqlCultureStore(engine).append(
-                # The room's `primary_id` (DEC-181), resolved at `obtain()`.
-                key=subject.culture_key if room is None else conversation_id,
-                body=knowledge.culture,
-                written_at=now_ms,
-                established_by="case-seed",
-            )
-        if room is None:
-            # THE CHARACTER BLOCKS' ACCOUNTS, under the keys production reads
-            # them by (`unit_culture_key`, `character_key`) and each at the
-            # age it had, written only for the subject's own room: a unit's
-            # and a person's account is per unit, not per `room`.
-            culture_store = SqlCultureStore(engine)
-            if knowledge.unit_culture is not None:
-                await culture_store.append(
-                    key=unit_culture_key(subject.unit),
-                    body=knowledge.unit_culture.body,
-                    written_at=now_ms - round(knowledge.unit_culture.age_hours * _HOUR_MS),
-                    established_by="case-seed",
-                )
-            if knowledge.lessons:
-                lesson_store = SqlLessonStore(engine)
-                # STAGGERED by a millisecond each, oldest first: the block is
-                # ordered by `created_at`, and a shared one falls back to a
-                # random UUID, so the order would change draw to draw.
-                for i, body in enumerate(knowledge.lessons):
-                    await lesson_store.create(
-                        unit=subject.unit, body=body, citations=("case-seed",),
-                        written_at=now_ms - (len(knowledge.lessons) - i),
-                        established_by="case-seed",
-                    )
-            if knowledge.nora_account is not None:
-                await culture_store.append(
-                    key=nora_character_key(subject.unit),
-                    body=knowledge.nora_account.body,
-                    written_at=now_ms - round(knowledge.nora_account.age_hours * _HOUR_MS),
-                    established_by="case-seed",
-                )
-            for person_id, account in knowledge.characters.items():
-                await culture_store.append(
-                    key=character_key(subject.unit, person_id),
-                    body=account.body,
-                    written_at=now_ms - round(account.age_hours * _HOUR_MS),
+        if room is None and knowledge.lessons:
+            lesson_store = SqlLessonStore(engine)
+            # STAGGERED by a millisecond each, oldest first: the block is
+            # ordered by `created_at`, and a shared one falls back to a
+            # random UUID, so the order would change draw to draw.
+            for i, body in enumerate(knowledge.lessons):
+                await lesson_store.create(
+                    unit=subject.unit, body=body, citations=("case-seed",),
+                    written_at=now_ms - (len(knowledge.lessons) - i),
                     established_by="case-seed",
                 )
     finally:

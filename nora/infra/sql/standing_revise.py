@@ -83,8 +83,7 @@ async def standing_revise(
     against it when it is not `None`, because a caller's `prior` from a
     DIFFERENT room would make `check_stale_base` compare the wrong row's
     `fold_count`, and `fold_count`/`last_folded_row_id` are exactly the two
-    columns `SqlStandingStore.write_if_unchanged`'s docstring already warns
-    a mismatched key silently corrupts.
+    columns carried by the prior.
 
     `base_revision_id` and `prior_revision_id` are `standing_revision.id`s
     (M6, DEC-250): the token the caller read, and the id of the row that IS the

@@ -88,9 +88,6 @@ _NOT_A_BUILDER = {
         "no message body to a model"
     ),
     # `recall_lookups` reads the tool-call log, not message rows.
-    "nora/memory/adapters/tools/meta.py": (
-        "reads the tool-call log store, not message bodies"
-    ),
     # `subagent_list` reads the subagent job store, not message rows.
     "nora/subagents/adapters/tools.py": (
         "reads the subagent job store, not message bodies"

@@ -213,15 +213,6 @@ enabled = false
 tick_seconds = 60          # proactive intention poll interval
 timeout_seconds = 120
 
-[notes]
-enabled = false
-
-[culture]
-enabled = false
-wake_batch = 200
-stale_seconds = 604800
-batch_limit = 300
-
 [lessons]
 enabled = false
 stale_seconds = 604800
@@ -234,9 +225,6 @@ check_timeout_seconds = 60
 check_max_tokens = 2048
 
 [standing]
-enabled = false
-max_chars = 1200
-fold_batch = 40
 timeout_seconds = 20.0
 store_timeout_seconds = 5.0
 max_slot_hold_seconds = 150.0

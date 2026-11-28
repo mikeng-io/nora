@@ -1,6 +1,5 @@
 import inspect
 import re
-from dataclasses import replace
 from datetime import UTC, datetime
 
 from nora.agent.prefill import (
@@ -13,7 +12,6 @@ from nora.agent.prefill import (
 from nora.domain.block_types import BLOCK_TYPES
 from nora.domain.computer import StateFile
 from nora.domain.computer_context import ComputerContextCaps, ComputerView
-from nora.domain.decision_log import DecisionRow
 from nora.domain.documents_context import DocumentLine, DocumentsView
 from nora.domain.models import (
     DeliveryStatus,
@@ -24,29 +22,27 @@ from nora.domain.models import (
     TranscriptRow,
 )
 from nora.domain.notes import Note
+from nora.domain.observations import SourceEvent
 from nora.domain.prompt import escape_attr
-from nora.domain.shared_state import SharedEntry, SharedView
 from nora.domain.subagents_context import SubagentLine, SubagentsView
 
 
 def _ctx(transcript=(), peer_card=(), body="nora.000 what time", tagger=None,
-         quote=None, platform="signal", tagger_card=(), notes=(),
-         decisions=(), people_in_window=(),
+         quote=None, platform="signal", tagger_card=(), source_objects=(),
+         people_in_window=(),
          room_members=(), computer=None, documents=None,
          subagents=None,
-         memos=(), voice=False, recalled=(),
-         recalled_partial=False, shared=None) -> TagContext:
+         voice=False, recalled=(), recalled_partial=False) -> TagContext:
     msg = NormalizedMessage(platform, "g1", "group", "+852111", "Miles", 1, body, {},
                             quote=quote, voice=voice)
     kwargs = {"tagger_card": tuple(tagger_card),
-              "notes": tuple(notes),
-              "decisions": tuple(decisions),
+              "source_objects": tuple(source_objects),
               "people_in_window": tuple(people_in_window),
               "room_members": tuple(room_members), "computer": computer,
               "documents": documents,
               "subagents": subagents,
-              "memos": tuple(memos), "recalled": tuple(recalled),
-              "recalled_partial": recalled_partial, "shared": shared}
+              "recalled": tuple(recalled),
+              "recalled_partial": recalled_partial}
     return TagContext("tag-1", msg, tagger, tuple(transcript), tuple(peer_card), 0.0,
                       **kwargs)
 
@@ -79,18 +75,12 @@ def _computer() -> ComputerView:
     )
 
 
-def _decisions() -> tuple[tuple[str, tuple[DecisionRow, ...]], ...]:
-    """One `loop_decisions` group, so `_full_prefill_body` renders the block.
-
-    A fixture that omits a block makes every "all of them" assertion silently
-    narrower than its name.
-    """
-    return (("this room", (DecisionRow(
-        id="0191f2c4-0000-7000-8000-00000000000c", writer="participation",
-        platform="signal", conversation_id="g1", unit="nora", note_id=None,
-        verdict="spoke", reason="answered the dinner question",
-        ts=1_757_000_000_000,
-    ),)),)
+def _source_object() -> SourceEvent:
+    return SourceEvent(
+        ref="platform_observation:1", kind="poll", operation="close", at_ms=0,
+        time_quality="unknown", actor=None, actor_status="unknown", handle="poll:example",
+        summary="The poll is closed", state="Closed",
+    )
 
 
 def _note(title="9 Sept dinner") -> Note:
@@ -222,8 +212,7 @@ def _full_prefill_body() -> str:
     ctx = _ctx(
         _rows("hello"), peer_card=("likes espresso",),
         tagger_card=("asked about dinner",), tagger=PersonRef("miles", "Miles"),
-        notes=(_note(),), memos=(_memo(),),
-        decisions=_decisions(),
+        source_objects=(_source_object(),),
         people_in_window=(("Grant", ("asked about dinner",)),),
         room_members=(PersonRef("p_ann", "Ann Lee", aliases=("Annie", "阿Ann")),),
         computer=_computer(), documents=_documents(), subagents=_subagents(),
@@ -232,23 +221,8 @@ def _full_prefill_body() -> str:
         # `<spoken_turn>` renders only on a spoken message.
         voice=True,
     )
-    shared = SharedView(
-        unit="generated-unit", status="ok", as_of_ms=1,
-        entries=(
-            SharedEntry(kind="decision", id="generated-decision",
-                        scope="unit", status="open", subject="Generated choice"),
-            SharedEntry(kind="standing", id="position", scope="signal:g1",
-                        status="open",
-                        subject="They are deciding where to eat; nobody has picked yet."),
-            SharedEntry(kind="finding", id="finding-1", scope="signal:g1",
-                        status="open",
-                        subject="a second restaurant the search returned",
-                        detail="web_search", at_ms=1),
-        ),
-        sources=(("ledger", "ok"),),
-    )
     body = build_prefill(
-        replace(ctx, shared=shared), display_name="Nora", context_window=40,
+        ctx, display_name="Nora", context_window=40,
         # Rendered only when tools are deferred, so the fixture passes one or
         # the block could never be checked.
         catalogue="* now — the current time, here.\n- weather — the forecast.",
@@ -256,25 +230,6 @@ def _full_prefill_body() -> str:
     block = re.search(r"<standing\b.*?</standing>", body, re.S)
     assert block is not None
     return body
-
-
-def test_the_standing_block_carries_position_findings_and_decisions():
-    """The ONE `standing` block (docs/design/cognition/graph.md) reaches the
-    model on BOTH the tag turn and the participation turn through this ONE
-    function — `nora.app.fire`'s participation occasion calls the exact same
-    `build_prefill` this test calls. The position, the not-yet-given
-    findings and the open decisions all render inside it, before the
-    transcript: "here is where everything stands, here is what was said
-    since".
-    """
-    body = _full_prefill_body()
-    assert "<standing " in body
-    assert "They are deciding where to eat; nobody has picked yet." in body
-    assert "a second restaurant the search returned" in body
-    assert "Generated choice" in body
-    assert "<standing_ledger" not in body and "<standing_working_set" not in body
-    assert "<shared_cognitive_state" not in body
-    assert body.index("<standing") < body.index("<transcript")
 
 
 def _opening_tag(body: str, name: str) -> str:
@@ -949,62 +904,6 @@ def test_the_platform_is_not_in_the_cached_prefix():
 # ---- <notes>: the note tier's index ----------------------------------------
 
 
-def test_the_notes_block_is_after_the_context_header():
-    prefill = build_prefill(_ctx(_rows("hi"), notes=(_note(),)), display_name="Nora",
-                           context_window=40)
-    body = "\n".join(m["content"][0]["text"] for m in prefill)
-
-    assert body.index("<notes") > body.index("</context_header>")
-    assert body.index("<notes") < body.index("<transcript")
-
-
-def test_the_notes_block_is_not_in_the_static_header():
-    """The cached prefix is `_context_header`. A unit-keyed block put
-    there would fragment DeepSeek's prefix match across every unit, and
-    `TagContext.notes` is reassembled per tag anyway — see `_notes_block`'s
-    own docstring."""
-    prefill = build_prefill(_ctx(_rows("hi"), notes=(_note(),)), display_name="Nora",
-                           context_window=40)
-
-    assert "<notes" not in prefill[0]["content"][0]["text"]
-    assert "<notes" in prefill[1]["content"][0]["text"]
-
-
-def test_the_notes_block_is_absent_when_nothing_is_standing():
-    """`ctx.notes` defaults to `()`, and an empty tier must add no bytes to the
-    prompt — not an empty `<notes>` tag."""
-    prefill = build_prefill(_ctx(), display_name="Nora", context_window=40)
-    body = "\n".join(m["content"][0]["text"] for m in prefill)
-
-    assert re.search(r"<notes[^>]*?/>", body)
-
-
-def test_the_notes_block_sits_at_the_wide_end_of_the_volatile_tail():
-    """`<notes>` is the one UNIT-keyed block left, so it sits at the wide
-    end of the widening-scope order the volatile tail is built on — after the
-    person blocks, and still ahead of the transcript that may bear on it."""
-    prefill = build_prefill(
-        _ctx(_rows("hi"), peer_card=("likes espresso",), notes=(_note(),)),
-        display_name="Nora", context_window=40,
-    )
-    body = "\n".join(m["content"][0]["text"] for m in prefill)
-
-    assert body.index("<peer_card") < body.index("<notes")
-    assert body.index("<notes") < body.index("<transcript")
-
-
-def test_a_note_body_never_reaches_the_prefill():
-    """The whole read-path split: the index buys awareness,
-    `note_read` buys content. A `Note` carries no body at all — the body is a
-    `NoteRevision` — so what this guards is the next-nearest free-text field
-    being folded into the line because it was in scope."""
-    body = _full_prefill_body()
-
-    assert "9 Sept dinner" in body
-    assert "which venue, and whether the 9th still works" not in body
-    assert "a venue is booked, or the date is abandoned" not in body
-
-
 def test_the_notes_index_says_which_day_each_note_is_about():
     """The anchor was on the row and rendered nowhere, in the one block two
     readers are asked to judge against it.
@@ -1078,8 +977,7 @@ def test_the_header_is_byte_identical_whatever_blocks_this_turn_has():
     """
     bare = _ctx(_rows("hi"))
     full = _ctx(_rows("hi"), peer_card=("likes espresso",),
-                tagger=PersonRef("miles", "Miles"), notes=(_note(),),
-                decisions=_decisions())
+                tagger=PersonRef("miles", "Miles"), source_objects=(_source_object(),))
     head = [build_prefill(c, display_name="Nora", context_window=40)[0]["content"][0]["text"]
             for c in (bare, full)]
     assert head[0] == head[1]
@@ -1100,8 +998,7 @@ def test_the_order_she_meets_the_blocks_is_the_order_the_table_declares():
 
     msgs = build_prefill(
         _ctx(_rows("hi"), peer_card=("c",),
-             tagger=PersonRef("miles", "Miles"), notes=(_note(),),
-             decisions=_decisions(),
+             tagger=PersonRef("miles", "Miles"), source_objects=(_source_object(),),
              people_in_window=(("Grant", ("asked about dinner",)),)),
         display_name="Nora", context_window=40,
     )
@@ -1266,7 +1163,7 @@ def test_the_prefill_span_names_which_blocks_were_built_and_at_what_size(
 ):
     """The span answers "which blocks were built, from which reads, at what
     size" — every block name doubles as the read it came from
-    (`peer_card` is the peer-card store, `notes` is the note tier, …), so the
+    (`standing` here is the source-object presentation), so the
     span needs only the name and the rendered size, not a second lookup back
     into those stores.
 
@@ -1276,15 +1173,9 @@ def test_the_prefill_span_names_which_blocks_were_built_and_at_what_size(
     ctx = _ctx(
         _rows("hello"), peer_card=("likes espresso",),
         tagger_card=("asked about dinner",), tagger=PersonRef("miles", "Miles"),
-        notes=(_note(),), decisions=_decisions(),
+        source_objects=(_source_object(),),
         people_in_window=(("Grant", ("asked about dinner",)),),
     )
-    ctx = replace(ctx, shared=SharedView(
-        unit="generated-unit", status="ok", as_of_ms=1,
-        entries=(SharedEntry(kind="decision", id="generated-decision",
-                             scope="unit", status="open", subject="Generated choice"),),
-        sources=(("ledger", "ok"),),
-    ))
     build_prefill(ctx, display_name="Nora", context_window=40)
 
     (recorded,) = exported_spans.get_finished_spans()
@@ -1293,7 +1184,7 @@ def test_the_prefill_span_names_which_blocks_were_built_and_at_what_size(
     # These blocks all have content
     # in this fixture and must show up as BUILT; asserted by subset rather
     # than equality, so this does not have to re-derive the full catalogue.
-    assert {"peer_card", "notes", "standing", "transcript"} <= set(rendered)
+    assert {"peer_card", "standing", "transcript"} <= set(rendered)
     assert recorded.attributes["nora.prefill.blocks_declared"] >= len(rendered)
     assert recorded.attributes["nora.prefill.size_chars"] > 0
 
@@ -1332,8 +1223,7 @@ def _whole_turn() -> tuple[tuple[str, str], ...]:
         [_row(1, "Bob", "見到你喇", 1000)],
         peer_card=("likes espresso",),
         tagger_card=("asked about dinner",),
-        tagger=PersonRef("miles", "Miles"), notes=(_note(),),
-        decisions=_decisions(),
+        tagger=PersonRef("miles", "Miles"), source_objects=(_source_object(),),
         people_in_window=(("Grant", ("asked about dinner",)),),
         # A RESOLVABLE quote, so `<replying_to>` actually renders — an
         # unresolvable one omits the block and the gate would pass by rendering
@@ -1531,57 +1421,3 @@ async def test_eval_context_rules_and_full_arm_differ_only_on_explicit_arithmeti
     full = await _called_prompt(uncertain)
     with exposure("rules"):
         assert await _called_prompt(uncertain) == full
-
-
-# ---- <memos> (DEC-306) ---------------------------------------------------------
-
-
-def _memo(title: str = "wifi password") -> object:
-    from nora.domain.memo import Memo, MemoRevision
-
-    head = MemoRevision(
-        id="r1", memo_id="00000000-0000-4000-8000-0000000000aa", seq=1, title=title,
-        body="## Kept\n- the wifi password is hunter-two [101]", citations=("101",),
-        mode="told", state="kept", written_at=1_790_000_000_000,
-        established_by="cognition:u",
-    )
-    return Memo(id=head.memo_id, unit="u", platform="signal", conversation_id="g1",
-                created_at=head.written_at, head=head)
-
-
-def test_the_memos_block_lists_titles_and_ids_after_the_notes_and_never_the_kept_line():
-    prefill = build_prefill(_ctx(_rows("hi"), notes=(_note(),), memos=(_memo(),)),
-                            display_name="Nora", context_window=40)
-    body = prefill[1]["content"][0]["text"]
-    assert "<memos" not in prefill[0]["content"][0]["text"]
-    block = body[body.index("<memos"):body.index("</memos>")]
-    assert 'id="00000000-0000-4000-8000-0000000000aa"' in block
-    assert ">wifi password</memo>" in block and 'updated="' in block
-    assert "hunter-two" not in body, "what a memo keeps is pulled, never pushed"
-    assert body.index("<notes") < body.index("<memos") < body.index("<transcript")
-
-
-def test_the_memos_block_is_absent_when_nothing_is_kept():
-    prefill = build_prefill(_ctx(_rows("hi")), display_name="Nora", context_window=40)
-    assert re.search(r"<memos[^>]*?/>", "\n".join(m["content"][0]["text"] for m in prefill))
-
-
-def test_the_tag_memos_block_is_capped_newest_first_and_counts_the_rest():
-    """The tag and fire `<memos>` blocks are capped."""
-    from dataclasses import replace
-
-    from nora.language.memo_render import MEMO_LINES
-
-    base = _memo()
-    memos = tuple(
-        replace(base, id=f"m-{i}", head=replace(base.head, memo_id=f"m-{i}", title=f"memo {i}",
-                                                 written_at=1_790_000_000_000 + i))
-        for i in range(MEMO_LINES + 5)
-    )
-    prefill = build_prefill(_ctx(_rows("hi"), memos=memos), display_name="Nora",
-                            context_window=40)
-    body = prefill[1]["content"][0]["text"]
-    block = body[body.index("<memos"):body.index("</memos>")]
-    assert block.count("<memo ") == MEMO_LINES
-    assert f'id="m-{MEMO_LINES + 4}"' in block and 'id="m-0"' not in block
-    assert 'not_listed="5"' in block

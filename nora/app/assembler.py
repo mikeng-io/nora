@@ -14,7 +14,7 @@ so a shared helper in the same package needs no new edge in the import graph.
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable, Mapping, Set
+from collections.abc import Callable, Mapping, Set
 from datetime import datetime
 
 from nora.agent.lineage import LineagePolicy
@@ -22,16 +22,13 @@ from nora.agent.whereis import circles_from_persons
 from nora.config import Config
 from nora.domain.live import LiveSequence
 from nora.domain.media_join import MediaJoin
-from nora.domain.memo import MemoStore
 from nora.domain.ports import (
     RecordStore,
     RosterSource,
 )
 from nora.domain.quote_window import QuoteWindow
-from nora.domain.shared_state import SharedView
 from nora.engagement.computer_context import ComputerContextReader
 from nora.engagement.context import (
-    StandingNotesReader,
     TranscriptInjection,
 )
 from nora.engagement.documents_context import DocumentsContextReader
@@ -59,7 +56,6 @@ def build_assembler(
     persons: Persons,
     metrics: Metrics,
     policy: Policy,
-    notes: StandingNotesReader | None = None,
 
     media_join: MediaJoin | None = None,
     quote_window: QuoteWindow | None = None,
@@ -67,8 +63,6 @@ def build_assembler(
     computer: ComputerContextReader | None = None,
     documents: DocumentsContextReader | None = None,
     subagents: SubagentsContextReader | None = None,
-    memos: MemoStore | None = None,
-    shared: Callable[..., Awaitable[SharedView]] | None = None,
     clock: Callable[[], datetime] | None = None,
     rosters: Mapping[str, RosterSource] | None = None,
     self_ids: Set[str] = frozenset(),
@@ -87,12 +81,7 @@ def build_assembler(
         # growth.
         quote_window=quote_window,
         ai_peer=cfg.agent.name, display_name=cfg.doctrine.display_name,
-        notes=notes, policy=policy,
-        memos=memos,
-
-        # The unit's shared cognitive state (docs/design/cognition/graph.md):
-        # ONE reader bound at the composition root; `None` renders no block.
-        shared=shared,
+        policy=policy,
         # The media join: the transcript's `[image a3f2c1]`
         # placeholders gain their stored comprehension here, in the assembler,
         # so `nora/agent/prefill.py` stays a pure renderer over `TagContext`.

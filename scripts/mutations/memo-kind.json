@@ -28,13 +28,6 @@
     "target": "tests/contract/test_memo_store_contract.py::test_another_units_memo_is_never_found"
   },
   {
-    "name": "<memos> pushes what a memo keeps",
-    "file": "nora/language/memo_render.py",
-    "old": "body=lambda m: m.title,",
-    "new": "body=lambda m: m.head.body,",
-    "target": "tests/test_prefill.py::test_the_memos_block_lists_titles_and_ids_after_the_notes_and_never_the_kept_line"
-  },
-  {
     "name": "review: the fake appends onto a withdrawn head",
     "file": "nora/testing/memo_store.py",
     "old": "        if head.state != \"kept\":\n",
@@ -47,27 +40,6 @@
     "old": "                if head.state != \"kept\":\n",
     "new": "                if False:\n",
     "target": "tests/contract/test_memo_store_contract.py::test_a_withdrawn_head_is_final_and_nothing_appends_onto_it"
-  },
-  {
-    "name": "review: the tag <memos> is uncapped",
-    "file": "nora/language/memo_render.py",
-    "old": "    for memo in kept[:lines]:\n",
-    "new": "    for memo in kept:\n",
-    "target": "tests/test_prefill.py::test_the_tag_memos_block_is_capped_newest_first_and_counts_the_rest"
-  },
-  {
-    "name": "review: <memos> oldest first",
-    "file": "nora/language/memo_render.py",
-    "old": "key=lambda m: m.head.written_at, reverse=True,",
-    "new": "key=lambda m: m.head.written_at, reverse=False,",
-    "target": "tests/test_prefill.py::test_the_tag_memos_block_is_capped_newest_first_and_counts_the_rest"
-  },
-  {
-    "name": "review: the egress note reads the head only",
-    "file": "nora/memory/adapters/tools/memos.py",
-    "old": "for t in (memo.head.body, *superseded)",
-    "new": "for t in (memo.head.body,)",
-    "target": "tests/unit/test_memo_read.py::test_a_value_only_an_earlier_revision_held_still_comes_with_the_note"
   },
   {
     "name": "review: 記住 is no keep cue",

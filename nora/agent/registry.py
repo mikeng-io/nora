@@ -46,15 +46,12 @@ from nora.agent.catalog.groups import (
 from nora.agent.toolkit.clock import utc_now
 from nora.agent.toolkit.ports import (
     DocumentPublisher,
-    NoteCollaborator,
     RecordQuerySource,
     RollupReadSource,
     RoomDirectory,
     SocialItemsSource,
-    StandingHeadSource,
 )
 from nora.agent.tools import build_tool_specs
-from nora.domain.standing_ledger import StandingLedger
 from nora.memory import GraphProfileReader
 
 from ..domain.computer import ComputerToolSettings
@@ -63,7 +60,6 @@ from ..domain.computer_exports import ComputerExportStore
 from ..domain.computer_leases import ComputerLeases
 from ..domain.computer_sessions import ComputerSessionStore
 from ..domain.media_join import MediaJoin
-from ..domain.memo import MemoStore
 from ..domain.models import TranscriptRow
 from ..domain.ports import (
     BlobStore,
@@ -85,7 +81,6 @@ from ..domain.ports import (
     VoicePresenceSource,
     WeatherProvider,
 )
-from ..domain.tool_call_log import ToolCallLogStore
 from ..infra.parking import ParkingClient, StreetParkingClient
 from ..infra.releases import GithubReleases
 from ..infra.routes import RouteClient
@@ -275,12 +270,7 @@ class ToolRegistry:
         # `DisclosureGuard` seam.
         mobility: Any = None,
         ai_peer: str = "nora",
-        notes: NoteCollaborator | None = None,
-        note_unit: Callable[[str, str], str | None] | None = None,
-        # `memo_read`'s memo store (DEC-306): `None` withholds it.
-        memos: MemoStore | None = None,
         unit_for: Callable[[str, str], str | None] | None = None,
-        tool_call_log_store: ToolCallLogStore | None = None,
         # Nora's computer (DEC-243): the runtime is `None` whenever `[computer]
         # enabled` is false, and every computer tool then answers
         # `unavailable`. `computer_events` is the audit store, built
@@ -338,12 +328,7 @@ class ToolRegistry:
         # turn's own `conversation_id`. `None` answers `unavailable`.
         record: RecordQuerySource | None = None,
         lineage: LineagePolicy | None = None,
-        # `rollup_read`'s Rollup read and `standing_read`'s Standing head: both
-        # Dreamer-only tools (`nora.agent.surface.DREAMER_ONLY_TOOLS`), and each
-        # withheld from every surface while its read is not wired.
         rollup: RollupReadSource | None = None,
-        standing_head: StandingHeadSource | None = None,
-        ledger: StandingLedger | None = None,
         # Scoped graph profiles for room_list.
         graph_profiles: GraphProfileReader | None = None,
         # `social_read`'s read of the social stream's Record: `None` withholds it.
@@ -385,8 +370,6 @@ class ToolRegistry:
         self._documents = documents
         self._lineage = lineage
         self._rollup = rollup
-        self._standing_head = standing_head
-        self._ledger = ledger
         self._graph_profiles = graph_profiles
         self._social_items = social_items
         # Tools with missing dependencies are omitted from every surface
@@ -394,9 +377,7 @@ class ToolRegistry:
         self._withheld: frozenset[str] = (
             (frozenset() if record is not None else frozenset({"record_query"}))
             | (frozenset() if rollup is not None else frozenset({"rollup_read"}))
-            | (frozenset() if standing_head is not None else frozenset({"standing_read"}))
             | (frozenset() if social_items is not None else frozenset({"social_read"}))
-            | (frozenset() if memos is not None else frozenset({"memo_read"}))
             | (frozenset() if observations is not None
                else frozenset({"poll_list", "poll_read", "room_state_read"}))
             | (frozenset() if computer is not None else COMPUTER_TOOLS)
@@ -539,26 +520,7 @@ class ToolRegistry:
         self._mobility = mobility
         # Nora's configured author id for tool calls that act as her.
         self._ai_peer = ai_peer
-        # `note_unit` is a registry field because the RESOLVER is
-        # process-lifetime; the unit it returns is not. It is not a plain `str`:
-        # a deployment can have two units (`ridgeline` and `friends`,
-        # `policy.toml`, deliberately never paired), and a constant would hand
-        # one room the other's notebook, a cross-unit read AND write past the
-        # boundary DEC-105/R-49 rest on. It takes `(platform, conversation_id)`
-        # and may answer `None`.
-        self._notes = notes
-        self._memos = memos
-        self._note_unit = note_unit
-        # ONE resolver for every unit-keyed tool. `note_unit` is its older name
-        # and still works; `unit_for` is what a tier outside the note tier
-        # passes, so it does not have to read the NOTE tier's parameter and
-        # thereby depend on the note tier being wired.
         self._unit_for = unit_for
-        # `recall_lookups`'s own collaborator, wired the identical honest way
-        # `reminders` is: `None` in the offline/eval compositions and any
-        # composition that has not wired the tool-recall log, which is what
-        # makes `recall_lookups` answer `unavailable` (R-5) rather than crash.
-        self._tool_call_log_store = tool_call_log_store
         self._computer = computer
         self._computer_admission = computer_admission
         self._browser_manager = browser_manager
@@ -673,8 +635,7 @@ class ToolRegistry:
         return frozenset(name for name, spec in NATIVE_TOOLS.items() if spec.terminal)
 
     def cacheable_tools(self) -> frozenset[str]:
-        """The tools whose successful result may be logged to `tool_call_log`
-        and later replayed by `recall_lookups`.
+        """Tools whose successful results may be registered in the graph log.
 
         A `frozenset`, the same shape `terminal_tools()` returns and for the
         same reason: membership is the whole question, and there is no
@@ -831,7 +792,7 @@ class ToolRegistry:
 
         FIRST SENTENCE, not a separate authored field: the first sentences
         already discriminate between confusable siblings
-        (`find_parking`/`parking_status`, `note_read`/`note_search`), so a repair
+        (`find_parking`/`parking_status`), so a repair
         belongs in the docstring, one source of truth per tool.
 
         `hot` marks the tools whose full schema is already resident, so the
@@ -1082,7 +1043,6 @@ class ToolRegistry:
             subagent_job=subagent_job, checkpoint_sink=checkpoint_sink,
             grant=grant,
             clock=self._clock,
-            notes=self._notes, note_unit=self._note_unit, memos=self._memos,
             unit_for=self._unit_for,
             supplied_unit=supplied_unit,
             links=links,
@@ -1099,13 +1059,11 @@ class ToolRegistry:
             memory_intake=self._memory_intake,
             lineage=self._lineage,
             rollup=self._rollup,
-            standing_head=self._standing_head, ledger=self._ledger,
             graph_profiles=self._graph_profiles,
             social_items=self._social_items,
             versions=self._versions, releases=self._releases,
             giphy_source=self._giphy,
             reaction_picker=self._reaction,
-            tool_call_log_store=self._tool_call_log_store,
             computer=self._computer, computer_events=self._computer_events,
             computer_settings=self._computer_settings,
             computer_sessions=self._computer_sessions,

@@ -1,10 +1,8 @@
-"""The lineage predicates and their application at assembly
+"""The lineage predicates for stored records
 (DEC-222, DEC-225).
 
 One predicate per kind, each with the room it must pass and the room it must
-not; unknown is deny; a surprise withholds; a failing section is dropped and
-the rest of its row renders; and a same-room read renders byte-for-byte what
-it rendered before lineage existed.
+not; unknown is deny; a surprise withholds; a failing section is withheld independently.
 
 Rooms, units and people are placeholders.
 """
@@ -17,14 +15,12 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from nora.agent.lineage import (
-    LineagePolicy,
     derived_view,
     entry_permits,
     excluded,
     section_permits,
     visible_sections,
 )
-from nora.agent.prefill import build_prefill
 from nora.domain.lineage import (
     BODY,
     ROW,
@@ -40,9 +36,7 @@ from nora.domain.lineage import (
     own_room_lineage,
     unresolved,
 )
-from nora.domain.models import NormalizedMessage, TagContext
 from nora.domain.notes import Note
-from nora.domain.shared_state import SharedEntry, SharedView
 from nora.domain.standing import Standing, WorkingSetItem
 
 # A unit of three rooms: A lists p1..p3, B lists p1..p2 (a subset of A), C
@@ -262,53 +256,6 @@ def _standing(room: str) -> Standing:
     )
 
 
-def _shared(*entries: SharedEntry, status: str = "ok") -> SharedView:
-    """The consolidated `<standing>` view `TagContext.shared` carries — the
-    one block the shared read projects after its own room gating ran."""
-    return SharedView(
-        unit="u", status=status, as_of_ms=int(NOW.timestamp() * 1000),
-        entries=entries, sources=(("findings", "ok"),),
-    )
-
-
-def _position_entry(room: str) -> SharedEntry:
-    platform = {"a": "signal", "b": "discord", "c": "whatsapp"}[room]
-    return SharedEntry(
-        kind="standing", id=f"{platform}:{room}#position",
-        scope=f"{platform}:{room}", status="open",
-        subject="where it had got to",
-    )
-
-
-def _finding_entry(room: str) -> SharedEntry:
-    platform = {"a": "signal", "b": "discord", "c": "whatsapp"}[room]
-    return SharedEntry(
-        kind="finding", id=f"{platform}:{room}#find",
-        scope=f"{platform}:{room}", status="open", subject="an option",
-        at_ms=int(NOW.timestamp() * 1000),
-    )
-
-
-def _ctx(room: RoomFacts, *, notes=(), shared=None,
-         lineage_room: RenderRoom | None = None) -> TagContext:
-    cid = sorted(room.ids)[0]
-    msg = NormalizedMessage(room.platform, cid, "group", "s1", "someone", 1, "hi", {})
-    return TagContext(
-        "tag-1", msg, None, (), (), 0.0, notes=tuple(notes), shared=shared,
-        lineage_room=lineage_room,
-    )
-
-
-def _body(ctx: TagContext) -> str:
-    content = build_prefill(ctx, display_name="Nora", context_window=40, now=NOW)[1]["content"]
-    return content if isinstance(content, str) else "".join(c["text"] for c in content)
-
-
-def _body_at(ctx: TagContext, now: datetime) -> str:
-    content = build_prefill(ctx, display_name="Nora", context_window=40, now=now)[1]["content"]
-    return content if isinstance(content, str) else "".join(c["text"] for c in content)
-
-
 async def test_the_working_set_ages_against_the_clock_the_read_was_given():
     """The finding is aged against the shared read's `now_ms`, not the wall
     clock: the consolidated `<standing>` block draws working-set items through
@@ -349,22 +296,7 @@ NOTE_A_LEGACY = _note("0191f2c4-0000-7000-8000-0000000000a3", "legacy revision",
                       Lineage.of({ROW: [message("signal:a"), unresolved("a")]}))
 
 
-def test_a_same_room_read_renders_exactly_what_it_rendered_without_lineage():
-    """Every block a backfilled room's OWN rows produce is byte-identical with
-    lineage on and with it absent."""
-    rows = {"notes": (NOTE_A, NOTE_A_LEGACY),
-            "shared": _shared(_position_entry("a"), _finding_entry("a"))}
-    policy = LineagePolicy(rooms=ROOMS, circles=(CIRCLE,), mode="on",
-                           _by_id={("signal", "a"): A})
-    on = _ctx(A, **rows, lineage_room=policy.render_room(platform="signal", conversation_id="a"))
-    off = _ctx(A, **rows)
-    assert _body(on) == _body(off)
-    for tag in ("<notes", "<standing"):
-        assert tag in _body(on)
-    assert "an option" in _body(on)  # the finding rides the one standing block
-
-
-def test_a_note_is_not_rendered_in_a_wider_room_and_the_rest_are():
+def test_a_note_is_withheld_in_a_wider_room_and_the_rest_are_visible():
     """B's people are a subset of A's. A note resting on B is refused in A (it
     holds p3, who was not there); one resting on A is shown in B; one with an
     unresolved citation stays in A."""
@@ -378,52 +310,19 @@ def test_a_note_is_not_rendered_in_a_wider_room_and_the_rest_are():
     assert [n.title for n in unread.notes] == ["raised in the smaller room"]
     in_a = derived_view(notes=(NOTE_A, NOTE_B, NOTE_A_LEGACY), standing=None, target=_in(A))
     assert [n.title for n in in_a.notes] == ["raised here", "legacy revision"]
-    body = _body(_ctx(A, notes=(NOTE_A, NOTE_B), lineage_room=_in(A)))
-    assert "raised here" in body
-    assert "raised in the smaller room" not in body
 
 
-def test_a_failing_section_is_dropped_and_the_rest_of_its_row_renders():
+def test_a_failing_section_is_withheld_independently():
     standing = replace(_standing("b"), lineage=Lineage.of({
         BODY: [message("discord:b")], WORKING_SET: [message("discord:b"), unresolved("c")],
     }))
     view = derived_view(notes=(), standing=standing, target=_in(B))
     assert (view.standing, view.standing_working_set) == (True, True)
-    # In A the whole row's lineage fails — the consolidated read projects
-    # nothing for that room (a `nothing_found` view renders no block).
-    body = _body(_ctx(A, shared=None, lineage_room=_in(A)))
-    assert "<standing" not in body
-    # In B the position section passes and the working set fails — the read
-    # projects the position entry alone into the one `<standing>` block.
     split = replace(standing, lineage=Lineage.of({
         BODY: [message("discord:b")], WORKING_SET: [LineageEntry(kind="presence", subject="p1")],
     }))
     split_view = derived_view(notes=(), standing=split, target=_in(B))
     assert (split_view.standing, split_view.standing_working_set) == (True, False)
-    body = _body(_ctx(B, shared=_shared(_position_entry("b")),
-                      lineage_room=_in(B)))
-    assert "where it had got to" in body
-    assert "an option" not in body
-
-
-def test_shadow_computes_the_same_answer_and_renders_everything():
-    shadow = _ctx(A, notes=(NOTE_A, NOTE_B), lineage_room=_in(A, mode="shadow"))
-    off = _ctx(A, notes=(NOTE_A, NOTE_B))
-    assert _body(shadow) == _body(off)
-    assert "raised in the smaller room" in _body(shadow)
-
-
-def test_mode_off_computes_nothing():
-    """`off` is not a shadow that happens to render everything: no view is
-    built, so nothing is computed and nothing lands on the prefill span."""
-    from nora.agent.prefill import _lineage
-
-    off = _ctx(A, notes=(NOTE_B,), lineage_room=_in(A, mode="off"))
-    assert _lineage(off) is None
-    shadow = _ctx(A, notes=(NOTE_B,), lineage_room=_in(A, mode="shadow"))
-    view = _lineage(shadow)
-    assert view is not None and dict(view.withheld) == {"notes": 1}
-
 
 
 def test_a_rows_origin_may_be_a_room_key_or_a_bare_id():
