@@ -14,7 +14,6 @@ from types import SimpleNamespace
 
 from nora.agent.shared_state import read_shared
 from nora.domain.cognition_remind import PendingRemind, RemindContext, check_remind
-from nora.language.shared_render import render_shared_state
 
 T0_MS = 1_780_000_000_000
 T0 = datetime.fromtimestamp(T0_MS / 1000, UTC)
@@ -171,33 +170,6 @@ async def test_a_source_that_raises_is_unavailable_never_nothing_found():
 
 
 
-def test_the_renderer_names_withheld_entries_and_coverage():
-    entry = SimpleNamespace(
-        kind="decision", id="d-1", scope="signal:room-b", status="open",
-        subject="the question", revision="2", destination="", action="",
-        subject_ref="", refs=("d-1",), at_ms=T0_MS, provenance="cognition",
-        delivery="", permitted=False,
-    )
-    from nora.domain.shared_state import SharedView
-    view = SharedView(
-        unit="u1", status="partial", as_of_ms=T0_MS,
-        entries=(entry,), sources=(("ledger", "partial"),),
-    )
-    block = render_shared_state(view, now_ms=T0_MS)
-    assert block is not None and block.name == "standing"
-    # Withheld entries name the room only as «another» — the raw
-    # platform/conversation_id of a room this read cannot see never renders.
-    assert "open in another room · withheld" in block.body.text
-    assert "room-b" not in block.body.text
-    assert "ledger partial" in block.body.text
-
-
-def test_nothing_found_renders_no_block():
-    from nora.domain.shared_state import SharedView
-    view = SharedView(unit="u1", status="nothing_found", as_of_ms=T0_MS)
-    assert render_shared_state(view, now_ms=T0_MS) is None
-
-
 async def test_a_destination_read_applies_the_real_ledger_permit():
     """The only narrower-than-unit rule is the ledger's own `ledger_permits`,
     run against a real `RenderRoom` and `LedgerEntry`: an unnamed listener
@@ -246,13 +218,6 @@ async def test_a_destination_read_applies_the_real_ledger_permit():
     # the send in the other room is readable to this unit's destination.
     send = next(e for e in view.entries if e.kind == "send")
     assert send.permitted is True
-    block = render_shared_state(view, now_ms=T0_MS)
-    assert block is not None
-    assert "withheld" in block.body.text
-    # The withheld entry leaks neither its room nor its content; other rooms'
-    # unit-visible kinds still name their room honestly.
-    assert "pier" not in block.body.text
-    assert "venue" not in block.body.text
 
 
 async def test_a_unit_read_sees_every_room():
@@ -319,59 +284,6 @@ async def test_an_unresolved_remind_persists_until_a_newer_ok_discharges_it():
         unit="u1", rooms=ROOMS, ai_peer="nora", now_ms=T0_MS, traces=store,
     )
     assert view2.unresolved == ()
-
-
-async def test_closed_decisions_and_done_commitments_survive_the_standing_read():
-    from nora.domain.standing_ledger import LedgerEntry
-    from nora.testing.standing_ledger import InMemoryStandingLedger
-
-    ledger = InMemoryStandingLedger([
-        LedgerEntry(
-            id=f"generated-{kind}", kind=kind, unit="u1", scope="unit",
-            platform="signal", conversation_id="room-a", revision=2,
-            status=status, subject=f"generated {kind}", opened_at=T0_MS - 1000,
-            last_revised_at=T0_MS, body=f"generated {status} outcome turn(t1)",
-        )
-        for kind, status in (("decision", "closed"), ("commitment", "done"))
-    ])
-    view = await read_shared(
-        unit="u1", rooms=ROOMS, ai_peer="nora", now_ms=T0_MS, ledger=ledger,
-    )
-    block = render_shared_state(view, now_ms=T0_MS)
-    assert block is not None
-    for status in ("closed", "done"):
-        assert f"generated {status} outcome" in block.body.text
-    assert "turn(t1)" in block.body.text
-
-
-def test_render_preserves_positions_conclusions_and_withholds_their_content():
-    from nora.domain.shared_state import SharedEntry, SharedView
-
-    entries = (
-        SharedEntry(kind="standing", id="position", scope="room-a", status="open",
-                    subject="We await confirmation", detail="open: booking; owe: reply",
-                    at_ms=T0_MS),
-        SharedEntry(kind="decision", id="choice", scope="unit", status="open",
-                    subject="Dinner", detail="Choose Friday; options: Thursday or Friday",
-                    refs=("note:n-1",), provenance="tag-1", at_ms=T0_MS),
-        SharedEntry(kind="decision", id="secret-choice", scope="unit", status="open",
-                    subject="SECRET SUBJECT", detail="SECRET DETAIL", permitted=False),
-        SharedEntry(kind="commitment", id="secret-done", scope="unit", status="done",
-                    subject="SECRET COMMITMENT", detail="SECRET OUTCOME", permitted=False),
-        SharedEntry(kind="act", id="secret-act", scope="room-b", status="done",
-                    subject="SECRET ACTION", destination="SECRET DEST", permitted=False),
-    )
-    rendered = render_shared_state(SharedView(
-        unit="u1", status="ok", as_of_ms=T0_MS, entries=entries,
-    ), now_ms=T0_MS)
-    assert rendered is not None
-    assert "We await confirmation" in rendered.body.text
-    assert "open: booking; owe: reply" in rendered.body.text
-    assert "Choose Friday; options: Thursday or Friday" in rendered.body.text
-    assert "note:n-1" in rendered.body.text
-    assert "tag-1" in rendered.body.text
-    assert "SECRET" not in rendered.body.text
-    assert "withheld" in rendered.body.text
 
 
 async def test_a_filtered_fact_walk_finds_unresolved_past_irrelevant_turns():
@@ -509,7 +421,7 @@ async def test_an_expired_finding_and_an_excluded_position_stay_out():
     assert "EXCLUDED FINDING" not in bodies
 
 
-async def test_an_unresolved_only_view_is_rendered():
+async def test_the_reader_keeps_an_unresolved_only_view():
     from nora.domain.tag_trace import TagTrace
     from nora.testing.tag_traces import FakeTagTraceStore
 
@@ -530,55 +442,16 @@ async def test_an_unresolved_only_view_is_rendered():
     ))
     view = await read_shared(unit="u1", rooms=ROOMS, ai_peer="nora", now_ms=T0_MS,
                              traces=traces)
-    block = render_shared_state(view, now_ms=T0_MS)
     assert view.status == "ok"
-    assert block is not None and "note:missing" in block.body.text
-
-    assert "turn(t1)" in block.body.text and "action=ask" in block.body.text
-    assert datetime.fromtimestamp((T0_MS - 3_600_000) / 1000, UTC).isoformat() in block.body.text
-
-
-def test_delivery_facts_expose_action_identity_and_legacy_uncertainty():
-    from nora.domain.shared_state import SharedEntry, SharedView
-
-    block = render_shared_state(SharedView(
-        unit="u1", status="ok", as_of_ms=T0_MS, entries=(
-            SharedEntry(kind="act", id="generated-sent", scope="unit", status="sent",
-                        subject="generated question", subject_ref="note:generated-plan",
-                        action="generated-ask-date", delivery="sent"),
-            SharedEntry(kind="act", id="generated-legacy", scope="unit", status="pending"),
-            SharedEntry(kind="finding", id="generated-finding", scope="unit", status="open",
-                        subject="generated option", detail="generated source"),
-        ),
-    ), now_ms=T0_MS)
-    assert block is not None
-    assert "note:generated-plan" in block.body.text and "generated-ask-date" in block.body.text
-    assert "subject unresolved" in block.body.text
-    assert "mapping unresolved" in block.body.text
-
-
-def test_renderer_keeps_all_facts_selected_by_the_bounded_reader():
-    from nora.domain.shared_state import SharedEntry, SharedView
-
-    entries = []
-    for kind, count in (("act", 13), ("send", 9), ("finding", 9), ("decision", 9)):
-        entries.extend(SharedEntry(
-            kind=kind, id=f"generated-{kind}-{i}", subject=f"generated-{kind}-{i}",
-            scope="unit", status="sent" if kind == "act" else "open",
-        ) for i in range(count))
-    block = render_shared_state(SharedView(
-        unit="u1", status="ok", as_of_ms=T0_MS, entries=tuple(entries),
-    ), now_ms=T0_MS)
-    assert block is not None
-    for subject in ("generated-act-12", "generated-send-8", "generated-finding-8",
-                    "generated-decision-8"):
-        assert subject in block.body.text
+    (unresolved,) = view.unresolved
+    assert "note:missing" in unresolved
+    assert "turn(t1)" in unresolved and "action=ask" in unresolved
+    assert datetime.fromtimestamp((T0_MS - 3_600_000) / 1000, UTC).isoformat() in unresolved
 
 
 async def test_a_delivered_message_without_text_is_still_a_delivery_fact():
     view = await read_shared(unit="u1", rooms=ROOMS, ai_peer="nora", now_ms=T0_MS,
                              record_query=_Sends([_send(9, T0_MS - 1000, "")]))
     assert view.status == "ok"
-    block = render_shared_state(view, now_ms=T0_MS)
-    assert block is not None and "send 9" in block.body.text
-    assert "message without text" in block.body.text
+    (entry,) = view.entries
+    assert (entry.kind, entry.id, entry.subject) == ("send", "9", "message without text")

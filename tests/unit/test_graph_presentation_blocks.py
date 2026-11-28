@@ -65,6 +65,23 @@ def test_graph_blocks_render_retrieval_status(status) -> None:
         assert all(element.text is None for element in elements)
 
 
+def test_live_standing_renders_the_base_description_and_fields() -> None:
+    blocks = GraphPresentationBlocks(NOW, GROUP, DM_ROOMS)
+    block, _shown = blocks.standing_block(
+        RetrievalResult("unavailable", BOUNDS, cause="fixture-read-failed"),
+        "signal:room", SUBJECT.graph_id,
+    )
+    assert block.render() == (
+        '<standing status="unavailable" cause="fixture-read-failed" '
+        'description="Your open and recently settled commitments and your claims about this room. '
+        'An empty result found none in this read. A missing block says nothing about the room, '
+        'and your claims may no longer describe the current situation." '
+        'fields="`cause` is why the graph read is unavailable or incomplete; '
+        '`limit` is which retrieval bounds curtailed the read; '
+        '`status` is unavailable means the read failed; empty means a successful read held none"/>'
+    )
+
+
 def test_profile_blocks_identify_each_subject_by_id_and_identity_name() -> None:
     blocks = GraphPresentationBlocks(NOW, GROUP, DM_ROOMS)
     other = EntityAnchor("fixture-other-entity", "fixture-other")

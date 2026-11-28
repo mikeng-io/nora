@@ -2271,37 +2271,44 @@ class MemoryConfig(BaseModel):
 
 
 class LessonsConfig(BaseModel):
-    """`[lessons]`: evidence windows and limits for lesson checks."""
+    """`[lessons]`: the lesson settings the graph's lesson check reads.
+
+    **Off by default, and off is the safe reading.** The old key `render` is refused at
+    load: tag and fire turns read the graph's lessons.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
     enabled: bool = False
-
-    #: Correction lookback for a unit's first session, before a settled session sets the floor.
+    #: How far back the correction fast path looks on a unit's first session (the lower edge of its
+    #: window when no session has settled yet). **604800** (7 days): a unit's whole history is not
+    #: handed in as corrections.
     stale_seconds: int = Field(default=604_800, ge=3600)
-    #: Time without new evidence before a lesson is retired.
+    #: A lesson not re-evidenced (written or reinforced) for this long is retired by code.
+    #: **5184000** (60 days); unmeasured.
     horizon_seconds: int = Field(default=5_184_000, ge=86_400)
-    #: Newest closed episodes per session; older episodes are consumed.
+    #: Closed episodes one session is handed, the newest. What is past it is consumed, as a
+    #: Character session's backlog is.
     batch_limit: int = Field(default=100, ge=1)
-    #: Minimum correction age for the fast path; 0 disables that path.
+    #: The correction fast path: a message that speaks to her and reads as an instruction about how
+    #: she acts is shown to the next session once it is this many seconds old, not held for the
+    #: episode count. **600** (10 minutes): long enough for the conversation around it to settle,
+    #: short enough that the lesson lands the same evening. `0` turns the fast path off.
     correction_quiet_seconds: int = Field(default=600, ge=0)
 
-    #: The lesson check's reasoning effort; ``""`` is low.
+    #: The lesson check uses low effort by default to judge against the law.
     check_reasoning_effort: str = ""
+    #: Its wall clock and output ceiling. The answer is one JSON object with a sentence in it; 2048
+    #: leaves a reasoning model room before it answers.
     check_timeout_seconds: float = Field(default=60.0, gt=0)
     check_max_tokens: int = Field(default=2048, ge=128)
 
 
 class JudgeConfig(BaseModel):
-    """`[judge]`: the independent judge for lesson checks and grading.
-
-    Eval scoring has its own setting, `[evals] judge_model`.
-    """
+    """Independent judge for lesson checks and grading. Evals use `[evals] judge_model`."""
 
     model_config = ConfigDict(extra="forbid")
-
-    #: An empty model falls back to `[llm] model`.
-    model: str = ""
+    model: str = ""  # An empty value falls back to [llm] model.
 
 
 class XaiImageGenConfig(BaseModel):

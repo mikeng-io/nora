@@ -23,7 +23,6 @@ from tests.test_prefill import (
     _ctx,
     _documents,
     _rows,
-    _source_object,
     _subagents,
 )
 
@@ -143,7 +142,6 @@ def test_selector_prompt_is_byte_identical_to_the_inline_path(monkeypatch):
         tagger=PersonRef("ada", "Ada"),
         peer_card=("Ada: a person",),
         tagger_card=("A long history. " * 50,),  # over the 600-char preview cut
-        source_objects=(_source_object(),),
         documents=_documents(),
         computer=_computer(),
         subagents=_subagents(),
@@ -151,6 +149,9 @@ def test_selector_prompt_is_byte_identical_to_the_inline_path(monkeypatch):
     now = datetime(2026, 10, 7, tzinfo=UTC)
     kwargs = {"display_name": "Nora", "context_window": 40, "now": now}
     blocks = _served_blocks(ctx, kwargs, monkeypatch)
+    blocks.append(ContextBlock(
+        name="standing", body=compose_fixture("An open commitment"), order=66, key="room",
+    ))
     assert selector_prompt(ctx, blocks, now, "Nora") == _legacy_router_input(
         ctx, blocks, now, "Nora"
     )

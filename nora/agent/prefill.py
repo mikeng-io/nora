@@ -11,7 +11,6 @@ from __future__ import annotations
 import json
 import re
 from collections.abc import Mapping, Sequence
-from dataclasses import replace
 from datetime import datetime
 from typing import Any
 
@@ -98,8 +97,7 @@ def _now_line(now: datetime | None) -> str:
 #: `order` runs from her own past, to theirs, to the unit's open questions, to
 #: what she already did about them, to her position, to the room: each
 #: widening scope, with the transcript last because it is adjacent to the
-#: message it explains. `<standing>` breaks scope order deliberately
-#: (`_standing_block`'s docstring argues it) and says so in its number.
+#: message it explains. Source objects sit immediately before the transcript.
 #:
 #: There is no `header` column. Each block says what it is in its own tag,
 #: from its type (`nora.domain.block_types`), so a block is described in one
@@ -138,14 +136,14 @@ _BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
     ("recalled", 36, "turn"),
     # What is on her computer for this room, read fresh at turn start. `turn`:
     # its ages move every turn. Before `standing` because it is the state of
-    # the machine, and `standing` + the transcript are read as the pair «where
+    # the machine, and `source_objects` + the transcript are read as the pair «where
     # I was, what was said since». Renders only in a room using the computer
     # (`ComputerContextReader`).
     ("computer", 57, "turn"),
     # This room's documents with their ids, so a revision asked for in a later
     # turn can name the document it means. `turn`: its ages move every turn.
     # Directly after `computer` (both are «what I have made in this room») and
-    # before `standing`. Renders only where `[documents]` is on and the room
+    # before `source_objects`. Renders only where `[documents]` is on and the room
     # has one.
     ("documents", 58, "turn"),
     # This room's sub-agent jobs (running and finished within a day), read
@@ -153,13 +151,7 @@ _BLOCKS: tuple[tuple[str, int, BlockKey], ...] = (
     # move every turn. Tag turn only, and only under `[subagent] enabled` with
     # a job in the window.
     ("subagents", 59, "turn"),
-    # THE ONE STANDING BLOCK (docs/design/cognition/graph.md): her
-    # position, open judgements, pending acts and what she already did —
-    # projected per destination from the canonical stores, unit-wide like
-    # `notes`, and last of the state blocks so the transcript follows
-    # «where everything stands». It replaces the room paragraph, the
-    # working set, the ledger index and the interim shared-state block.
-    ("standing", 66, "unit"),
+    ("source_objects", 66, "unit"),
     ("transcript", 70, "room"),
     # HOW THIS TURN REACHED HER, AND HOW HER REPLY WILL. Renders only when the
     # message she is answering was spoken in a voice channel
@@ -216,12 +208,7 @@ def _restamp(block: ContextBlock | None) -> ContextBlock | None:
     """A block built OUTSIDE this module, stamped with this prompt's `order`
     and `key` and with nothing else.
 
-    `render_notes`, `render_shared_state` and `render_decisions` live in their own
-    packages and have callers that assemble nothing (the note-candidate pass
-    and the proactive prompt both render a block and use it directly). So the
-    block's identity and content are theirs, and where it sits in THIS prompt
-    is not. What a block IS comes from its type, never from a prompt, so it
-    means the same thing in every prompt.
+    The block type owns its content and description.
 
     A thin wrapper over `nora.domain.blocks.restamp`: this module's `_ROW` is
     the only prefill-specific argument. Named here so each call site reads
@@ -681,11 +668,7 @@ def _standing_block(
     ctx: TagContext, *, now: datetime | None = None,
 ) -> ContextBlock | None:
     """Folded source objects read for this room."""
-    block = None
-    # The room's folded source-object heads (docs/design/platform/
-    # observations.md), typed rows under the SAME Standing presentation: the open poll,
-    # the pin set, the member count — each with its ordering and coverage
-    # flags so a gapped or partial state never reads as settled truth.
+    # Ordering and coverage keep gaps in recorded platform state visible.
     if ctx.source_objects:
         annotated = {row.id: i for i, row in enumerate(ctx.transcript, 1)
                      if row.reactions is not None}
@@ -715,7 +698,7 @@ def _standing_block(
                 # annotates — the SAME numbering `replying_to="n"` uses, so a
                 # pointer and the transcript name one message. Absent while the
                 # target is off-window: the row then keeps its plain source
-                # state in Standing and no pointer invents a visible target.
+                # state and no pointer invents a visible target.
                 ("on", f"#{reaction_targets[e.handle]}"
                  if e.kind == "reaction" and e.handle in reaction_targets
                  else None),
@@ -756,7 +739,7 @@ def _standing_block(
             # The tally rides once, on the visible target row — `on` naming
             # it is the pointer, so the row's own body then repeats nothing.
             # Off-window there is nowhere else the state shows, and the row
-            # keeps its plain `state`/`summary` in Standing.
+            # keeps its plain `state`/`summary`.
             body=lambda e: (
                 None if e.kind == "reaction" and e.handle in reaction_targets
                 else e.state or e.summary),
@@ -764,11 +747,8 @@ def _standing_block(
         if ctx.source_objects_more:
             objects = (f"{objects}\n<source_objects_more "
                        f"count=\"{ctx.source_objects_more}\"/>")
-        if block is None:
-            block = ContextBlock(name="standing", body=legacy_composed(objects))
-        else:
-            block = replace(block, body=legacy_composed("\n".join((block.body.text, objects))))
-    return block
+        return ContextBlock(name="source_objects", body=legacy_composed(objects))
+    return None
 
 
 def build_prefill(
